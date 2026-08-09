@@ -1,0 +1,338 @@
+# 3층) CheckItem — 전자금융. context=전자거래(WEB-FIN-*) | 일반(WEB-SER-*). 위험도 1~5.
+checkitems:
+- id: WEB-FIN-001
+  scheme: 전자금융
+  통제구분: 거래 인증
+  context: 전자거래
+  vuln:
+  - vuln.fin-txn-auth-means
+  위험도: 5
+- id: WEB-FIN-004
+  scheme: 전자금융
+  통제구분: 거래정보 검증
+  context: 전자거래
+  vuln:
+  - vuln.fin-txn-integrity
+  위험도: 5
+- id: WEB-FIN-005
+  scheme: 전자금융
+  통제구분: 거래정보 검증
+  context: 전자거래
+  vuln:
+  - vuln.fin-txn-replay
+  위험도: 5
+- id: WEB-FIN-006
+  scheme: 전자금융
+  통제구분: 거래정보 검증
+  context: 전자거래
+  vuln:
+  - vuln.fin-txn-owner
+  위험도: 5
+- id: WEB-FIN-009
+  scheme: 전자금융
+  통제구분: 거래 인증
+  context: 전자거래
+  vuln:
+  - vuln.fin-pwchange-identity
+  위험도: 5
+- id: WEB-FIN-010
+  scheme: 전자금융
+  통제구분: 거래 인증
+  context: 전자거래
+  vuln:
+  - vuln.fin-pw-reuse
+  위험도: 5
+- id: WEB-FIN-017
+  scheme: 전자금융
+  통제구분: 단말 보안
+  context: 전자거래
+  vuln:
+  - vuln.fin-input-protection
+  위험도: 4
+- id: WEB-FIN-027
+  scheme: 전자금융
+  통제구분: 거래 인증
+  context: 전자거래
+  vuln:
+  - vuln.fin-realname-access-media
+  위험도: 5
+- id: WEB-SER-001
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.sqli
+  위험도: 5
+- id: WEB-SER-002
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.malicious-upload
+  위험도: 5
+- id: WEB-SER-003
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.improper-authorization
+  위험도: 5
+- id: WEB-SER-004
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.credential-reuse
+  위험도: 5
+- id: WEB-SER-005
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.fixed-credential
+  위험도: 5
+- id: WEB-SER-006
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.weak-password-policy
+  위험도: 5
+- id: WEB-SER-007
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.guessable-init-password
+  위험도: 5
+- id: WEB-SER-010
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.file-download
+  위험도: 5
+- id: WEB-SER-011
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.info-leak-external
+  위험도: 5
+- id: WEB-SER-012
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.guessable-session-id
+  위험도: 5
+- id: WEB-SER-013
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.cookie-tampering
+  위험도: 5
+- id: WEB-SER-014
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.os-command
+  위험도: 5
+- id: WEB-SER-015
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.xxe
+  위험도: 5
+- id: WEB-SER-016
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.open-redirect
+  위험도: 4
+- id: WEB-SER-017
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.ldap-injection
+  위험도: 5
+- id: WEB-SER-018
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.ssi-injection
+  위험도: 5
+- id: WEB-SER-019
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.insufficient-auth
+  위험도: 4
+- id: WEB-SER-021
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.rate-limit
+  위험도: 5
+- id: WEB-SER-022
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.buffer-overflow
+  위험도: 5
+- id: WEB-SER-023
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.format-string
+  위험도: 5
+- id: WEB-SER-024
+  scheme: 전자금융
+  통제구분: 데이터 보호
+  context: 일반
+  vuln:
+  - vuln.client-important-info
+  위험도: 5
+- id: WEB-SER-028
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.csrf
+  위험도: 4
+- id: WEB-SER-029
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.dir-listing
+  위험도: 4
+- id: WEB-SER-030
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.server-cert-integrity
+  위험도: 3
+- id: WEB-SER-031
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.info-leak-system
+  위험도: 4
+- id: WEB-SER-032
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.auth-error-limit
+  위험도: 5
+- id: WEB-SER-033
+  scheme: 전자금융
+  통제구분: 이용자 인증
+  context: 일반
+  vuln:
+  - vuln.session-termination
+  위험도: 4
+- id: WEB-SER-034
+  scheme: 전자금융
+  통제구분: 데이터 보호
+  context: 일반
+  vuln:
+  - vuln.weak-tls-protocol
+  위험도: 3
+- id: WEB-SER-035
+  scheme: 전자금융
+  통제구분: 데이터 보호
+  context: 일반
+  vuln:
+  - vuln.weak-tls-cipher
+  위험도: 3
+- id: WEB-SER-036
+  scheme: 전자금융
+  통제구분: 데이터 보호
+  context: 일반
+  vuln:
+  - vuln.weak-tls-component
+  위험도: 3
+- id: WEB-SER-037
+  scheme: 전자금융
+  통제구분: 데이터 보호
+  context: 일반
+  vuln:
+  - vuln.tls-renegotiation
+  위험도: 2
+- id: WEB-SER-038
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.unnecessary-http-method
+  위험도: 1
+- id: WEB-SER-039
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.admin-page-exposure
+  위험도: 4
+- id: WEB-SER-040
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.unnecessary-file-exposure
+  위험도: 4
+- id: WEB-SER-041
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.xss
+  위험도: 4
+- id: WEB-SER-046
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.ssrf
+  위험도: 4
+- id: WEB-SER-048
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.session-reuse
+  위험도: 3
+- id: WEB-SER-049
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.auth-means-owner
+  위험도: 5
+- id: WEB-SER-051
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.plaintext-transmission
+  위험도: 5
+- id: WEB-SER-052
+  scheme: 전자금융
+  통제구분: 서비스 보호
+  context: 일반
+  vuln:
+  - vuln.ssti
+  위험도: 5

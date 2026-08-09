@@ -1,0 +1,167 @@
+# 3층) CheckItem — 주요정보통신기반시설(웹). context=일반. 통합=True는 1:N 결합(상세설명 분할).
+checkitems:
+- id: KII-01
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.os-command
+  - vuln.ldap-injection
+  - vuln.ssi-injection
+  - vuln.xxe
+  - vuln.ssti
+  - vuln.xpath-injection
+  위험도: null
+  통합: true
+  상세설명:
+  - OS 명령 실행
+  - LDAP 인젝션
+  - SSI 인젝션
+  - XML 외부객체(XXE)
+  - SSTI
+  - XPATH 인젝션
+- id: KII-02
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.sqli
+  위험도: null
+- id: KII-03
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.dir-listing
+  위험도: null
+- id: KII-04
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.error-page
+  위험도: null
+- id: KII-05
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.info-leak-system
+  - vuln.info-leak-external
+  - vuln.unnecessary-file-exposure
+  - vuln.client-important-info
+  위험도: null
+  통합: true
+  상세설명:
+  - 시스템 운영정보 노출
+  - 외부사이트에 의한 운영정보 노출
+  - 불필요한 파일 노출
+  - 브라우저 영역 내 중요정보 노출
+- id: KII-06
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.xss
+  위험도: null
+- id: KII-07
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.csrf
+  위험도: null
+- id: KII-08
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.ssrf
+  위험도: null
+- id: KII-09
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.weak-password-policy
+  위험도: null
+- id: KII-10
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.insufficient-auth
+  위험도: null
+- id: KII-11
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.improper-authorization
+  위험도: null
+- id: KII-12
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.weak-password-recovery
+  위험도: null
+- id: KII-13
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.process-validation
+  위험도: null
+- id: KII-14
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.malicious-upload
+  위험도: null
+- id: KII-15
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.file-download
+  위험도: null
+- id: KII-16
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.guessable-session-id
+  - vuln.session-termination
+  - vuln.session-reuse
+  위험도: null
+  통합: true
+  상세설명:
+  - 유추 가능한 세션ID
+  - 세션 종료 설정 미흡
+  - 세션정보 재사용
+- id: KII-17
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.plaintext-transmission
+  - vuln.weak-tls-protocol
+  위험도: null
+  통합: true
+  상세설명:
+  - 데이터 평문 전송/통신구간 암호화(전체)
+  - 취약한 TLS 프로토콜 — TLS 1.0/1.1 미사용(부분 공유)
+- id: KII-18
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.cookie-tampering
+  위험도: null
+- id: KII-19
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.admin-page-exposure
+  위험도: null
+- id: KII-20
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.rate-limit
+  - vuln.auth-error-limit
+  위험도: null
+  통합: true
+  상세설명:
+  - 무제한 요청 차단 미흡
+  - 인증 오류 횟수 제한 미흡
+- id: KII-21
+  scheme: 주요정보통신기반시설
+  context: 일반
+  vuln:
+  - vuln.unnecessary-http-method
+  위험도: null

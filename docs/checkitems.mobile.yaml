@@ -1,0 +1,80 @@
+# 3층) CheckItem — 모바일. context=클라이언트앱(별도 툴체인).
+checkitems:
+- id: MOB-22
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-root-jailbreak
+  위험도: null
+- id: MOB-23
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-antimalware
+  위험도: null
+- id: MOB-24
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-obfuscation
+  위험도: null
+- id: MOB-25
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-local-storage
+  위험도: null
+- id: MOB-26
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-memory-exposure
+  위험도: null
+- id: MOB-27
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-screen-plaintext
+  위험도: null
+- id: MOB-28
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-hardcoded-secrets
+  위험도: null
+- id: MOB-29
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-forced-screen-bypass
+  위험도: null
+- id: MOB-30
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-integrity
+  위험도: null
+- id: MOB-31
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-anti-debugging
+  위험도: null
+- id: MOB-32
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-debug-log
+  위험도: null
+- id: MOB-33
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-background-screen
+  위험도: null
+- id: MOB-34
+  scheme: 모바일
+  context: 클라이언트앱
+  vuln:
+  - vuln.mob-deeplink
+  위험도: null

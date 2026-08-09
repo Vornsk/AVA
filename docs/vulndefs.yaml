@@ -1,0 +1,306 @@
+# 2층) VulnDef — 취약점 정의(설명·분류·CWE). 스킴 간 중복 제거, detector 참조.
+vulndefs:
+- id: vuln.sqli
+  이름: SQL 인젝션
+  설명: 입력값 검증 미흡으로 악의적 SQL 구문이 실행되어 DB 정보 유출·변조가 가능한 취약점.
+  detector: det.sqli
+  cwe: CWE-89
+- id: vuln.os-command
+  이름: OS 명령 실행
+  설명: 입력값 검증 미흡으로 서버에서 임의의 운영체제 명령이 실행되는 취약점.
+  detector: det.os-command
+  cwe: CWE-78
+- id: vuln.ldap-injection
+  이름: LDAP 인젝션
+  설명: LDAP 질의에 검증되지 않은 입력이 삽입되어 비인가 조회·인증 우회가 가능한 취약점.
+  detector: det.ldap-injection
+  cwe: CWE-90
+- id: vuln.ssi-injection
+  이름: SSI 인젝션
+  설명: 서버사이드 인클루드 지시자가 삽입·실행되어 명령 실행/파일 노출이 가능한 취약점.
+  detector: det.ssi-injection
+  cwe: CWE-97
+- id: vuln.xxe
+  이름: XML 외부객체(XXE)
+  설명: XML 파서가 외부 엔터티를 처리해 파일 노출·SSRF·DoS가 가능한 취약점.
+  detector: det.xxe
+  cwe: CWE-611
+- id: vuln.ssti
+  이름: 서버사이드 템플릿 인젝션(SSTI)
+  설명: 템플릿 엔진에 사용자 입력이 평가되어 원격 코드 실행으로 이어질 수 있는 취약점.
+  detector: det.ssti
+  cwe: CWE-1336
+- id: vuln.xpath-injection
+  이름: XPATH 인젝션
+  설명: XPATH 질의에 검증되지 않은 입력이 삽입되어 비인가 데이터 조회가 가능한 취약점.
+  detector: det.xpath-injection
+  cwe: CWE-643
+- id: vuln.xss
+  이름: 크로스사이트 스크립트(XSS)
+  설명: 사용자 입력을 필터링 없이 동적 페이지에 반영하여 스크립트가 실행되는 취약점.
+  detector: det.xss
+  cwe: CWE-79
+- id: vuln.csrf
+  이름: 크로스사이트 요청 위조(CSRF)
+  설명: 유효성 검증 미흡으로 이용자 의지와 무관한 요청(수정·삭제·송금 등)이 수행되는 취약점.
+  detector: det.csrf
+  cwe: CWE-352
+- id: vuln.ssrf
+  이름: 서버사이드 요청 위조(SSRF)
+  설명: 조작된 요청으로 내부망 등 직접 접근 불가한 리소스에 접근하는 취약점.
+  detector: det.ssrf
+  cwe: CWE-918
+- id: vuln.open-redirect
+  이름: 리다이렉트 피싱(오픈 리다이렉트)
+  설명: 리다이렉트 대상 검증 미흡으로 피싱 사이트로 유도되는 취약점.
+  detector: det.open-redirect
+  cwe: CWE-601
+- id: vuln.dir-listing
+  이름: 디렉터리 인덱싱/목록 노출
+  설명: 서버 설정 미흡으로 디렉터리 구조·파일 열람이 가능한 취약점.
+  detector: det.dir-listing
+  cwe: CWE-548
+- id: vuln.error-page
+  이름: 에러 페이지 정보 노출
+  설명: 기본 에러 페이지로 경로·쿼리·버전 등 민감정보가 노출되는 취약점.
+  detector: det.error-page
+  cwe: CWE-209
+- id: vuln.info-leak-system
+  이름: 시스템 운영정보 노출
+  설명: 버전·주석·소스 등 시스템 운영 정보가 노출되어 2차 공격에 활용되는 취약점.
+  detector: det.info-leak-system
+  cwe: CWE-200
+- id: vuln.info-leak-external
+  이름: 외부사이트에 의한 운영정보 노출
+  설명: 외부 검색엔진·사이트를 통해 시스템 운영정보가 노출되는 취약점.
+  detector: det.info-leak-external
+  cwe: CWE-200
+- id: vuln.unnecessary-file-exposure
+  이름: 불필요한 파일 노출
+  설명: 백업·샘플·설정 파일 등 불필요한 파일이 노출되는 취약점.
+  detector: det.unnecessary-file-exposure
+  cwe: CWE-538
+- id: vuln.client-important-info
+  이름: 브라우저 영역 내 중요정보 노출
+  설명: 단말 브라우저 영역에서 계좌·카드 등 중요정보가 노출되는 취약점.
+  detector: det.client-important-info
+  cwe: CWE-200
+- id: vuln.insufficient-auth
+  이름: 불충분한 인증 절차
+  설명: 인증 절차 미흡으로 비인가 사용자가 중요 페이지에 접근하는 취약점.
+  detector: det.insufficient-auth
+  cwe: CWE-287
+- id: vuln.improper-authorization
+  이름: 불충분한 권한 검증(부적절한 인가)
+  설명: 접근제어 미흡으로 파라미터 변경 등으로 중요 페이지 접근·변조가 가능한 취약점.
+  detector: det.improper-authorization
+  cwe: CWE-285
+- id: vuln.process-validation
+  이름: 프로세스(업무흐름) 검증 누락
+  설명: 서버측 흐름 검증 미흡으로 하위 URL 직접 접근·순서 변경 등이 가능한 취약점.
+  detector: det.process-validation
+  cwe: CWE-841
+- id: vuln.auth-error-limit
+  이름: 인증 오류 횟수 제한 미흡
+  설명: 인증 실패 횟수 제한이 없어 무차별 대입이 가능한 취약점.
+  detector: det.auth-error-limit
+  cwe: CWE-307
+- id: vuln.auth-means-owner
+  이름: 인증수단 소유자 검증
+  설명: 인증수단의 소유자 검증이 미흡한 취약점.
+  detector: det.auth-means-owner
+  cwe: CWE-639
+- id: vuln.weak-password-policy
+  이름: 약한 비밀번호 정책 / 유추 가능한 인증정보
+  설명: 취약·유추가능한 인증정보 등록·이용이 가능한 취약점(KII-09 ↔ WEB-SER-006 체인).
+  detector: det.weak-password-policy
+  cwe: CWE-521
+- id: vuln.guessable-init-password
+  이름: 유추 가능한 초기화 비밀번호
+  설명: 초기화 비밀번호가 유추 가능하여 계정 탈취로 이어지는 취약점.
+  detector: det.guessable-init-password
+  cwe: CWE-521
+- id: vuln.weak-password-recovery
+  이름: 취약한 비밀번호 복구 절차
+  설명: 복구 기능 미흡으로 타인 비밀번호를 획득·변경·복구할 수 있는 취약점.
+  detector: det.weak-password-recovery
+  cwe: CWE-640
+- id: vuln.guessable-session-id
+  이름: 유추 가능한 세션ID
+  설명: 세션ID가 예측 가능하여 세션 탈취가 가능한 취약점.
+  detector: det.guessable-session-id
+  cwe: CWE-330
+- id: vuln.session-termination
+  이름: 세션 종료 설정 미흡
+  설명: 로그아웃·타임아웃 등 세션 종료가 안전하지 않은 취약점.
+  detector: det.session-termination
+  cwe: CWE-613
+- id: vuln.session-reuse
+  이름: 세션정보 재사용
+  설명: 종료되어야 할 세션·토큰이 재사용 가능한 취약점.
+  detector: det.session-reuse
+  cwe: CWE-384
+- id: vuln.credential-reuse
+  이름: 인증정보 재사용(세션 관련)
+  설명: 이용자 인증정보 재사용 방지가 미흡한 취약점(세션 관련).
+  detector: det.credential-reuse
+  cwe: CWE-384
+- id: vuln.fixed-credential
+  이름: 고정된 인증정보(세션 관련·세션 고정)
+  설명: 고정된 인증정보 이용이 가능하여 세션 고정 등으로 이어지는 취약점.
+  detector: det.fixed-credential
+  cwe: CWE-384
+- id: vuln.cookie-tampering
+  이름: 쿠키 변조
+  설명: 클라이언트 쿠키 변조로 인증·권한 우회 또는 정보 탈취가 가능한 취약점.
+  detector: det.cookie-tampering
+  cwe: CWE-565
+- id: vuln.malicious-upload
+  이름: 악성 파일 업로드
+  설명: 확장자·실행권한 검증 미흡으로 웹셸 등 악성 스크립트 업로드·실행이 가능한 취약점.
+  detector: det.malicious-upload
+  cwe: CWE-434
+- id: vuln.file-download
+  이름: 파일 다운로드(경로 조작)
+  설명: 허용 경로 외 파일에 접근하여 임의 파일을 다운로드하는 취약점.
+  detector: det.file-download
+  cwe: CWE-22
+- id: vuln.plaintext-transmission
+  이름: 데이터 평문 전송 / 통신구간 암호화
+  설명: 중요정보가 암호화되지 않고 평문 전송되어 도청·MITM에 노출되는 취약점.
+  detector: det.plaintext-transmission
+  cwe: CWE-319
+- id: vuln.weak-tls-protocol
+  이름: 취약한 HTTPS 프로토콜(TLS 1.0/1.1)
+  설명: TLS 1.0/1.1 등 취약 프로토콜 사용이 허용되는 취약점.
+  detector: det.weak-tls-protocol
+  cwe: CWE-326
+- id: vuln.weak-tls-cipher
+  이름: 취약한 HTTPS 암호 알고리즘
+  설명: 취약한 암호 스위트 사용이 허용되는 취약점.
+  detector: det.weak-tls-cipher
+  cwe: CWE-327
+- id: vuln.weak-tls-component
+  이름: 취약한 HTTPS 컴포넌트
+  설명: 취약한 TLS 컴포넌트가 제거되지 않은 취약점.
+  detector: det.weak-tls-component
+  cwe: CWE-327
+- id: vuln.tls-renegotiation
+  이름: 취약한 HTTPS 재협상
+  설명: 안전하지 않은 TLS 재협상이 차단되지 않은 취약점.
+  detector: det.tls-renegotiation
+  cwe: CWE-264
+- id: vuln.server-cert-integrity
+  이름: 서버 인증서 무결성
+  설명: 서버 인증서 무결성 검증이 미흡한 취약점.
+  detector: det.server-cert-integrity
+  cwe: CWE-295
+- id: vuln.admin-page-exposure
+  이름: 관리자 페이지 노출/접근통제
+  설명: 관리자 페이지가 노출되거나 접근통제가 미흡한 취약점.
+  detector: det.admin-page-exposure
+  cwe: CWE-552
+- id: vuln.rate-limit
+  이름: 무제한 요청(자동화 공격)
+  설명: 반복 요청 차단 미흡으로 무차별 대입·자원 고갈이 가능한 취약점.
+  detector: det.rate-limit
+  cwe: CWE-799
+- id: vuln.unnecessary-http-method
+  이름: 불필요한 HTTP Method
+  설명: 불필요한 웹 메서드 허용으로 변조·파일 업로드가 가능한 취약점.
+  detector: det.unnecessary-http-method
+  cwe: CWE-650
+- id: vuln.buffer-overflow
+  이름: 버퍼 오버플로우
+  설명: 경계 검사 미흡으로 버퍼를 초과하여 임의 코드 실행·크래시가 가능한 취약점.
+  detector: det.buffer-overflow
+  cwe: CWE-120
+- id: vuln.format-string
+  이름: 포맷 스트링
+  설명: 서식 문자열 검증 미흡으로 메모리 노출·변조가 가능한 취약점.
+  detector: det.format-string
+  cwe: CWE-134
+- id: vuln.fin-txn-auth-means
+  이름: '[전자금융] 거래 인증수단 검증'
+  설명: 전자 거래 시 인증수단 검증이 미흡한 취약점.
+  detector: det.fin-txn-auth-means
+- id: vuln.fin-txn-integrity
+  이름: '[전자금융] 거래정보 무결성 검증'
+  설명: 전자 거래정보의 무결성 검증이 미흡한 취약점.
+  detector: det.fin-txn-integrity
+- id: vuln.fin-txn-replay
+  이름: '[전자금융] 거래정보 재사용 방지'
+  설명: 전자 거래정보 재사용(재전송) 방지가 미흡한 취약점.
+  detector: det.fin-txn-replay
+- id: vuln.fin-txn-owner
+  이름: '[전자금융] 거래시 소유주 검증'
+  설명: 전자 거래 시 소유주 검증이 미흡한 취약점.
+  detector: det.fin-txn-owner
+- id: vuln.fin-pwchange-identity
+  이름: '[전자금융] 비밀번호 변경 시 본인확인'
+  설명: 비밀번호 변경 시 본인확인 절차가 미흡한 취약점.
+  detector: det.fin-pwchange-identity
+- id: vuln.fin-pw-reuse
+  이름: '[전자금융] 비밀번호 변경 시 이전 PW 재사용 방지'
+  설명: 비밀번호 변경 시 이전 비밀번호 재사용이 가능한 취약점.
+  detector: det.fin-pw-reuse
+- id: vuln.fin-input-protection
+  이름: '[전자금융] 이용자 입력정보 보호(단말)'
+  설명: 단말에서 이용자 입력정보 보호가 미흡한 취약점.
+  detector: det.fin-input-protection
+- id: vuln.fin-realname-access-media
+  이름: '[전자금융] 접근매체 발급 실명확인'
+  설명: 접근매체 발급 시 실명확인 수행이 미흡한 취약점.
+  detector: det.fin-realname-access-media
+- id: vuln.mob-root-jailbreak
+  이름: 루팅/탈옥 탐지(OS 변조)
+  설명: 루팅/탈옥 기기에서 앱이 제한 없이 실행되는 취약점.
+  detector: det.mob-root-jailbreak
+- id: vuln.mob-antimalware
+  이름: 악성코드 방지
+  설명: 백신 비활성/악성코드 탐지 미구현으로 발생하는 취약점.
+  detector: det.mob-antimalware
+- id: vuln.mob-obfuscation
+  이름: 소스코드 난독화
+  설명: 난독화 미적용으로 역공학 시 로직·정보가 노출되는 취약점.
+  detector: det.mob-obfuscation
+- id: vuln.mob-local-storage
+  이름: 단말 내 중요정보 저장
+  설명: 기기 내 개인·금융·인증정보가 저장되는 취약점.
+  detector: det.mob-local-storage
+- id: vuln.mob-memory-exposure
+  이름: 메모리 내 중요정보 노출
+  설명: 중요정보가 메모리에 평문으로 적재되는 취약점.
+  detector: det.mob-memory-exposure
+- id: vuln.mob-screen-plaintext
+  이름: 화면 내 중요정보 평문 노출
+  설명: 화면에 중요정보가 평문으로 노출되는 취약점.
+  detector: det.mob-screen-plaintext
+- id: vuln.mob-hardcoded-secrets
+  이름: 소스코드 내 운영정보 노출
+  설명: API키·서버주소·DB정보 등이 하드코딩되는 취약점.
+  detector: det.mob-hardcoded-secrets
+- id: vuln.mob-forced-screen-bypass
+  이름: 화면 강제실행 인증우회
+  설명: 화면 강제실행·파일 조작으로 인증단계를 우회하는 취약점.
+  detector: det.mob-forced-screen-bypass
+- id: vuln.mob-integrity
+  이름: 프로그램 무결성 검증
+  설명: 앱 위·변조 검증 로직 부재로 변조 앱이 배포되는 취약점.
+  detector: det.mob-integrity
+- id: vuln.mob-anti-debugging
+  이름: 디버깅 탐지
+  설명: 안티 디버깅 미적용으로 동적 분석이 가능한 취약점.
+  detector: det.mob-anti-debugging
+- id: vuln.mob-debug-log
+  이름: 디버그 로그 내 중요정보
+  설명: 디버그 로그에 민감정보가 기록·노출되는 취약점.
+  detector: det.mob-debug-log
+- id: vuln.mob-background-screen
+  이름: 백그라운드 화면 보호
+  설명: 백그라운드 진입 시 직전 화면·스냅샷으로 정보가 노출되는 취약점.
+  detector: det.mob-background-screen
+- id: vuln.mob-deeplink
+  이름: DeepLink 도용 제한
+  설명: 딥링크 검증 미흡으로 의도치 않은 기능이 수행되는 취약점.
+  detector: det.mob-deeplink
