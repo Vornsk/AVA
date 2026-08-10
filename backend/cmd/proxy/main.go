@@ -157,7 +157,8 @@ func main() {
 	}
 
 	proxy := proxyengine.New(project.Stages)
-	tenant.SetStages(project.Stages) // 테넌트 프록시도 같은 판단 스테이지 (§5.1 멀티테넌시)
+	proxyengine.SetListenAddr(local.ProxyAddr) // 공용 프록시 상태 조회용 (이슈 #5)
+	tenant.SetStages(project.Stages)           // 테넌트 프록시도 같은 판단 스테이지 (§5.1 멀티테넌시)
 
 	// MCP 서버를 별도 포트에서 기동 (프록시와 같은 프로세스 = 라이브 상태 공유)
 	go mcpserver.Start(local.MCPAddr)

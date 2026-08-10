@@ -170,7 +170,7 @@ go build -o proxy ./cmd/proxy
 | 4 | `docs/CODEBASE.md:335` | §4.1 제목 "도달 가능한 화면 0개" (현재 11개) |
 | 5 | `docs/CODEBASE.md:178` | §2.2 "실제 소스 import는 단 한 줄이다" (현재 lucide 15 + react 14 + react-dom 1 = 30줄) |
 | 6 | `docs/CODEBASE.md:590,591,599` | §7 이슈 표의 1·2·10번(빌드 불가 / 프론트 부재 / `.gitignore` 부재)이 이미 해결됐는데 미해결로 등재 |
-| 7 | `docs/CODEBASE.md:92,420,422,466` | **MCP 툴 개수가 "56"으로 적혀 있으나 실측 54.** 서브에이전트 보고를 검증 없이 옮긴 값이다 (§6.1의 세 번째 사례). `grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go` → 54 |
+| 7 | `docs/CODEBASE.md:92,420,422,466` | ~~MCP 툴 개수가 "56"으로 적혀 있으나 실측 54~~ **(해소).** 작성 당시 실측 54였으나, **이슈 #5로 `proxy_status`·`set_capture` 2개가 추가되어 현재 실측 56** — CODEBASE의 "56"과 일치한다. `grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go` → 56 |
 
 **왜 먼저인가.** 이 문서가 후속 작업의 유일한 지도다. 지도에 사실과 반대인 문장이 있으면
 뒤따르는 모든 판단이 오염된다. 수정량이 작고(제목 문구 수준) 위험이 0이라 머지를 막을 이유가 없다.
@@ -179,10 +179,11 @@ go build -o proxy ./cmd/proxy
 
 ### ② CI 배선
 
-**현재 `.github/` 디렉터리 자체가 없다.**
+**갱신:** `.github/`는 이제 존재한다 — 이슈·PR 템플릿(`ISSUE_TEMPLATE/` 3종 + `PULL_REQUEST_TEMPLATE.md` + `config.yml`).
+다만 **CI 워크플로(`.github/workflows/`)는 아직 없다** → 빌드·테스트를 강제하는 자동화는 여전히 부재.
 
 ```bash
-ls -la .github 2>/dev/null || echo "없음"
+ls .github/workflows 2>/dev/null || echo "워크플로 없음"
 ```
 
 즉 §2의 `npm run build` → `go build` 순서가 **README 산문으로만 보장된다.**

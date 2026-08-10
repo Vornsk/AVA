@@ -224,10 +224,10 @@
     <h2 class="title">proxy-poc — LLM 기반 웹 취약점 진단 도구 (CyberGuard Vulnerability Engine)</h2>
     
     <p>Go(goproxy) <strong>MITM 프록시 엔진</strong>을 코어로, 그 위에 <strong>MCP 오케스트레이션 계층</strong>과 <strong>React 웹 GUI</strong>를 얹은 LLM 기반 웹 취약점 진단 도구입니다. 프론트를 <code>go:embed</code>로 넣어 <strong>단일 실행 바이너리</strong>로 배포됩니다. 주요정보통신기반시설·전자금융 규제 점검항목표에 맞춘 자동 진단 → 도출리스트/점검결과표(xlsx) → 이행점검까지 전 워크플로우를 커버합니다.</p>
-<div class="table-wrap"><table><thead><tr><th>구성</th><th>포트</th><th>역할</th></tr></thead><tbody><tr><td><strong>프록시</strong></td><td><code>:8080</code></td><td>HTTPS 가로채기(MITM) + 스코프 강제 + 인증 주입 + 판단 파이프라인 + 마스킹 + 공격면 캡처</td></tr><tr><td><strong>MCP</strong></td><td><code>:8765</code></td><td>외부 LLM 에이전트/번들 클라이언트가 라이브 프록시를 조회·제어 (StreamableHTTP)</td></tr><tr><td><strong>웹 GUI</strong></td><td><code>:8090</code></td><td>진단 현황·취약점·증적·커버리지·리포트 (다크 기본, 테마 토글)</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>구성</th><th>포트</th><th>역할</th></tr></thead><tbody><tr><td><strong>프록시</strong></td><td><code>:8080</code></td><td>HTTPS 가로채기(MITM) + 스코프 강제 + 인증 주입 + 판단 파이프라인 + 마스킹 + 공격면 캡처(런타임 on/off·상태 조회)</td></tr><tr><td><strong>MCP</strong></td><td><code>:8765</code></td><td>외부 LLM 에이전트/번들 클라이언트가 라이브 프록시를 조회·제어 (StreamableHTTP)</td></tr><tr><td><strong>웹 GUI</strong></td><td><code>:8090</code></td><td>진단 현황·취약점·증적·커버리지·리포트 (다크 기본, 테마 토글)</td></tr></tbody></table></div>
 <hr>
 <h3>한눈에</h3>
-<ul><li><strong>탐지기 25종</strong>(내장 23 + 외부도구 2) — XSS 3형태·SQLi 3종·인젝션 계열(cmd/SSRF/XXE/SSTI/LDAP/SSI)·접근통제·설정 점검. 규제 점검항목에 매핑돼 <strong>수동 항목 최소화</strong></li><li><strong>판단 파이프라인</strong> — 스코프(hard) → Rule(결정론) → LLM(애매한 요청만) → 전송+캡처. 스코프 밖으로 아무것도 내보내지 않음</li><li><strong>자동 공격면 탐색</strong> — 링크·폼·JS 번들을 따라가는 크롤러(정적/헤드리스 옵트인) + 프록시 수동 캡처</li><li><strong>증적 기반</strong> — 각 finding에 재현 요청·증명 응답(민감값 마스킹)·상태코드</li><li><strong>규제 산출물</strong> — 도출리스트 11컬럼 xlsx(+증적 시트) · 점검결과표(양호/취약/미점검) · 감사 CSV</li><li><strong>멀티테넌시·RBAC·영속화</strong> — 프로젝트별 격리 프록시, 리더/수행원 권한, bcrypt 로그인, 인증정보 AES-256-GCM 암호화, 재시작 넘어 데이터 유지</li></ul>
+<ul><li><strong>탐지기 25종</strong>(내장 23 + 외부도구 2) — XSS 3형태·SQLi 3종·인젝션 계열(cmd/SSRF/XXE/SSTI/LDAP/SSI)·접근통제·설정 점검. 규제 점검항목에 매핑돼 <strong>수동 항목 최소화</strong></li><li><strong>판단 파이프라인</strong> — 스코프(hard) → Rule(결정론) → LLM(애매한 요청만) → 전송+캡처. 스코프 밖으로 아무것도 내보내지 않음</li><li><strong>자동 공격면 탐색</strong> — 링크·폼·JS 번들을 따라가는 크롤러(정적/헤드리스 옵트인) + 프록시 수동 캡처(런타임 캡처 on/off·상태 API/MCP)</li><li><strong>증적 기반</strong> — 각 finding에 재현 요청·증명 응답(민감값 마스킹)·상태코드</li><li><strong>규제 산출물</strong> — 도출리스트 11컬럼 xlsx(+증적 시트) · 점검결과표(양호/취약/미점검) · 감사 CSV</li><li><strong>멀티테넌시·RBAC·영속화</strong> — 프로젝트별 격리 프록시, 리더/수행원 권한, bcrypt 로그인, 인증정보 AES-256-GCM 암호화, 재시작 넘어 데이터 유지</li></ul>
 <hr>
 <h3>문서 안내</h3>
 <p>이 README는 <strong>표지·요약</strong>입니다. 각 기능의 상세는 웹 GUI 좌측 내비게이션과 1:1로 대응하는 <code>docs/</code> 문서를 참고하세요.</p>
@@ -239,9 +239,10 @@
 <hr>
 <h3>빠른 실행</h3>
 <p>프론트를 먼저 빌드해야 합니다(출력이 Go 바이너리에 embed됨):</p>
-<pre><code>cd proxy-poc/frontend
+<pre><code>cd frontend
 npm install            # 최초 1회
 npm run build          # → backend/internal/webui/dist (embed)</code></pre>
+<div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p><code>backend/internal/webui/dist</code>는 빌드 산출물이라 커밋되지 않습니다. <code>go build</code> 전에 반드시 위 프론트 빌드를 먼저 수행하세요. 건너뛰면 <code>pattern all:dist: no matching files found</code> 로 컴파일이 실패합니다.</p></div>
 <p>백엔드 빌드 &amp; 실행:</p>
 <pre><code>cd proxy-poc/backend
 go build -o proxy-poc.exe ./cmd/proxy    # 프록시(:8080) + MCP(:8765) + 웹(:8090)
@@ -284,6 +285,8 @@ go build -o proxy-poc.exe ./cmd/proxy    # 프록시(:8080) + MCP(:8765) + 웹(:
 <p>  삭제성·admin·결제확정). <code>recon_allow</code>로 접근통제 점검 시 관리자 경로 recon만 허용.</p>
 <ul><li><strong>LLM 스테이지(§5.2):</strong> Rule이 <code>llm</code>으로 표시한 상태변경 요청을 LLM이 allow/block 판단.</li></ul>
 <p>  입력 토큰 최소화(정규화 path + 파라미터 키만), 판정 캐싱·로깅. 프로바이더 교체형   (<code>mock|ollama|anthropic|openai</code>).</p>
+<ul><li><strong>캡처 제어:</strong> 공용 프록시(:8080)의 <strong>엔드포인트 캡처는 런타임에 on/off</strong> 할 수 있습니다</li></ul>
+<p>  (<code>GET /api/proxy</code> 상태 · <code>POST /api/proxy/capture</code> 토글 · MCP <code>proxy_status</code>/<code>set_capture</code>, 리더 전용·감사).   프로세스·스코프·인증·판단은 불변, 테넌트 전용 프록시는 미영향(격리 유지). 상세 → <a href="#sec-03" data-go="03">03-정찰</a>.</p>
 <p>판정 기록은 <a href="#sec-09" data-go="09">룰 제안</a> 페이지에서 룰 이관 후보의 근거가 됩니다.</p>
 <hr>
 <h3>3. 자동 진단 (탐지기 25종 + 데모)</h3>
@@ -334,7 +337,7 @@ go build -o proxy-poc.exe ./cmd/proxy    # 프록시(:8080) + MCP(:8765) + 웹(:
       crawler/     자동 크롤러(BFS Explore) + SPA 정적 JS 추출 + 헤드리스(chromedp) 옵트인
       ca/          전용 CA + cert-manager(FR-2.6~2.9)
       config/      계층 설정(§4) — local/project yaml 자동생성
-      proxyengine/ goproxy 조립 — New(공유) / NewFor(테넌트 주입)
+      proxyengine/ goproxy 조립 — New(공유) / NewFor(테넌트 주입) + 캡처 on/off·상태 제어(control.go)
       tenant/      멀티테넌시(§5.1) — 프로젝트별 격리 프록시
       detector/    탐지기 25종(§5.3)
       scanengine/  스캔 오케스트레이션 — 비동기 잡·가드레일·LLM검토·영속화
@@ -448,13 +451,17 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <ul><li><strong>자동 크롤 (Explore)</strong> — 시작 URL에서 링크·폼·JS 번들을 따라 스코프 내를 BFS 크롤(AppScan</li></ul>
 <p>  Explore 대응). 비파괴(GET·폼 등록만). 정적 추출 기본, <strong>헤드리스(Chrome, JS 실행) 옵트인</strong>   (서버에 Chrome 없으면 비활성). 실행 상태·발견 수·JS 번들 수 표시</p>
 <ul><li><strong>Endpoint Tree</strong> — 호스트별로 그룹된 캡처 엔드포인트. 메서드·경로·인증 필요 표식·판정 배지,</li></ul>
-<p>  파라미터(위치 <code>query/body/json/file</code> · 이름 · 타입 · 필수 여부). 프록시(:8080) 경유 트래픽으로도 채워짐</p>
+<p>  파라미터(위치 <code>query/body/json/file</code> · 이름 · 타입 · 필수 여부). 프록시(:8080) 경유 트래픽으로도   채워짐(캡처는 런타임에 on/off 가능 — 아래 <strong>프록시 캡처 제어</strong>)</p>
 <p><strong>우측 (1/3)</strong></p>
 <ul><li><strong>Judgment Pipeline</strong> — 스코프 → Rule → LLM → Forward 단계 시각화 + 활성 룰 목록(block/allow)</li><li><strong>Scope (whitelist)</strong> — 허용 스코프 목록</li><li><strong>Auth &amp; Identities</strong> — 세션 주입 On/Off, 주입 쿠키/헤더, 등록된 진단 신원(수평/수직 접근통제 대조용)</li><li><strong>로그인 시퀀스 (세션 지속성, FR-2.5)</strong> — 긴 스캔 중 세션 만료 시 자동 재로그인 절차 설정.</li></ul>
 <p>  로그인 URL·<strong>만료 표식(정규식, 있어야 활성화)</strong>·폼 필드·CSRF 토큰. 값은 마스킹, 저장은 리더 전용,   비밀번호는 응답 미노출·인메모리 주입기에만 반영</p>
 <h3>주요 액션 → API</h3>
-<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>비고</th></tr></thead><tbody><tr><td>크롤 시작</td><td><code>POST /api/crawl</code> (`mode: static\</td><td>headless`)</td><td><code>scan:run</code></td></tr><tr><td>헤드리스 가용성</td><td><code>GET /api/crawl-modes</code></td><td></td></tr><tr><td>로그인 시퀀스 저장</td><td><code>POST /api/login-seq</code></td><td>리더, 감사 기록</td></tr></tbody></table></div>
-<p>조회: <code>/api/endpoints</code> · <code>/api/rules</code> · <code>/api/stats</code> · <code>/api/auth</code> · <code>/api/login-seq</code> · <code>/api/crawl</code></p>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>비고</th></tr></thead><tbody><tr><td>크롤 시작</td><td><code>POST /api/crawl</code> (`mode: static\</td><td>headless`)</td><td><code>scan:run</code></td></tr><tr><td>헤드리스 가용성</td><td><code>GET /api/crawl-modes</code></td><td></td></tr><tr><td>로그인 시퀀스 저장</td><td><code>POST /api/login-seq</code></td><td>리더, 감사 기록</td></tr><tr><td>프록시 캡처 on/off</td><td><code>POST /api/proxy/capture</code> (<code>on</code>)</td><td>리더(<code>proxy:control</code>), 감사 기록</td></tr></tbody></table></div>
+<p>조회: <code>/api/endpoints</code> · <code>/api/proxy</code> · <code>/api/rules</code> · <code>/api/stats</code> · <code>/api/auth</code> · <code>/api/login-seq</code> · <code>/api/crawl</code></p>
+<h3>프록시 캡처 제어 (공용 :8080)</h3>
+<p>공용 프록시는 항상 켜져 있고, <strong>엔드포인트 캡처(공격면 기록)만 런타임에 on/off</strong> 합니다 (프로세스·스코프·인증·판단 파이프라인은 영향 없음). 캡처를 끄면 트래픽은 그대로 통과하되 <code>endpoints.json</code>에 새 엔드포인트가 기록되지 않고, 다시 켜면 재개됩니다.</p>
+<ul><li><strong>상태 조회</strong> <code>GET /api/proxy</code> — 리슨 주소·캡처 여부·스코프 호스트 수·누적 캡처 수·공격면 규모</li><li><strong>캡처 토글</strong> <code>POST /api/proxy/capture</code> <code>{on}</code> — 리더(<code>proxy:control</code>), 감사 기록</li><li><strong>MCP</strong> <code>proxy_status</code>(조회) · <code>set_capture</code>(토글, 리더) — 외부 에이전트용</li><li>테넌트 전용 프록시(<a href="#sec-02" data-go="02">02-프로젝트</a>)는 이 토글의 영향을 받지 않습니다(격리 유지)</li></ul>
+<div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p>GUI 연동(정찰 페이지의 상태·토글 UI)은 후속 프론트 작업에서 붙습니다. 현재는 <strong>API·MCP로 제공</strong>됩니다.</p></div>
 <h3>관련 문서</h3>
 <ul><li>크롤러 방식(정적/SPA/헤드리스) → <a href="#sec-00" data-go="00">00-아키텍처 §6, §11</a></li><li>인증정보 암호화 저장 → <a href="#sec-02" data-go="02">02-프로젝트</a></li><li>여기서 채운 공격면으로 스캔 → <a href="#sec-04" data-go="04">04-스캔</a></li></ul>
   </section>

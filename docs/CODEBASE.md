@@ -51,6 +51,17 @@
 > "UI 부재" 관련 서술은 더 이상 유효하지 않다 — `api.ts`는 12개 파일이 import하는
 > 실사용 코드가 되었고(`usePoll` 51회, `apiPost` 22회), 화면 11개가 모두 존재한다.
 > 그 외 백엔드 분석(§1~§3.3, §3.5~§3.8, §4.2~§4.4, §5.2~§5.6, §6, §7)은 그대로 유효하다.
+>
+> **갱신 2 (이슈 #5 · 저장소 정비 — 이 문서 작성 이후):**
+>
+> - **`.gitignore` 추가됨**(레포 루트 — `ca.key`·`secret.key`·`users.json`·`projects.json`·빌드 산출물 차단)
+>   → §1의 "`.gitignore`가 레포 전체에 없다"와 §7 이슈 표의 관련 항목은 **무효**.
+> - **`.github/` 이슈·PR 템플릿 추가**(이슈 폼 3종 + PR 템플릿 + config). CI 워크플로는 아직 없음.
+> - **이슈 #5 (공용 프록시 캡처 제어):** 공용 :8080 프록시의 엔드포인트 캡처를 런타임에 on/off·상태 조회.
+>   - `webui` 라우트 **58 → 60** (`GET /api/proxy`, `POST /api/proxy/capture`), LOC 1,017 → 1,057
+>   - `mcpserver` 툴 **54 → 56** (`proxy_status`, `set_capture` — `proxy:control` 리더·감사), LOC 797 → 831
+>   - `proxyengine` +`control.go`(캡처 on/off·상태), LOC 153 → 196
+>   - 이 삽입으로 §4.2·§4.3의 **개별 라인 참조가 소폭 밀렸다**(`webui.go` +약 41줄, `mcpserver.go` +약 34줄). 개수·설명은 패키지 표·§4.2·§4.3에 반영함.
 
 ---
 
@@ -68,7 +79,7 @@ AVA/
 └── docs/                     한글 설계 문서 + 문서 사이트 생성기 + 고아 YAML
 ```
 
-`.gitignore`가 **레포 전체에 없다.** `README.md:94`가 커밋 금지로 지정한 `ca.key`·`secret.key`·`users.json`·`projects.json`에 대한 기술적 방어가 없다는 뜻이다. (현재 해당 파일들이 커밋되어 있지는 않음을 `git ls-files`로 확인.)
+~~`.gitignore`가 **레포 전체에 없다.**~~ **(해소 — 갱신 2 참조)** 레포 루트에 `.gitignore`가 추가되어 `README.md`가 커밋 금지로 지정한 `ca.key`·`secret.key`·`users.json`·`projects.json` 및 빌드 산출물이 차단된다. (해당 파일들이 커밋되어 있지 않음은 `git ls-files`로 확인.)
 
 ### 1.1 `backend/cmd/` — 실행 바이너리 4개
 
@@ -86,10 +97,10 @@ LOC는 테스트 포함 기준. **test 0**은 `_test.go`가 없는 패키지.
 | 패키지 | 역할 | LOC | test |
 |---|---|---|---|
 | `detector` | **엔진 핵심.** 26종 취약점 탐지기 (XSS/SQLi/traversal 등) | 2,972 | 1,172 |
-| `webui` | HTTP JSON API 58개 라우트 + SPA 임베드 서빙 | 1,017 | **0** |
+| `webui` | HTTP JSON API 60개 라우트 + SPA 임베드 서빙 | 1,057 | **0** |
 | `endpoints` | 공격면 트리 (host → 정규화 경로 → 파라미터) + JSON 영속 | 870 | 230 |
 | `crawler` | 정적 + 헤드리스(chromedp) 크롤러 | 860 | 171 |
-| `mcpserver` | MCP 툴 56종 (StreamableHTTP) | 797 | **0** |
+| `mcpserver` | MCP 툴 56종 (StreamableHTTP) | 831 | **0** |
 | `checklist` | 규제 점검항목표 3계층, YAML 로드 | 765 | 219 |
 | `llm` | 프로바이더 추상화 (mock/ollama/anthropic/openai) | 661 | 123 |
 | `scanengine` | 스캔 실행 오케스트레이션, 일시정지/재개/취소, safe-mode | 601 | 251 |
@@ -106,7 +117,7 @@ LOC는 테스트 포함 기준. **test 0**은 `_test.go`가 없는 패키지.
 | `advisor` | 반복 LLM 판정 → 룰 초안 승격 (HITL) | 193 | 57 |
 | `bundle` | 네이티브 프로젝트 내보내기/가져오기 (`.cgpkg`) | 169 | 77 |
 | `tenant` | 프로젝트별 격리 프록시 인스턴스 (멀티테넌시) | 163 | **0** |
-| `proxyengine` | goproxy 조립: scope → rule → LLM → 캡처 훅 | 153 | **0** |
+| `proxyengine` | goproxy 조립: scope → rule → LLM → 캡처 훅 + 캡처 on/off·상태 제어(control.go) | 196 | 83 |
 | `secret` | AES-256-GCM 마스터 키 + 암복호 | 152 | 55 |
 | `vulnlab` | detector 테스트 전용 인프로세스 취약 핸들러 | 145 | **0** |
 | `config` | YAML 로컬/프로젝트 설정 load-or-create | 116 | **0** |
@@ -357,12 +368,15 @@ webui.SetAuthDisabled         :166
 
 > **추정**: 26개 인터페이스가 백엔드 응답 모델을 충실히 반영하고 있는 점으로 보아, `api.ts`는 삭제되었거나 애초에 커밋되지 않은 UI의 잔존물로 보인다.
 
-### 4.2 백엔드 라우트 — **58개 등록, 전부 실제 로직**
+### 4.2 백엔드 라우트 — **60개 등록, 전부 실제 로직**
 
-`internal/webui/webui.go:90-207`의 `Serve()`에 등록. 정확히 **57개 `mux.HandleFunc` + 1개 `mux.Handle("/")` = 58개**.
+> 이슈 #5로 `GET /api/proxy`·`POST /api/proxy/capture` 2개가 추가됐다(58→60). 아래 표의
+> 등록 줄·`@줄` 참조는 스냅샷 값이라 이 삽입(webui.go +약 41줄)만큼 소폭 밀려 있다 — §0 갱신 2 참조.
+
+`internal/webui/webui.go`의 `Serve()`에 등록. 정확히 **59개 `mux.HandleFunc` + 1개 `mux.Handle("/")` = 60개**.
 스텁·TODO·플레이스홀더 핸들러는 **이 파일에 하나도 없다.**
 
-등록 형식은 두 갈래다: **39개는 경로만**(메서드는 핸들러 내부 검사 또는 미검사), **19개는 `METHOD /path/{id}` 패턴**.
+등록 형식은 두 갈래다: **39개는 경로만**(메서드는 핸들러 내부 검사 또는 미검사), **21개는 `METHOD /path/{id}` 패턴**.
 
 | 경로 | 줄 | 종단 |
 |---|---|---|
@@ -371,6 +385,8 @@ webui.SetAuthDisabled         :166
 | `/api/scanruns` | 94 | `scanengine.RunsByProject` |
 | `/api/coverage` | 95 | `coverage.Report` |
 | `/api/endpoints` | 96 | `endpoints.Targets` |
+| `GET /api/proxy` | 98 | `proxyStatus` (이슈 #5) |
+| `POST /api/proxy/capture` | 99 | `proxyCaptureHandler` — `proxy:control` 리더·감사 (이슈 #5) |
 | `/api/crawl` | 97 | `crawlHandler` @555 |
 | `/api/crawl-modes` | 98 | `crawler.HeadlessAvailable` |
 | `/api/scan` | 101 | `scanHandler` @308 |
@@ -419,7 +435,7 @@ webui.SetAuthDisabled         :166
 
 ### 4.3 MCP 서버 — 툴 56개
 
-HTTP 라우트가 아니라 단일 엔드포인트다: `mcp.NewStreamableHTTPHandler`를 `local.MCPAddr`(기본 `127.0.0.1:8765`)에 바인딩 (`mcpserver.go:717-719`). 툴 56개 전부 실제 본체를 갖는다 — `run_scan`(508), `set_project_credentials`(341), `export_project`(296), `create_project`(255), `add_project_member`(396), `kill_switch`(572) 등.
+HTTP 라우트가 아니라 단일 엔드포인트다: `mcp.NewStreamableHTTPHandler`를 `local.MCPAddr`(기본 `127.0.0.1:8765`)에 바인딩. 툴 56개 전부 실제 본체를 갖는다 — `run_scan`, `set_project_credentials`, `export_project`, `create_project`, `add_project_member`, `kill_switch`, 그리고 이슈 #5로 추가된 `proxy_status`·`set_capture`(공용 프록시 캡처 상태·토글) 등. (개수는 이슈 #5의 2개 추가로 54→56이 됐고, `@줄` 참조는 §0 갱신 2의 밀림을 감안할 것.)
 
 **보안상 중대한 비대칭:** MCP 표면에는 **인증이 전혀 없다.** `webui`는 `withAuth` 미들웨어(`webui.go:214`)로 세션을 강제하지만, MCP는 `http.ListenAndServe(addr, handler)`에 핸들러를 그대로 물린다. 게다가 `authz()`(`mcpserver.go:758-759`)는 **프로세스 전역** `user.Current()`로 신원을 해석하는데, `user.Seed()`(`user/user.go:122`)가 이를 `leader`로 초기화한다. → **`:8765`에 도달할 수 있는 클라이언트는 누구나 리더 권한으로 행동한다.** 기본 바인딩이 `127.0.0.1`인 것만이 유일한 방어다. 추가로 `export_project`/`import_project`는 툴 인자로 받은 **임의 파일시스템 경로를 검증 없이** 사용한다(`mcpserver.go:307` `os.WriteFile(path, ...)`, `:321` `os.ReadFile(args.Path)`).
 
