@@ -58,10 +58,14 @@ Go(goproxy) **MITM 프록시 엔진**을 코어로, 그 위에 **MCP 오케스�
 프론트를 먼저 빌드해야 합니다(출력이 Go 바이너리에 embed됨):
 
 ```bash
-cd proxy-poc/frontend
+cd frontend
 npm install            # 최초 1회
 npm run build          # → backend/internal/webui/dist (embed)
 ```
+
+> `backend/internal/webui/dist`는 빌드 산출물이라 커밋되지 않습니다.
+> `go build` 전에 반드시 위 프론트 빌드를 먼저 수행하세요. 건너뛰면
+> `pattern all:dist: no matching files found` 로 컴파일이 실패합니다.
 
 백엔드 빌드 & 실행:
 

@@ -1,0 +1,404 @@
+# HANDOFF — 인수인계
+
+> 대상 브랜치: `claude/repo-codebase-audit-qy91vo` · PR [#2](https://github.com/Vornsk/AVA/pull/2) · 기준 시점 2026-08-10
+>
+> **이 문서는 프로젝트 맥락을 전혀 모르는 사람을 전제로 쓰였다.**
+> 모든 수치에 재현 명령이나 `파일:줄` 근거를 붙였다. 실행으로 확인하지 않은 판단은 **추정**으로 표시했다.
+
+---
+
+## 0. 이 프로젝트가 무엇인가 (3문단 요약)
+
+**AVA**(Go 모듈명은 `proxypoc`, `backend/go.mod:1`)는 LLM을 판단 엔진으로 쓰는 **반자동 웹 취약점 진단 도구**다.
+국내 규제 대응이 핵심 가치로, 「주요정보통신기반시설 기술적 취약점 분석·평가 상세가이드」와
+「전자금융기반시설 보안 취약점 평가기준 안내서」의 점검항목표에 진단 결과를 자동 매핑한다.
+자세한 제품 명세는 `docs/spec.md`(394줄), 설계 배경은 `docs/00-아키텍처.md`(282줄)에 있다.
+
+구조는 **Go 단일 정적 바이너리 + React SPA**다. 프론트 빌드 산출물을 `//go:embed`로 바이너리에 넣어
+폐쇄망에 단일 실행파일로 배포하는 것을 노린다. 한 프로세스가 리스너 3개를 띄운다 —
+MITM 프록시 `:8080`, MCP 서버 `:8765`, 웹 GUI `:8090` (`backend/cmd/proxy/main.go:159,163,172`).
+
+코드는 백엔드가 압도적으로 크다. 비테스트 Go 11,256줄 + 테스트 3,280줄, 프론트 `src/` 3,054줄.
+
+```bash
+find backend -name '*.go' ! -name '*_test.go' | xargs wc -l | tail -1   # 11256
+find backend -name '*_test.go'                | xargs wc -l | tail -1   # 3280
+git ls-files frontend/src                     | xargs wc -l | tail -1   # 3054
+```
+
+---
+
+## 1. 이 브랜치가 한 것 / 하지 않은 것
+
+### 1.1 배경 — 인수 시점의 레포는 빌드가 불가능했다
+
+서로 맞물린 두 단절이 있었다.
+
+**단절 1 — 백엔드 컴파일 실패.** `backend/internal/webui/webui.go:46`의 `//go:embed all:dist`가
+가리키는 `backend/internal/webui/dist/`가 존재하지 않았다.
+
+```
+internal/webui/webui.go:46:12: pattern all:dist: no matching files found
+```
+
+이 에러 하나가 `internal/webui`와, 이를 import하는 제품 본체 `cmd/proxy`
+(`backend/cmd/proxy/main.go:35`)를 함께 무너뜨렸다.
+
+**단절 2 — 프론트엔드 소스 부재.** `frontend/index.html:10`이 로드하는 `/src/main.tsx`가 없었고,
+레포 전체에 `.tsx`/`.jsx`/`vite.config.*`/`tsconfig.json`이 0개였다.
+`dist/`는 프론트 빌드 산출물인데 그 프론트를 빌드할 소스가 없어, 어느 쪽부터도 풀리지 않았다.
+
+### 1.2 한 것
+
+| 카테고리 | 내용 | 규모 |
+|---|---|---|
+| 프론트엔드 소스 | `frontend/src/` 19개 신규 — 화면 11개 + `Login`·`App`·`main.tsx`·공용 컴포넌트 3개 + `theme.ts`·`index.css` | +2,755 |
+| 빌드 설정 | `frontend/vite.config.ts`, `frontend/tsconfig.json` | +37 |
+| 문서 | `docs/CODEBASE.md` 신규(코드베이스 감사), `README.md` 빌드 순서 명시 | +711 / −1 |
+| `.gitignore` | 신규 — 시크릿·상태 JSON·빌드 산출물 차단 | +105 |
+
+`vite.config.ts`의 `build.outDir`이 `../backend/internal/webui/dist`를 가리키면서 두 단절이 함께 해소됐다.
+빌드를 임시로 통과시키려 넣었던 플레이스홀더(`dist/index.html`)는 이 브랜치 안에서
+추가(`549af8f`)됐다가 제거(`6f84178`)되어, 누적 diff에는 남지 않는다.
+
+부수 효과로 `frontend/src/api.ts`가 데드코드에서 실사용 코드가 됐다 —
+12개 파일이 import하며 `usePoll` 51회, `apiPost` 22회, `apiGet` 2회 호출한다.
+
+```bash
+grep -rl "from '\.\./api'\|from '\./api'" frontend/src/ | wc -l   # 12
+```
+
+### 1.3 하지 않은 것 — **백엔드 `.go` 파일을 한 번도 건드리지 않았다**
+
+```bash
+git diff --name-status c3ea722..HEAD -- backend/   # 출력 없음 = 순변경 0건
+```
+
+`backend/` 경로가 등장하는 유일한 파일은 위의 플레이스홀더뿐이고, 추가·삭제가 상쇄된다.
+따라서 **백엔드 동작은 인수 시점과 완전히 동일하다.** §4의 미해결 항목은 전부 그대로 살아 있다.
+
+---
+
+## 2. 빌드 / 실행 — 순서 의존이 있다
+
+### 2.1 핵심 제약
+
+`backend/internal/webui/dist/`는 **`npm run build` 산출물이며 git에 커밋되지 않는다**
+(`.gitignore`에서 무시). 반면 `//go:embed all:dist`는 그 디렉터리가
+**컴파일 시점에 비어 있지 않을 것**을 요구한다.
+
+> **clone 직후 `go build`부터 실행하면 반드시 실패한다.** 이것이 이 프로젝트에서
+> 가장 자주 밟게 될 함정이다. 에러 메시지가 embed를 가리키므로 원인은 명확하지만,
+> "왜 소스만 받았는데 컴파일이 안 되지" 하고 헤매기 쉽다.
+
+참고로 `go list ./...`, `go vet`, `gopls` 등 **패키지 로딩을 하는 모든 도구가 같은 이유로 실패한다.**
+IDE가 프로젝트를 못 읽는다면 십중팔구 프론트를 아직 빌드하지 않은 것이다.
+
+### 2.2 재현 명령 (전문)
+
+```bash
+git clone --branch claude/repo-codebase-audit-qy91vo https://github.com/Vornsk/AVA.git /tmp/verify
+cd /tmp/verify
+
+# ── [순서 검증] 프론트 빌드 없이 go build → 실패하는 것이 정상 ──
+cd backend && go build ./...
+#   internal/webui/webui.go:46:12: pattern all:dist: no matching files found
+#   [종료코드 1]
+
+# ── 1) 프론트 의존성 ──
+cd ../frontend && npm ci
+
+# ── 2) 프론트 빌드 (→ ../backend/internal/webui/dist) ──
+npm run build
+
+# ── 3) 타입체크 — "build" 스크립트가 tsc 를 호출하지 않으므로 별도 실행 ──
+npx tsc --noEmit
+
+# ── 4~6) 백엔드 ──
+cd ../backend
+go build ./...
+go vet ./...
+go test ./...
+
+# ── 7) 빌드 산출물이 git status 를 오염시키지 않는지 ──
+cd .. && git status --short --untracked-files=all
+```
+
+### 2.3 실측 결과 (fresh clone 기준)
+
+| # | 단계 | 결과 |
+|---|---|---|
+| 0 | 순서 검증 (`npm run build` 생략) | 예상대로 embed 에러, 종료코드 1 |
+| 1 | `npm ci` | ✅ 0 — 85 패키지, 취약점 0건 |
+| 2 | `npm run build` | ✅ 0 — 1,811 모듈 → `index.html` 0.43 kB / CSS 20.67 kB / JS 270.28 kB (gzip 75.49 kB) |
+| 3 | `npx tsc --noEmit` | ✅ 0 — **에러 0건** (`strict`, `noUnusedLocals`, `noUnusedParameters` 활성) |
+| 4 | `go build ./...` | ✅ 0 — 출력 없음 |
+| 5 | `go vet ./...` | ✅ 0 — 출력 없음 |
+| 6 | `go test ./...` | ✅ 0 — **ok 21 / FAIL 0** (총 35 패키지, 14개는 `_test.go` 없음) |
+| 7 | 빌드 후 `git status` | ✅ 비어 있음 |
+
+### 2.4 실행
+
+```bash
+cd backend
+go build -o proxy ./cmd/proxy
+./proxy                      # 최초 실행 시 ca.crt / ca.key 생성
+```
+
+웹 GUI `http://127.0.0.1:8090` — 데모 계정 `leader / leader123`, `analyst / analyst123`
+(`README.md:74`, 시드는 `backend/internal/user/user.go:125`).
+
+개발 중에는 `cd frontend && npm run dev`(Vite `:5173`)를 쓸 수 있다.
+`vite.config.ts`의 `server.proxy`가 `/api`를 `http://127.0.0.1:8090`으로 넘긴다.
+
+---
+
+## 3. 다음 작업 순서
+
+**이 순서에는 이유가 있다. ④를 먼저 하면 고친 것을 증명할 수 없다.**
+
+### ① `docs/CODEBASE.md`·`README.md` 사실 오류 6건 정리 → PR #2 머지
+
+`docs/CODEBASE.md`는 **UI 도입 이전 시점의 스냅샷 감사**다. §0에 갱신 블록으로 면책해 두었으나
+범위를 §3.4·§4.1·§5로만 적어 아래가 빠졌고, 일부 제목은 본문과 정면으로 모순된다.
+
+| # | 위치 | 문제 |
+|---|---|---|
+| 1 | `README.md:61` vs `:73` | `cd frontend`와 `cd proxy-poc/backend`의 경로 표기가 같은 절에서 어긋남. 앞쪽만 고치고 뒤를 놔둔 결과 |
+| 2 | `docs/CODEBASE.md:10` | §0 제목이 "이 레포는 현재 빌드되지 않는다" — 바로 아래 갱신 블록과 모순 |
+| 3 | `docs/CODEBASE.md:135` | §1.4 제목 "`frontend/` — 파일 4개가 전부" (현재 25개) |
+| 4 | `docs/CODEBASE.md:335` | §4.1 제목 "도달 가능한 화면 0개" (현재 11개) |
+| 5 | `docs/CODEBASE.md:178` | §2.2 "실제 소스 import는 단 한 줄이다" (현재 lucide 15 + react 14 + react-dom 1 = 30줄) |
+| 6 | `docs/CODEBASE.md:590,591,599` | §7 이슈 표의 1·2·10번(빌드 불가 / 프론트 부재 / `.gitignore` 부재)이 이미 해결됐는데 미해결로 등재 |
+| 7 | `docs/CODEBASE.md:92,420,422,466` | **MCP 툴 개수가 "56"으로 적혀 있으나 실측 54.** 서브에이전트 보고를 검증 없이 옮긴 값이다 (§6.1의 세 번째 사례). `grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go` → 54 |
+
+**왜 먼저인가.** 이 문서가 후속 작업의 유일한 지도다. 지도에 사실과 반대인 문장이 있으면
+뒤따르는 모든 판단이 오염된다. 수정량이 작고(제목 문구 수준) 위험이 0이라 머지를 막을 이유가 없다.
+
+`README.md:4`의 "**React 웹 GUI**를 얹은"은 이제 사실이므로 **수정 대상이 아니다.**
+
+### ② CI 배선
+
+**현재 `.github/` 디렉터리 자체가 없다.**
+
+```bash
+ls -la .github 2>/dev/null || echo "없음"
+```
+
+즉 §2의 `npm run build` → `go build` 순서가 **README 산문으로만 보장된다.**
+사람이 문서를 읽지 않으면 그대로 깨지고, 기계는 아무도 막아주지 않는다.
+
+최소 워크플로는 §2.2의 1→6단계를 그대로 옮기면 된다. `npm ci`가 `package-lock.json`을 요구하는데
+이미 커밋되어 있다(`frontend/package-lock.json`, lockfileVersion 3).
+
+**왜 ②인가.** ③의 베이스라인 재측정과 ④의 보안 수정 모두 "고치기 전/후"를 기계적으로 비교해야 한다.
+CI가 없으면 그 비교가 사람의 로컬 실행에 의존하고, 이 프로젝트는 이미 그 방식으로
+수치가 갈린 전례가 있다(§6.1).
+
+### ③ 베이스라인 재측정
+
+**"26개 패키지" vs "ok 21" 불일치 — 규명 완료. 새로 조사할 것은 없다.**
+
+결론부터: **26은 처음부터 틀린 수치였다.** 실제로 테스트를 가진 패키지는 감사 시점에도 지금도 21개다.
+
+```bash
+# 감사 시점 커밋 기준
+git ls-tree -r --name-only c3ea722 | grep '_test\.go$' | xargs -n1 dirname | sort -u | wc -l   # 21
+# 현재 HEAD 기준
+git ls-files | grep '_test\.go$' | xargs -n1 dirname | sort -u | wc -l                          # 21
+```
+
+경위는 이렇다. 코드베이스 감사에 투입한 서브에이전트가 "26/26 test packages green"으로 보고했고,
+그것이 검증 없이 `docs/CODEBASE.md`에 실렸다. 정작 같은 문서 §1.2의 패키지별 테스트 LOC 표에는
+21개만 올라 있어 **문서가 자기 자신과 모순된 상태**였다. 이후 실측으로 정정했다(커밋 `5c1d95d`).
+
+따라서 ③의 실제 과제는 "불일치 규명"이 아니라 **믿을 수 있는 베이스라인을 CI에 고정하는 것**이다.
+고정할 수치:
+
+| 항목 | 값 | 재현 명령 |
+|---|---|---|
+| 전체 Go 패키지 | 35 | `go list ./... \| wc -l` (프론트 빌드 후) |
+| 테스트 보유 패키지 | 21 | `git ls-files \| grep '_test\.go$' \| xargs -n1 dirname \| sort -u \| wc -l` |
+| 테스트 없는 패키지 | 14 | 위 둘의 차 |
+| `go test` 통과 | ok 21 / FAIL 0 | `go test ./...` |
+| 웹 라우트 등록 | **58** (57 `HandleFunc` + 1 `Handle`) | `grep -c 'mux.HandleFunc' backend/internal/webui/webui.go` 와 `grep -c 'mux.Handle(' ...` |
+| MCP 툴 | **54** | `grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go` |
+| 프론트 타입 에러 | 0 | `cd frontend && npx tsc --noEmit` |
+
+**왜 ③인가.** ④의 보안 수정은 "고쳐도 다른 게 안 깨졌다"를 보여야 하는데,
+그 기준선 자체가 한 번 틀렸던 전적이 있다. 먼저 기준선을 못 박아야 한다.
+
+### ④ 보안 3건 수정 — **③ 이후에**
+
+대상은 §4 표의 1·2·3번이다.
+
+**왜 지금 하면 안 되는가.** 세 건이 모두 `internal/webui`와 `internal/mcpserver`,
+`internal/audit`에 있는데 **이 패키지들에 테스트가 0개다.**
+
+```bash
+ls backend/internal/webui/*_test.go backend/internal/mcpserver/*_test.go \
+   backend/internal/audit/*_test.go 2>/dev/null || echo "테스트 파일 없음"
+wc -l backend/internal/webui/webui.go backend/internal/mcpserver/mcpserver.go   # 1017 + 797 = 1814
+```
+
+`webui`(1,017줄)와 `mcpserver`(797줄)는 합계 1,814줄로 **코드의 약 12.5%이자 외부 공격면의 100%**다.
+여기에 인증·인가를 손대면서 회귀 테스트가 없으면, 고쳤다는 주장도 안 깨졌다는 주장도 증명할 수 없다.
+
+**권장 순서:** 각 건마다 (a) 현재의 잘못된 동작을 고정하는 실패 테스트를 먼저 쓰고 →
+(b) 수정하고 → (c) 테스트가 통과하는지 본다. 특히 2번(bundle ACL)은
+형제 라우트(`webui.go:121-145`의 `requireAccess` 패턴)가 이미 올바른 형태를 보여주므로 참고하기 쉽다.
+
+---
+
+## 4. 미해결 항목
+
+전부 **백엔드 로직 변경이 필요해 이 브랜치에서 손대지 않았다.** 인수 시점 그대로다.
+
+| # | 항목 | 위치 | 내용과 영향 |
+|---|---|---|---|
+| 1 | **MCP 표면 무인증 + 전역 리더 권한** | `backend/internal/mcpserver/mcpserver.go:717-719`, `:758-759` | `:717-719`가 `withAuth` 같은 미들웨어 없이 `mcp.NewStreamableHTTPHandler`를 그대로 `http.ListenAndServe`에 바인딩한다. `authz()`(`:758-759`)는 프로세스 전역 `user.Current()`로 신원을 해석하는데 `user.Seed()`(`backend/internal/user/user.go:125`)가 이를 `leader`로 초기화한다. → **`:8765`에 도달 가능한 클라이언트는 누구나 리더 권한**으로 `run_scan`·`set_project_credentials`·`export_project`·`create_project`를 호출한다. 기본 바인딩 `127.0.0.1`만이 방어다. 추가로 `export_project`/`import_project`가 툴 인자의 파일시스템 경로를 검증 없이 사용한다(`:307` `os.WriteFile`, `:321` `os.ReadFile`). |
+| 2 | **`GET /api/projects/{id}/bundle` ACL 누락** | `backend/internal/webui/webui.go:598-607` (등록은 `:176`) | `bundleDownload`가 형제 `/api/projects/{id}/*` 라우트와 달리 `authorize`도 `requireAccess`도 호출하지 않고 곧바로 `bundle.Export(r.PathValue("id"))`를 부른다. `withAuth`의 세션 검사만 걸리므로 **인증된 아무 분석가나 임의 프로젝트를 통째로 내보낼 수 있다.** |
+| 3 | **`audit.json` 쓰기 전용 — 재시작마다 감사 추적 파괴** | `backend/internal/audit/audit.go` | `Record()`가 `audit.json`을 쓰지만(`:44`) **패키지에 `Load()`가 없다.** 노출 함수는 `Record`(`:31`)·`List`(`:48`)·`Reset`(`:55`) 셋뿐. 인메모리 슬라이스가 nil로 시작하므로 **재시작 후 첫 `Record()`가 파일을 1건짜리 배열로 덮어쓴다.** `webui.go:921`이 이 파일을 "규제 제출용 증적"으로 문서화하고 있어 실질적 결함이다. `internal/profile`도 동일 형태(`profile.go:32`에 `Save()`만 있고 `Load()` 없음). |
+| 4 | **영속화 경로가 전부 상대경로** | `backend/internal/finding/finding.go:16`, `backend/internal/scanengine/scanengine.go:285`, `backend/internal/profile/profile.go:32` 외 | `const file = "findings.json"` 식의 맨 상대 경로라 **상태가 프로세스를 시작한 디렉터리에 종속된다.** 다른 디렉터리에서 실행하면 조용히 빈 상태로 시작하고, 경고도 없다. `go test`가 각 패키지 디렉터리에 `findings.json`·`endpoints.json`·`scanruns.json`·`profiles.json`을 흩뿌리는 것도 같은 원인이다(`.gitignore`의 `backend/internal/**/*.json` 규칙이 이를 막는다). |
+
+검증:
+
+```bash
+grep -n '^func' backend/internal/audit/audit.go          # Record / List / Reset — Load 없음
+grep -c 'func Load' backend/internal/audit/audit.go      # 0
+sed -n '598,607p' backend/internal/webui/webui.go        # authorize / requireAccess 호출 없음
+sed -n '755,760p' backend/internal/mcpserver/mcpserver.go
+```
+
+그 밖에 `docs/CODEBASE.md` §7에 정리된 항목 — HTTP 에러 응답 형식 불일치(평문 `http.Error` vs
+유일한 JSON 바디 `webui.go:653-655`), `docs/*.yaml` 4개의 스키마 비호환 고아화 — 도 그대로다.
+
+---
+
+## 5. 환경 제약
+
+### 5.1 `gh` CLI가 없다 → GitHub API를 쓴다
+
+```bash
+which gh || echo "gh 없음"
+```
+
+이 실행 환경에는 `gh`도 `hub`도 설치돼 있지 않다. PR 생성·이슈 조작·리뷰 코멘트는
+**GitHub API(또는 이를 감싼 MCP 도구)로 처리해야 한다.**
+실제로 PR #2와 이슈 #1도 API로 생성했다. `gh pr create`를 그대로 실행하면 실패한다.
+
+### 5.2 그 외
+
+- **Go 1.26.5** — `go.mod:3`이 패치 버전까지 고정한다(`go 1.26.5`). 흔치 않은 형태이므로
+  툴체인 버전이 다르면 먼저 이것을 확인할 것.
+- **Node 22 / npm 10** 로 검증했다. `package.json`에 `engines` 필드는 없다.
+- `frontend/node_modules`는 커밋되지 않는다. `npm ci`로 설치한다.
+
+---
+
+## 6. 이 프로젝트에서 관찰된 실패 모드
+
+**실제로 겪은 것만 적는다.** 같은 함정을 다시 밟지 않도록.
+
+### 6.1 서브에이전트 보고 수치가 서로 갈렸다
+
+코드베이스 감사에 서브에이전트 3개를 병렬로 투입했는데, **같은 파일의 라우트 수를 각각 51 / 57 / 59로 보고했다.**
+직접 세어 보니 **58**이었다(57 `mux.HandleFunc` + 1 `mux.Handle("/")`).
+
+```bash
+grep -c 'mux.HandleFunc' backend/internal/webui/webui.go   # 57
+grep -c 'mux.Handle('    backend/internal/webui/webui.go   # 1
+```
+
+같은 사건의 다른 사례가 §3③의 "26개 패키지"다. 서브에이전트가 "26/26 green"으로 보고했고
+검증 없이 문서에 실렸으나, 실제 값은 21이었다.
+
+**세 번째 사례는 이 문서를 쓰는 도중에 나왔다.** MCP 툴 개수를 서브에이전트 보고대로 "56"이라
+적었다가, 근거 검증 단계에서 실측하니 **54**였다. `docs/CODEBASE.md`에도 같은 값이 4곳
+(`:92`, `:420`, `:422`, `:466`) 퍼져 있다 — §3①의 7번 항목.
+
+```bash
+grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go   # 54
+```
+
+즉 이 실패 모드는 한 번 발생하고 끝난 것이 아니라 **세 번 반복됐고, 세 번 모두 서브에이전트의
+개수 보고였다.** 같은 작업에서 인용한 `파일:줄` 근거 중 3건(`user.go:122` → 실제 `:125`,
+`checklist.go:45` → 실제 `:46`, MCP 툴 56 → 54)이 검증 단계에서 걸러졌다.
+
+또 한 건: 한 에이전트가 "파괴적 라우트가 GET으로 도달 가능"하다고 보고했으나 사실이 아니었다.
+`POST /api/findings/clear`(`webui.go:174`)는 mux 패턴에 메서드 접두사가 있어
+Go 1.22+ `ServeMux`가 메서드를 강제한다. 핸들러 본문만 보고 등록부를 확인하지 않은 오판이었다.
+
+> **교훈:** 서브에이전트 보고의 **핵심 수치는 반드시 직접 재확인한다.**
+> 특히 개수·통과/실패·보안 판정은 그대로 옮기지 말 것.
+> 여러 에이전트의 답이 갈리면 그 자체가 신호이니, 다수결이 아니라 실측으로 결정한다.
+
+### 6.2 VulnDef 33과 CheckItem 88을 혼동했다
+
+`backend/internal/checklist/seed.go`에는 `ID:` 필드가 **121개** 있는데, 이는 두 종류가 섞인 수다.
+한 서브에이전트가 이를 "점검항목 121개 중 19개만 자동화"로 보고했으나 틀렸다.
+
+```bash
+grep -c 'ID:' backend/internal/checklist/seed.go                      # 121  ← 섞인 합계
+sed -n '15,87p'  backend/internal/checklist/seed.go | grep -c 'ID:'   # 33   ← VulnDef (2층)
+sed -n '88,$p'   backend/internal/checklist/seed.go | grep -c 'ID:'   # 88   ← CheckItem (3층)
+grep -c 'Detectors:' backend/internal/checklist/seed.go               # 19   ← VulnDef 에만 달림
+```
+
+정확한 그림은 이렇다. **VulnDef 33개 중 19개가 detector 매핑을 가지므로 14개는 수동 점검**이고,
+**CheckItem은 88개**(전자금융 66 / 주요정보통신기반시설 21 / 모바일 1)다.
+`Detectors` 필드는 `CheckItem`이 아니라 `VulnDef`에 달린다(`checklist.go:36`).
+
+```bash
+sed -n '88,$p' backend/internal/checklist/seed.go | grep -o 'Scheme: *[A-Za-z]*' | sort | uniq -c
+```
+
+> **교훈:** 이 코드베이스의 점검항목은 **3계층**이다 —
+> Detector(1층, 코드) → VulnDef(2층, 취약점 정의) → CheckItem(3층, 스킴별 규제항목).
+> 층을 섞어 세면 규제 커버리지 수치가 통째로 틀어진다. 자세한 구조는 `docs/spec.md` §6.
+
+### 6.3 `git -C`가 엉뚱한 경로에 worktree를 만들었다
+
+`git -C /home/user/AVA worktree add uicheck <ref>`를 임시 디렉터리에서 실행했는데,
+**worktree가 `-C` 기준 경로인 `/home/user/AVA/uicheck`에 생성됐다.**
+의도는 임시 디렉터리 안에 만드는 것이었다. 결과적으로 레포 워킹트리가 오염됐고
+`git status`에 `?? uicheck/`가 떴다. `git worktree remove --force uicheck`로 정리했다.
+
+```bash
+git worktree list   # 예상 밖의 worktree 가 있는지 확인
+```
+
+> **교훈:** `git -C`는 **모든 상대 경로 인자의 기준까지 바꾼다.** 편의를 위해 쓰다가
+> 산출물 위치를 놓치기 쉽다. **작업 디렉터리를 실제로 이동한 뒤 실행하는 편이 안전하다.**
+> 임시 검증은 레포 밖(예: `/tmp`)에 `git clone`하는 쪽이 부작용이 없다.
+
+### 6.4 (부수) `git check-ignore`의 종료 코드와 출력을 혼동했다
+
+`.gitignore` 검증 중 `git check-ignore -v <path>`가 출력을 내길래 "무시됨"으로 판정했으나 오판이었다.
+출력된 것은 **부정 규칙**(`!`로 시작)이었고, `-v`는 매치된 패턴을 종류와 무관하게 보여준다.
+
+```bash
+git check-ignore -q <path>; echo $?     # 0 = 무시됨, 1 = 무시 안 됨  ← 이쪽이 판정 기준
+git add --dry-run <path>                # 가장 확실한 검증
+```
+
+> **교훈:** 무시 여부는 **출력 유무가 아니라 종료 코드**로 판정한다.
+
+---
+
+## 7. 빠른 참조
+
+| 알고 싶은 것 | 문서 |
+|---|---|
+| 제품 요구사항·FR 번호 체계 | `docs/spec.md` (394줄) |
+| 설계 배경·goproxy 선택 이유·겪은 함정 | `docs/00-아키텍처.md` (282줄) |
+| 화면별 명세 11개 | `docs/01-개요.md` ~ `docs/11-사용자.md` |
+| **코드베이스 구조·패턴·데이터 흐름 감사** | `docs/CODEBASE.md` — **§0 갱신 블록의 면책 범위를 먼저 읽을 것** |
+| 문서 사이트 재생성 | `node docs/build.mjs` → `docs/index.html` (직접 편집 금지) |
+
+**주의:** `docs/*.yaml` 4개(`vulndefs.yaml`, `checkitems.{kii,fin,mobile}.yaml`)는
+**런타임이 소비하지 않는 고아 산출물이다.** 백엔드는 CWD의 `checklist.config.yaml`을 읽고
+(`backend/cmd/proxy/main.go:75`), 없으면 `backend/internal/checklist/seed.go`의 하드코딩 데이터로 생성한다.
+게다가 스키마가 비호환이라 경로를 맞춰줘도 파싱에 실패한다 —
+Go의 `CheckItem.Vuln`은 스칼라 `string`인데(`checklist.go:46`) YAML은 리스트다(`checkitems.kii.yaml:6-12`).
+점검항목을 바꾸려면 `seed.go`를 고쳐야 한다. 자세한 근거는 `docs/CODEBASE.md` §5.4.
