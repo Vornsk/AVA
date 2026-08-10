@@ -30,6 +30,7 @@ import (
 	"proxypoc/internal/payload"
 	"proxypoc/internal/profile"
 	"proxypoc/internal/project"
+	"proxypoc/internal/proxyengine"
 	"proxypoc/internal/report"
 	"proxypoc/internal/reverify"
 	"proxypoc/internal/rules"
@@ -70,6 +71,10 @@ type scanIDArgs struct {
 }
 
 type safeModeArgs struct {
+	On bool `json:"on"`
+}
+
+type captureArgs struct {
 	On bool `json:"on"`
 }
 
@@ -712,6 +717,35 @@ func Start(addr string) {
 		}
 		log.Printf("[MCP ] remove_scope_host(%q) removed=%v", args.Host, removed)
 		return textResult(fmt.Sprintf("%s: %q; scope=%v", verb, args.Host, scope.HostsSnapshot())), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "proxy_status",
+		Description: "Status of the shared :8080 proxy (issue #5): listen address, whether endpoint capture is on, scope host count, captured-request count since boot, and the captured attack-surface size (endpoints/hosts).",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
+		sm := endpoints.Summary()
+		return jsonResult(map[string]any{
+			"listen":            proxyengine.ListenAddr(),
+			"capturing":         proxyengine.CaptureEnabled(),
+			"scope_hosts":       len(scope.HostsSnapshot()),
+			"captured_requests": proxyengine.CapturedCount(),
+			"endpoints":         sm.Endpoints,
+			"hosts":             sm.Hosts,
+		}), nil, nil
+	})
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "set_capture",
+		Description: "Turn the shared :8080 proxy's endpoint capture on/off (leader-only, audited). The proxy process, scope enforcement, auth injection and judgment pipeline are unaffected — only attack-surface recording pauses/resumes. Tenant proxies are not affected.",
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args captureArgs) (*mcp.CallToolResult, any, error) {
+		u, ok := authz("proxy:control", "capture")
+		if !ok {
+			return textResult("권한 없음: proxy:control (" + string(u.Role) + ")"), nil, nil
+		}
+		proxyengine.SetCapture(args.On)
+		audit.Record(u.Name, string(u.Role), "proxy:control", "capture", "ok", fmt.Sprintf("capture=%v", args.On))
+		log.Printf("[MCP ] %s(%s) set_capture(on=%v)", u.Name, u.Role, args.On)
+		return textResult(fmt.Sprintf("capturing=%v", proxyengine.CaptureEnabled())), nil, nil
 	})
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
