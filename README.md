@@ -70,7 +70,7 @@ npm run build          # → backend/internal/webui/dist (embed)
 백엔드 빌드 & 실행:
 
 ```bash
-cd proxy-poc/backend
+cd backend
 go build -o proxy-poc.exe ./cmd/proxy    # 프록시(:8080) + MCP(:8765) + 웹(:8090)
 ./proxy-poc.exe                          # 최초 실행 시 ca.crt/ca.key 생성
 ```

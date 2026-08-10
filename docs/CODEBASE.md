@@ -7,7 +7,7 @@
 
 ---
 
-## 0. 한 줄 요약 — 이 레포는 현재 빌드되지 않는다
+## 0. 한 줄 요약 — 빌드 불가였던 두 단절 (현재 해소됨 — 아래 갱신 블록 참조)
 
 두 개의 독립적인 단절이 있다.
 
@@ -47,10 +47,14 @@
 > 빌드 순서 의존이 생겼다: **`npm run build`를 `go build`보다 먼저** 수행해야 한다
 > (`dist/`는 빌드 산출물이라 커밋하지 않는다). README "빠른 실행" 절 참조.
 >
-> **이 문서의 나머지 부분은 UI 도입 이전 상태를 기술한다.** 특히 §3.4·§4.1·§5의
-> "UI 부재" 관련 서술은 더 이상 유효하지 않다 — `api.ts`는 12개 파일이 import하는
-> 실사용 코드가 되었고(`usePoll` 51회, `apiPost` 22회), 화면 11개가 모두 존재한다.
-> 그 외 백엔드 분석(§1~§3.3, §3.5~§3.8, §4.2~§4.4, §5.2~§5.6, §6, §7)은 그대로 유효하다.
+> **이 문서의 나머지 부분은 UI 도입 이전 상태를 기술한다.** UI 부재를 전제한 서술은
+> 더 이상 유효하지 않다 — `api.ts`는 12개 파일이 import하는 실사용 코드가 되었고
+> (`usePoll` 51회, `apiPost` 22회), 화면 11개(+로그인)가 모두 존재한다. 구체적으로
+> **§0 요약·§1.4·§2.2·§3.4·§4.1·§5**의 "UI/빌드 부재" 서술과 **§7 이슈 표의 1·2·10번**
+> (빌드 불가·프론트 부재·`.gitignore` 부재)은 모두 해소됐으며, 각 위치에 인라인으로 정정 표시했다.
+> 그 외 백엔드 분석(§1.1~§1.3, §2.1, §3.1~§3.3, §3.5~§3.8, §4.2~§4.4, §5.2~§5.6, §6, §8)은
+> 그대로 유효하다. **또한 §1.2·§4.3·§5.2의 "MCP 툴 56"은 실측 54의 오기다**
+> (`grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go` → 54) — 본문에서 정정했다.
 
 ---
 
@@ -89,7 +93,7 @@ LOC는 테스트 포함 기준. **test 0**은 `_test.go`가 없는 패키지.
 | `webui` | HTTP JSON API 58개 라우트 + SPA 임베드 서빙 | 1,017 | **0** |
 | `endpoints` | 공격면 트리 (host → 정규화 경로 → 파라미터) + JSON 영속 | 870 | 230 |
 | `crawler` | 정적 + 헤드리스(chromedp) 크롤러 | 860 | 171 |
-| `mcpserver` | MCP 툴 56종 (StreamableHTTP) | 797 | **0** |
+| `mcpserver` | MCP 툴 54종 (StreamableHTTP) | 797 | **0** |
 | `checklist` | 규제 점검항목표 3계층, YAML 로드 | 765 | 219 |
 | `llm` | 프로바이더 추상화 (mock/ollama/anthropic/openai) | 661 | 123 |
 | `scanengine` | 스캔 실행 오케스트레이션, 일시정지/재개/취소, safe-mode | 601 | 251 |
@@ -132,7 +136,9 @@ LOC는 테스트 포함 기준. **test 0**은 `_test.go`가 없는 패키지.
 
 > 아이러니: 이 레포에서 실제로 동작하는 유일한 프론트엔드 산출물은 `docs/index.html`(문서 사이트)이고, 제품 UI인 `frontend/index.html`은 빈 껍데기다.
 
-### 1.4 `frontend/` — 파일 4개가 전부
+### 1.4 `frontend/` — 파일 4개가 전부 (스냅샷; 현재 25개)
+
+> **현재:** UI 도입 후 `git ls-files frontend`는 **25개**를 반환한다(`git ls-files frontend | wc -l` → 25). 아래 4개 목록은 UI 도입 이전 스냅샷이다.
 
 ```
 frontend/index.html          12줄
@@ -187,6 +193,8 @@ import { useEffect, useRef, useState } from 'react'
 | 사용되나 미선언 | 없음 |
 
 `tsconfig.json`이 없으므로 **TypeScript는 현재 설정상 타입체크되지 않는다.** 또한 `package.json:7-9`의 어떤 스크립트도 `tsc`를 호출하지 않는다(`"build": "vite build"`만 존재) — 표준 Vite+React 템플릿의 `"build": "tsc -b && vite build"`와 대비된다. 즉 타입 오류가 빌드를 막지 못하는 구조다.
+
+> **현재 (UI 도입 후):** 위 §2.2 전체는 UI 도입 이전 스냅샷이다. 실제 소스 import는 `react` 14줄 + `lucide-react` 15줄 + `react-dom` 1줄 = **30줄**이며(`grep -rh "from 'react'" frontend/src | wc -l` 등으로 재현), `tsconfig.json`이 존재해 `npx tsc --noEmit`가 에러 0으로 통과한다.
 
 ---
 
@@ -332,7 +340,9 @@ webui.SetAuthDisabled         :166
 
 ## 4. 라우팅 / 화면 목록 — 동작 vs 껍데기
 
-### 4.1 프론트 화면 — **도달 가능한 화면 0개**
+### 4.1 프론트 화면 — **도달 가능한 화면 0개** (스냅샷; 현재 11개 + 로그인)
+
+> **현재:** UI 도입 후 아래 11개 화면 파일이 모두 존재한다(`ls frontend/src/pages/*.tsx` → 12개 = 화면 11 + `Login`). `frontend/src/api.ts`도 12개 파일이 import하는 실사용 코드다. 아래 표·서술은 UI 도입 이전 스냅샷이다.
 
 라우터가 없다. `react-router` 계열이 `package.json`에 선언되지 않았고 라우팅 코드도 없다.
 문서는 11개 화면을 소스 경로까지 지정해 상세히 기술하지만, **해당 파일이 하나도 존재하지 않는다.**
@@ -417,9 +427,9 @@ webui.SetAuthDisabled         :166
 - **`GET /api/projects/{id}/bundle`(:176)은 형제 라우트들과 달리 `requireAccess`도 `authorize`도 호출하지 않는다.** `bundleDownload`(`webui.go:598-607`)는 곧바로 `bundle.Export(r.PathValue("id"))`를 부른다. `withAuth`의 세션 검사만 걸리므로 **인증된 아무 분석가나 임의 프로젝트를 통째로 내보낼 수 있다.**
   (참고: `POST /api/findings/clear`(:174)와 `POST /api/users/{id}/delete`(:185)는 mux 패턴에 메서드 접두사가 있어 Go 1.22+ ServeMux가 메서드를 강제하며, 핸들러도 `authorize`로 권한을 검사한다. 이쪽은 문제없다.)
 
-### 4.3 MCP 서버 — 툴 56개
+### 4.3 MCP 서버 — 툴 54개
 
-HTTP 라우트가 아니라 단일 엔드포인트다: `mcp.NewStreamableHTTPHandler`를 `local.MCPAddr`(기본 `127.0.0.1:8765`)에 바인딩 (`mcpserver.go:717-719`). 툴 56개 전부 실제 본체를 갖는다 — `run_scan`(508), `set_project_credentials`(341), `export_project`(296), `create_project`(255), `add_project_member`(396), `kill_switch`(572) 등.
+HTTP 라우트가 아니라 단일 엔드포인트다: `mcp.NewStreamableHTTPHandler`를 `local.MCPAddr`(기본 `127.0.0.1:8765`)에 바인딩 (`mcpserver.go:717-719`). 툴 **54개**(`grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go` → 54) 전부 실제 본체를 갖는다 — `run_scan`(508), `set_project_credentials`(341), `export_project`(296), `create_project`(255), `add_project_member`(396), `kill_switch`(572) 등.
 
 **보안상 중대한 비대칭:** MCP 표면에는 **인증이 전혀 없다.** `webui`는 `withAuth` 미들웨어(`webui.go:214`)로 세션을 강제하지만, MCP는 `http.ListenAndServe(addr, handler)`에 핸들러를 그대로 물린다. 게다가 `authz()`(`mcpserver.go:758-759`)는 **프로세스 전역** `user.Current()`로 신원을 해석하는데, `user.Seed()`(`user/user.go:122`)가 이를 `leader`로 초기화한다. → **`:8765`에 도달할 수 있는 클라이언트는 누구나 리더 권한으로 행동한다.** 기본 바인딩이 `127.0.0.1`인 것만이 유일한 방어다. 추가로 `export_project`/`import_project`는 툴 인자로 받은 **임의 파일시스템 경로를 검증 없이** 사용한다(`mcpserver.go:307` `os.WriteFile(path, ...)`, `:321` `os.ReadFile(args.Path)`).
 
@@ -463,7 +473,7 @@ HTTP 라우트가 아니라 단일 엔드포인트다: `mcp.NewStreamableHTTPHan
 | **리포트** (`report`/`bundle`) | ✗ 다운로드 UI 없음 | ✓ `webui.go:176,177,193,196,199,200` | ✓ excelize 11컬럼 + 증적 시트 (`report.go:154-211`) | ✓ 온디맨드 생성 |
 | **점검항목/커버리지** (`checklist`/`coverage`) | ✗ 타입만 (`api.ts:59-90`) | ✓ `webui.go:95,112,203` | ✓ 3계층 매핑 + 시드 | ◐ 항목표 ✓ `checklist.config.yaml` / **선택 스킴 RAM only** (`checklist.go:61`) |
 | **LLM 어드바이저** (`llm`/`advisor`/`rules`) | ✗ 타입만 (`api.ts:122,149`) | ✓ `webui.go:109-111` | ✓ 4개 프로바이더 + 시그니처 클러스터링 | ◐ **판단 로그·후보 RAM only** (`llm.go:79`) / 채택 룰 ✓ `rules.adopted.json` |
-| **MCP** (`mcpserver`) | — | ✓ 자체 서버 (webui mux와 별개) | ✓ 툴 56종 | 위 저장소들을 그대로 사용 |
+| **MCP** (`mcpserver`) | — | ✓ 자체 서버 (webui mux와 별개) | ✓ 툴 54종 | 위 저장소들을 그대로 사용 |
 | **인증/사용자/테넌트** (`auth`/`user`/`tenant`/`session`) | ✗ **로그인 폼조차 없음** | ✓ `webui.go:155-157,180-190` | ✓ bcrypt + RBAC + 요청별 신원 | ◐ 사용자 ✓ `users.json` / **세션·테넌트 RAM only** → 재시작 시 전원 로그아웃, 테넌트 프록시 소멸 |
 
 ### 5.3 영속화 실태 — DB 없음, JSON 파일
@@ -587,8 +597,8 @@ Go가 단일 바이너리로 서빙하도록 **의도**되어 있다:
 
 | # | 이슈 | 근거 | 영향 |
 |---|---|---|---|
-| 1 | **빌드 불가** — `//go:embed all:dist` 대상 부재 | `webui.go:46` | 제품 본체 `cmd/proxy`를 만들 수 없음 |
-| 2 | **프론트엔드 전체 부재** — 엔트리 `main.tsx` 없음, 화면 0개 | `frontend/index.html:10` | 58개 라우트에 소비자가 없음. HITL 원칙(`spec.md:215,322`)을 UI 없이 강제할 수 없음 |
+| ~~1~~ **[해소됨]** | ~~**빌드 불가** — `//go:embed all:dist` 대상 부재~~ | `webui.go:46` | ~~제품 본체 `cmd/proxy`를 만들 수 없음~~ → 프론트 빌드 연결로 컴파일 성공 |
+| ~~2~~ **[해소됨]** | ~~**프론트엔드 전체 부재** — 엔트리 `main.tsx` 없음, 화면 0개~~ | `frontend/index.html:10` | ~~58개 라우트에 소비자가 없음~~ → 화면 11개(+로그인) 도입, `api.ts` 실사용화. HITL UI 강제는 별도 검증 필요 |
 | 3 | **감사 로그가 재시작마다 파괴** — `audit.json`을 쓰지만 읽지 않음 | `audit/audit.go:25-44` (`Load()` 부재) | 규제 제출용 증적 소실. `profile`도 동일 형태 |
 | 4 | **MCP 표면 무인증 + 전역 리더 권한** | `mcpserver.go:717-719`, `:758-759` | `:8765` 도달자는 누구나 리더. `export_project`/`import_project`는 임의 경로 R/W (`:307`, `:321`) |
 | 5 | **`GET /api/projects/{id}/bundle` ACL 누락** | `webui.go:176`, `:598-607` | 인증된 아무 분석가나 임의 프로젝트 전체 내보내기 가능 |
@@ -596,7 +606,7 @@ Go가 단일 바이너리로 서빙하도록 **의도**되어 있다:
 | 7 | **외부 공격면 두 패키지에 테스트 0** | `webui`(1,017줄), `mcpserver`(797줄) | 코드의 12.5%이자 공격면 100% |
 | 8 | **HTTP 에러 응답 형식 불일치** | 평문 `http.Error` vs 유일한 JSON 바디 `webui.go:653-655` | 프론트가 에러를 일관되게 파싱 불가 |
 | 9 | **`docs/*.yaml` 4개가 고아 + 스키마 비호환** | `checklist.go:45` vs `checkitems.kii.yaml:6-12` | 설계 산출물과 런타임 데이터가 분기됨 |
-| 10 | **`.gitignore` 부재** | 레포 전체 | `ca.key`·`secret.key`·`users.json` 실수 커밋에 대한 방어 없음 |
+| ~~10~~ **[해소됨]** | ~~**`.gitignore` 부재**~~ | 레포 전체 | ~~`ca.key`·`secret.key`·`users.json` 실수 커밋에 대한 방어 없음~~ → `.gitignore` 추가로 방어됨 |
 
 **문서 자체의 부정확성:**
 - `docs/00-아키텍처.md:10-16`이 상위 폴더 `../`에 있다고 기술한 한글 설계 문서 3개가 레포에 없다(부모 디렉터리에 `AVA`만 존재함을 확인). **추정**: 첫 번째는 `docs/spec.md`와 동일 내용으로 보인다.
