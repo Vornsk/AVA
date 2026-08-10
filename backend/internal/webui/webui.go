@@ -15,6 +15,7 @@ import (
 	"io/fs"
 	"log"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -94,7 +95,9 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/findings", jsonHandler(func() any { return finding.ByProject(activePID()) }))
 	mux.HandleFunc("/api/scanruns", jsonHandler(func() any { return scanengine.RunsByProject(activePID()) }))
 	mux.HandleFunc("/api/coverage", jsonHandler(func() any { return coverage.Report() }))
-	mux.HandleFunc("/api/endpoints", jsonHandler(func() any { return endpoints.Targets() }))
+	mux.HandleFunc("/api/endpoints", endpointsListHandler)                                  // 필터·검색·페이징 (이슈 #7, 무필터=하위호환)
+	mux.HandleFunc("GET /api/endpoints/tree", jsonHandler(func() any { return endpoints.Snapshot() })) // 풍부한 트리 (이슈 #7)
+	mux.HandleFunc("GET /api/endpoints/detail", endpointDetailHandler)                      // 단일 엔드포인트 상세 (이슈 #7)
 	mux.HandleFunc("GET /api/proxy", jsonHandler(proxyStatus))       // 공용 프록시 상태 (이슈 #5)
 	mux.HandleFunc("POST /api/proxy/capture", proxyCaptureHandler)   // 캡처 on/off (proxy:control, 리더)
 	mux.HandleFunc("/api/crawl", crawlHandler) // GET: 크롤 실행목록 / POST: 크롤 시작(Explore)
@@ -737,6 +740,94 @@ func tenantStopHandler(w http.ResponseWriter, r *http.Request) {
 	tenant.Stop(pid)
 	audit.Record(u.Name, string(u.Role), "tenant:stop", pid, "ok", "")
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// endpointsListHandler — 캡처된 엔드포인트 목록 (이슈 #7). 쿼리 필터·검색·페이징 지원.
+// 필터: host(부분일치)·method(정확)·verdict(부분일치)·auth(true/false)·q(host+path 검색).
+// 페이징: limit/offset (전체 개수는 X-Total-Count 헤더). 무필터·무페이징이면 기존과 동일한 전체 배열 반환(하위호환).
+func endpointsListHandler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	host := strings.ToLower(q.Get("host"))
+	method := strings.ToUpper(q.Get("method"))
+	verdict := strings.ToLower(q.Get("verdict"))
+	qs := strings.ToLower(q.Get("q"))
+	authFilter := q.Get("auth") // "" | "true" | "false"
+
+	targets := endpoints.Targets()
+	sort.Slice(targets, func(i, j int) bool { // 안정적 순서(페이징·표시)
+		if targets[i].Host != targets[j].Host {
+			return targets[i].Host < targets[j].Host
+		}
+		return targets[i].Path < targets[j].Path
+	})
+
+	out := make([]endpoints.Target, 0, len(targets))
+	for _, t := range targets {
+		if host != "" && !strings.Contains(strings.ToLower(t.Host), host) {
+			continue
+		}
+		if method != "" && !containsFold(t.Methods, method) {
+			continue
+		}
+		if verdict != "" && !strings.Contains(strings.ToLower(t.Verdict), verdict) {
+			continue
+		}
+		if qs != "" && !strings.Contains(strings.ToLower(t.Host+t.Path), qs) {
+			continue
+		}
+		if authFilter == "true" && !t.Auth {
+			continue
+		}
+		if authFilter == "false" && t.Auth {
+			continue
+		}
+		out = append(out, t)
+	}
+
+	total := len(out)
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > total {
+		offset = total
+	}
+	end := total
+	if limit > 0 && offset+limit < end {
+		end = offset + limit
+	}
+	out = out[offset:end]
+
+	w.Header().Set("X-Total-Count", strconv.Itoa(total))
+	writeJSON(w, out)
+}
+
+// endpointDetailHandler — 단일 엔드포인트 상세 (이슈 #7). ?host=&path= (concrete path 도 정규화해서 조회).
+func endpointDetailHandler(w http.ResponseWriter, r *http.Request) {
+	host := r.URL.Query().Get("host")
+	path := r.URL.Query().Get("path")
+	if host == "" || path == "" {
+		http.Error(w, "host·path 쿼리 필요", http.StatusBadRequest)
+		return
+	}
+	n, ok := endpoints.Find(host, endpoints.NormalizePath(path))
+	if !ok {
+		http.Error(w, "해당 엔드포인트를 찾을 수 없습니다", http.StatusNotFound)
+		return
+	}
+	n.Children = nil // 단일 노드 상세 (자식 제외)
+	writeJSON(w, n)
+}
+
+// containsFold — 대소문자 무시 문자열 슬라이스 포함 검사.
+func containsFold(list []string, s string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // proxyStatus — 공용 프록시(:8080) 상태 (이슈 #5). 리슨 주소·캡처 여부·스코프 호스트 수·누적 캡처 수·공격면 규모.
