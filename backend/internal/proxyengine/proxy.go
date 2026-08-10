@@ -28,6 +28,9 @@ func New(stages []string) *goproxy.ProxyHttpServer {
 func NewFor(stages []string, sc *scope.Enforcer, tr *endpoints.Tree, inj *auth.Injector, tl *traffic.Log, tag string) *goproxy.ProxyHttpServer {
 	ruleOn := contains(stages, "rule")
 	llmOn := contains(stages, "llm")
+	// 공용(전역) 트리를 쓰는 프록시만 캡처 on/off 토글의 영향을 받는다(이슈 #5).
+	// 테넌트 전용 트리는 항상 캡처 → 멀티테넌시 격리 유지.
+	shared := tr == endpoints.Default()
 	if tag != "" {
 		tag = "[" + tag + "] "
 	}
@@ -71,8 +74,14 @@ func NewFor(stages []string, sc *scope.Enforcer, tr *endpoints.Tree, inj *auth.I
 
 			log.Printf("%s[REQ ] %-6s %s", tag, req.Method, maskedURL)
 			tl.Record(req.Method, maskedURL)
-			// scheme+authority(host[:port]) 보존 → 스캔 재요청이 원 스킴·포트로 나감.
-			tr.Record(req.URL.Scheme, req.URL.Host, req.Method, req.URL.Path, params, authReq, verdict)
+			// 캡처 off(공용 프록시)면 엔드포인트 기록만 건너뛴다 — 트래픽 로그·통과는 유지(이슈 #5).
+			if !shared || captureOn.Load() {
+				// scheme+authority(host[:port]) 보존 → 스캔 재요청이 원 스킴·포트로 나감.
+				tr.Record(req.URL.Scheme, req.URL.Host, req.Method, req.URL.Path, params, authReq, verdict)
+				if shared {
+					capturedReqs.Add(1)
+				}
+			}
 			return req, nil
 		})
 

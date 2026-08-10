@@ -32,6 +32,7 @@ import (
 	"proxypoc/internal/llm"
 	"proxypoc/internal/payload"
 	"proxypoc/internal/project"
+	"proxypoc/internal/proxyengine"
 	"proxypoc/internal/report"
 	"proxypoc/internal/reverify"
 	"proxypoc/internal/rules"
@@ -94,6 +95,8 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/scanruns", jsonHandler(func() any { return scanengine.RunsByProject(activePID()) }))
 	mux.HandleFunc("/api/coverage", jsonHandler(func() any { return coverage.Report() }))
 	mux.HandleFunc("/api/endpoints", jsonHandler(func() any { return endpoints.Targets() }))
+	mux.HandleFunc("GET /api/proxy", jsonHandler(proxyStatus))       // 공용 프록시 상태 (이슈 #5)
+	mux.HandleFunc("POST /api/proxy/capture", proxyCaptureHandler)   // 캡처 on/off (proxy:control, 리더)
 	mux.HandleFunc("/api/crawl", crawlHandler) // GET: 크롤 실행목록 / POST: 크롤 시작(Explore)
 	mux.HandleFunc("/api/crawl-modes", jsonHandler(func() any {
 		return map[string]any{"headless_available": crawler.HeadlessAvailable()}
@@ -734,6 +737,43 @@ func tenantStopHandler(w http.ResponseWriter, r *http.Request) {
 	tenant.Stop(pid)
 	audit.Record(u.Name, string(u.Role), "tenant:stop", pid, "ok", "")
 	writeJSON(w, map[string]any{"ok": true})
+}
+
+// proxyStatus — 공용 프록시(:8080) 상태 (이슈 #5). 리슨 주소·캡처 여부·스코프 호스트 수·누적 캡처 수·공격면 규모.
+func proxyStatus() any {
+	sm := endpoints.Summary()
+	return map[string]any{
+		"listen":            proxyengine.ListenAddr(),
+		"capturing":         proxyengine.CaptureEnabled(),
+		"scope_hosts":       len(scope.HostsSnapshot()),
+		"captured_requests": proxyengine.CapturedCount(),
+		"endpoints":         sm.Endpoints,
+		"hosts":             sm.Hosts,
+	}
+}
+
+// proxyCaptureHandler — POST {on}: 공용 프록시 엔드포인트 캡처 on/off (proxy:control, 리더 전용, 감사 기록).
+// 프록시 프로세스·스코프·인증·판단 파이프라인은 영향 없이 공격면 기록만 멈추거나 재개한다.
+func proxyCaptureHandler(w http.ResponseWriter, r *http.Request) {
+	u, ok := authorize(w, r, "proxy:control", "proxy")
+	if !ok {
+		return
+	}
+	var in struct {
+		On bool `json:"on"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		http.Error(w, "bad body", http.StatusBadRequest)
+		return
+	}
+	proxyengine.SetCapture(in.On)
+	state := "off"
+	if in.On {
+		state = "on"
+	}
+	audit.Record(u.Name, string(u.Role), "proxy:control", "capture", "ok", "capture="+state)
+	log.Printf("[WEB ] %s(%s) proxy:capture %s", u.Name, u.Role, state)
+	writeJSON(w, proxyStatus())
 }
 
 // memberAddHandler / memberRemoveHandler — 프로젝트 멤버 관리 (FR-1.4 ACL, 리더 전용).
