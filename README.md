@@ -53,14 +53,37 @@ Go(goproxy) **MITM 프록시 엔진**을 코어로, 그 위에 **MCP 오케스�
 
 ---
 
+## 프론트엔드 상태 — 임시 플레이스홀더 적용 중
+
+> **현재 웹 GUI는 구현되어 있지 않습니다.** `frontend/`에는 진입점 `src/main.tsx`가
+> 없어 `npm run build`를 수행할 소스가 존재하지 않습니다.
+>
+> `internal/webui/webui.go:46`의 `//go:embed all:dist`는 빌드 시점에 해당 디렉터리가
+> 비어 있지 않을 것을 요구하고, 비어 있으면 Go 컴파일 자체가 실패합니다
+> (`pattern all:dist: no matching files found`). 이 때문에 `internal/webui`와
+> 제품 본체 `cmd/proxy`가 함께 빌드 불가 상태였습니다.
+>
+> 이를 해소하기 위해 **임시 플레이스홀더** 한 개를 커밋해 두었습니다:
+>
+> - `backend/internal/webui/dist/index.html` — "UI 미구현" 안내를 표시하는 정적 페이지
+>
+> 실제 프론트엔드 빌드 산출물이 아니며, `:8090`에 접속하면 안내 페이지만 나옵니다.
+> **`/api/*` 백엔드 API는 정상 동작합니다.**
+>
+> **제거 조건:** 프론트엔드 소스가 복구되고 CI가 `npm run build`를 수행하게 되면,
+> 위 플레이스홀더 파일과 이 절, 그리고 `.gitignore`의 dist 되살리기 예외 규칙을
+> 함께 되돌립니다. 상세는 이슈 "플레이스홀더 dist 제거 + 실제 프론트 빌드 연결" 참조.
+
 ## 빠른 실행
 
-프론트를 먼저 빌드해야 합니다(출력이 Go 바이너리에 embed됨):
+원래 절차는 프론트를 먼저 빌드하는 것입니다(출력이 Go 바이너리에 embed됨).
+현재는 위 플레이스홀더가 그 자리를 대신하므로 **이 단계를 건너뛰어도 백엔드가 빌드됩니다**:
 
 ```bash
-cd proxy-poc/frontend
+cd frontend
 npm install            # 최초 1회
 npm run build          # → backend/internal/webui/dist (embed)
+                       # ※ 현재는 src/main.tsx 부재로 실패합니다
 ```
 
 백엔드 빌드 & 실행:
