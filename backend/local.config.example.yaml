@@ -1,0 +1,35 @@
+# local.config.example.yaml — 이 PC 전용 설정 템플릿
+#
+# 사용법: 이 파일을 backend/local.config.yaml 로 복사해서 값을 채우세요.
+#   (Windows) copy local.config.example.yaml local.config.yaml
+#   (bash)    cp local.config.example.yaml local.config.yaml
+#
+# local.config.yaml 은 PC 전용(키·경로 보관)이라 .gitignore 로 커밋 제외됩니다.
+# 이 example 파일은 안전한 템플릿이므로 커밋해도 됩니다. 실제 키를 여기 넣지 마세요.
+# 파일이 없으면 앱이 최초 실행 시 기본값으로 자동 생성하기도 합니다.
+
+# ── 서버 주소 ──
+proxy_addr: :8080            # MITM 프록시
+mcp_addr: 127.0.0.1:8765    # MCP (StreamableHTTP)
+web_addr: 127.0.0.1:8090    # 웹 GUI (생략 시 기본 :8090)
+
+# ── LLM 판단 스테이지 / 오탐 검토 ──
+# provider: mock | ollama | anthropic | openai
+#  - mock    : LLM 없이 동작(개발·오프라인). api_key 불필요
+#  - ollama  : 로컬 모델. `ollama pull llama3.2:1b` 후 endpoint 지정. api_key 불필요
+#  - anthropic / openai : 클라우드. api_key 필요(각자 발급해 채울 것)
+llm:
+  provider: mock
+  model: llama3.2:1b
+  endpoint: http://127.0.0.1:11434   # ollama일 때
+  api_key: ""                          # anthropic/openai 사용 시 본인 키 입력. 커밋 금지!
+
+# ── 진단 정책 ──
+safe_mode: false            # true면 rate-limit 강화 등 보수적으로 동작
+auth_disabled: false        # true면 로그인 생략(개발 편의) — 운영 금지
+artifact_ext: .cgpkg        # 산출물 네이티브 확장자(DRM 비간섭). 사이트별로 변경 가능
+
+# ── 외부 도구 경로(설치돼 있으면 지정, 없으면 해당 탐지기 자동 skip) ──
+tools:
+  openssl: ""               # 예: "C:/Program Files/Git/mingw64/bin/openssl.exe"
+  sslscan: ""               # 예: "C:/tools/sslscan.exe"

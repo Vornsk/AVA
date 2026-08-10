@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="ko" class="no-js">
+<head>
+<meta charset="utf-8">
+<title>CyberGuard 문서 — proxy-poc</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg:#f3f6f9; --panel:#fff; --panel-2:#eef2f7; --panel-3:#e6ecf3;
+    --border:#d6dfe9; --border-strong:#c2cedb;
+    --text:#14202c; --muted:#5c6b7a; --faint:#8496a6;
+    --accent:#0b7a8c; --accent-fg:#fff; --accent-soft:#0b7a8c1a;
+    --red:#d1345b; --amber:#c07800; --green:#1f9254; --blue:#2563b8;
+    --shadow:0 1px 2px rgba(20,32,44,.06),0 8px 24px rgba(20,32,44,.06);
+    --mono:"Cascadia Code","JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --sans:system-ui,-apple-system,"Segoe UI","Malgun Gothic","Apple SD Gothic Neo",Roboto,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --bg:#0c1421; --panel:#121c2b; --panel-2:#1a2536; --panel-3:#223047;
+    --border:#253347; --border-strong:#324563;
+    --text:#e6eef7; --muted:#93a4b7; --faint:#6b7d92;
+    --accent:#38cfe0; --accent-fg:#062028; --accent-soft:#38cfe01f;
+    --red:#f4718e; --amber:#f0b429; --green:#4ade80; --blue:#6aa8ff;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.35);
+  }}
+  :root[data-theme="light"]{
+    --bg:#f3f6f9;--panel:#fff;--panel-2:#eef2f7;--panel-3:#e6ecf3;--border:#d6dfe9;--border-strong:#c2cedb;
+    --text:#14202c;--muted:#5c6b7a;--faint:#8496a6;--accent:#0b7a8c;--accent-fg:#fff;--accent-soft:#0b7a8c1a;
+    --red:#d1345b;--amber:#c07800;--green:#1f9254;--blue:#2563b8;--shadow:0 1px 2px rgba(20,32,44,.06),0 8px 24px rgba(20,32,44,.06);
+  }
+  :root[data-theme="dark"]{
+    --bg:#0c1421;--panel:#121c2b;--panel-2:#1a2536;--panel-3:#223047;--border:#253347;--border-strong:#324563;
+    --text:#e6eef7;--muted:#93a4b7;--faint:#6b7d92;--accent:#38cfe0;--accent-fg:#062028;--accent-soft:#38cfe01f;
+    --red:#f4718e;--amber:#f0b429;--green:#4ade80;--blue:#6aa8ff;--shadow:0 1px 2px rgba(0,0,0,.3),0 12px 32px rgba(0,0,0,.35);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6;-webkit-font-smoothing:antialiased;font-size:15px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .layout{display:grid;grid-template-columns:274px minmax(0,1fr);min-height:100vh}
+
+  .sidebar{position:sticky;top:0;height:100vh;overflow-y:auto;background:var(--panel);border-right:1px solid var(--border);padding:0 0 40px}
+  .brand{display:flex;align-items:center;gap:11px;padding:20px 20px 18px;position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--border);z-index:2}
+  .brand .mark{width:34px;height:34px;flex:none;display:grid;place-items:center;border-radius:9px;background:var(--accent);color:var(--accent-fg)}
+  .brand .mark svg{width:19px;height:19px}
+  .brand h1{margin:0;font-size:14.5px;font-weight:700;letter-spacing:-.01em;line-height:1.15}
+  .brand .sub{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);margin-top:2px}
+  nav{padding:14px 12px 0}
+  .nav-group{margin-bottom:16px}
+  .nav-group>.label{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--faint);padding:0 10px 6px;display:block}
+  .nav-link{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:8px;cursor:pointer;color:var(--muted);font-size:13.5px;font-weight:500;border:1px solid transparent;transition:background .12s,color .12s}
+  .nav-link:hover{background:var(--panel-2);color:var(--text);text-decoration:none}
+  .nav-link.active{background:var(--accent-soft);color:var(--text);border-color:color-mix(in srgb,var(--accent) 35%,transparent);font-weight:600}
+  .nav-link .idx{font-family:var(--mono);font-size:10.5px;color:var(--faint);width:18px;text-align:right;flex:none}
+  .nav-link.active .idx{color:var(--accent)}
+  .nav-link .ico{width:16px;height:16px;flex:none;color:inherit;display:inline-flex}
+  .nav-link .ico svg{width:16px;height:16px}
+
+  main{min-width:0}
+  .topbar{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:13px 30px;background:color-mix(in srgb,var(--bg) 86%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  .crumbs{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:8px;min-width:0}
+  .crumbs .sep{color:var(--faint)}
+  .crumbs b{color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .theme-btn{display:inline-flex;align-items:center;gap:7px;cursor:pointer;background:var(--panel);border:1px solid var(--border);color:var(--muted);padding:6px 11px;border-radius:8px;font-size:12px;font-family:var(--sans);font-weight:500}
+  .theme-btn:hover{color:var(--text);border-color:var(--border-strong)}
+  .theme-btn svg{width:15px;height:15px}
+  .menu-btn{display:none}
+
+  .content{max-width:860px;margin:0 auto;padding:40px 30px 100px}
+  .doc{display:none;animation:fade .22s ease}
+  .doc.active{display:block}
+  html.no-js .doc{display:block;padding-bottom:40px;border-bottom:1px solid var(--border);margin-bottom:40px}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.doc{animation:none}}
+
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:12px}
+  h2.title{font-size:30px;line-height:1.15;letter-spacing:-.02em;margin:0 0 10px;text-wrap:balance;font-weight:700}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 30px;padding-bottom:22px;border-bottom:1px solid var(--border)}
+  .meta-chip{font-family:var(--mono);font-size:11.5px;color:var(--muted);background:var(--panel-2);border:1px solid var(--border);padding:4px 9px;border-radius:6px}
+  .meta-chip strong{color:var(--text);font-weight:600}
+  h3{font-size:17px;letter-spacing:-.01em;margin:34px 0 12px;font-weight:700}
+  h4{font-size:13.5px;margin:22px 0 8px;font-weight:700;color:var(--text)}
+  p{margin:0 0 14px}
+  ul,ol{margin:0 0 14px;padding-left:22px}
+  li{margin:5px 0}
+  li::marker{color:var(--faint)}
+  strong{font-weight:650}
+  code{font-family:var(--mono);font-size:.86em;background:var(--panel-2);border:1px solid var(--border);padding:1px 5px;border-radius:5px;color:var(--text)}
+  hr{border:none;border-top:1px solid var(--border);margin:30px 0}
+  pre{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:14px 16px;overflow-x:auto;margin:0 0 16px;font-family:var(--mono);font-size:12.5px;line-height:1.7;color:var(--text)}
+  pre code{background:none;border:none;padding:0;font-size:inherit;color:inherit}
+
+  .table-wrap{overflow-x:auto;margin:0 0 18px;border:1px solid var(--border);border-radius:10px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{text-align:left;font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:600;padding:10px 13px;background:var(--panel-2);border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody td{padding:10px 13px;border-top:1px solid var(--border);vertical-align:top}
+  tbody tr:first-child td{border-top:none}
+
+  .callout{display:flex;gap:12px;padding:14px 16px;border-radius:10px;margin:0 0 16px;border:1px solid;font-size:13.5px}
+  .callout .ico{flex:none;width:18px;height:18px;margin-top:1px}
+  .callout .ico svg{width:18px;height:18px}
+  .callout p{margin:0}
+  .callout.warn{background:color-mix(in srgb,var(--amber) 10%,var(--panel));border-color:color-mix(in srgb,var(--amber) 40%,var(--border))}
+  .callout.warn .ico{color:var(--amber)}
+  .callout.info{background:color-mix(in srgb,var(--blue) 9%,var(--panel));border-color:color-mix(in srgb,var(--blue) 35%,var(--border))}
+  .callout.info .ico{color:var(--blue)}
+
+  @media (max-width:880px){
+    .layout{grid-template-columns:1fr}
+    .sidebar{position:fixed;z-index:50;width:274px;transform:translateX(-100%);transition:transform .2s ease;box-shadow:var(--shadow)}
+    .sidebar.open{transform:none}
+    .menu-btn{display:inline-flex;align-items:center;gap:7px;cursor:pointer;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:6px 10px;border-radius:8px;font-size:12px}
+    .menu-btn svg{width:16px;height:16px}
+    .content{padding:28px 18px 80px}
+    .scrim{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:40;display:none}
+    .scrim.open{display:block}
+  }</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span>
+      <div><h1>CyberGuard</h1><div class="sub">Vulnerability Engine</div></div>
+    </div>
+    <nav>
+    <div class="nav-group">
+      
+      <a class="nav-link active" href="#sec-home" data-go="home">
+          <span class="idx"></span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 19a2 2 0 0 1 2-2h13"/></svg></span>
+          <span>개요 (홈)</span>
+        </a>
+    </div>
+    <div class="nav-group">
+      <span class="label">설계 · 운영</span>
+      <a class="nav-link" href="#sec-00" data-go="00">
+          <span class="idx">00</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12 2 9 5-9 5-9-5 9-5z"/><path d="m3 12 9 5 9-5"/><path d="m3 17 9 5 9-5"/></svg></span>
+          <span>아키텍처 · 빌드 · 운영</span>
+        </a>
+    </div>
+    <div class="nav-group">
+      <span class="label">작업공간</span>
+      <a class="nav-link" href="#sec-01" data-go="01">
+          <span class="idx">01</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 3l9 6.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg></span>
+          <span>개요</span>
+        </a><a class="nav-link" href="#sec-02" data-go="02">
+          <span class="idx">02</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-8l-2-3H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1z"/></svg></span>
+          <span>프로젝트</span>
+        </a>
+    </div>
+    <div class="nav-group">
+      <span class="label">진단</span>
+      <a class="nav-link" href="#sec-03" data-go="03">
+          <span class="idx">03</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 12 4 6"/><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/></svg></span>
+          <span>정찰</span>
+        </a><a class="nav-link" href="#sec-04" data-go="04">
+          <span class="idx">04</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/></svg></span>
+          <span>스캔</span>
+        </a>
+    </div>
+    <div class="nav-group">
+      <span class="label">결과</span>
+      <a class="nav-link" href="#sec-05" data-go="05">
+          <span class="idx">05</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 20h20L12 2z"/><path d="M12 9v5M12 17h.01"/></svg></span>
+          <span>취약점</span>
+        </a><a class="nav-link" href="#sec-06" data-go="06">
+          <span class="idx">06</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 3 3 5-5"/><path d="m3 17 3 3 5-5"/><path d="M13 6h8M13 18h8"/></svg></span>
+          <span>커버리지</span>
+        </a><a class="nav-link" href="#sec-07" data-go="07">
+          <span class="idx">07</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></svg></span>
+          <span>리포트</span>
+        </a><a class="nav-link" href="#sec-08" data-go="08">
+          <span class="idx">08</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg></span>
+          <span>이행점검</span>
+        </a>
+    </div>
+    <div class="nav-group">
+      <span class="label">인텔리전스</span>
+      <a class="nav-link" href="#sec-09" data-go="09">
+          <span class="idx">09</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.3 1 2.5h6c0-1.2.3-1.8 1-2.5A6 6 0 0 0 12 3z"/></svg></span>
+          <span>룰 제안</span>
+        </a><a class="nav-link" href="#sec-10" data-go="10">
+          <span class="idx">10</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3h9a2 2 0 0 1 2 2v13a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V6"/><path d="M4 6a2 2 0 0 1 4 0v3H4z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+          <span>감사</span>
+        </a>
+    </div>
+    <div class="nav-group">
+      <span class="label">관리</span>
+      <a class="nav-link" href="#sec-11" data-go="11">
+          <span class="idx">11</span>
+          <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 5a3 3 0 0 1 0 6M21 20c0-2.5-1.3-4.6-3.3-5.6"/></svg></span>
+          <span>사용자</span>
+        </a>
+    </div></nav>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <main>
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:12px;min-width:0">
+        <button class="menu-btn" id="menuBtn" aria-label="메뉴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
+        <div class="crumbs"><span class="sep">proxy-poc</span><span class="sep">/</span><b id="crumb">개요</b></div>
+      </div>
+      <button class="theme-btn" id="themeBtn" aria-label="테마 전환">
+        <svg id="themeIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
+        <span id="themeLbl">테마</span>
+      </button>
+    </div>
+    <div class="content">
+      <section class="doc active" id="sec-home">
+    <div class="eyebrow">proxy-poc · 문서</div>
+    <h2 class="title">proxy-poc — LLM 기반 웹 취약점 진단 도구 (CyberGuard Vulnerability Engine)</h2>
+    
+    <p>Go(goproxy) <strong>MITM 프록시 엔진</strong>을 코어로, 그 위에 <strong>MCP 오케스트레이션 계층</strong>과 <strong>React 웹 GUI</strong>를 얹은 LLM 기반 웹 취약점 진단 도구입니다. 프론트를 <code>go:embed</code>로 넣어 <strong>단일 실행 바이너리</strong>로 배포됩니다. 주요정보통신기반시설·전자금융 규제 점검항목표에 맞춘 자동 진단 → 도출리스트/점검결과표(xlsx) → 이행점검까지 전 워크플로우를 커버합니다.</p>
+<div class="table-wrap"><table><thead><tr><th>구성</th><th>포트</th><th>역할</th></tr></thead><tbody><tr><td><strong>프록시</strong></td><td><code>:8080</code></td><td>HTTPS 가로채기(MITM) + 스코프 강제 + 인증 주입 + 판단 파이프라인 + 마스킹 + 공격면 캡처</td></tr><tr><td><strong>MCP</strong></td><td><code>:8765</code></td><td>외부 LLM 에이전트/번들 클라이언트가 라이브 프록시를 조회·제어 (StreamableHTTP)</td></tr><tr><td><strong>웹 GUI</strong></td><td><code>:8090</code></td><td>진단 현황·취약점·증적·커버리지·리포트 (다크 기본, 테마 토글)</td></tr></tbody></table></div>
+<hr>
+<h3>한눈에</h3>
+<ul><li><strong>탐지기 25종</strong>(내장 23 + 외부도구 2) — XSS 3형태·SQLi 3종·인젝션 계열(cmd/SSRF/XXE/SSTI/LDAP/SSI)·접근통제·설정 점검. 규제 점검항목에 매핑돼 <strong>수동 항목 최소화</strong></li><li><strong>판단 파이프라인</strong> — 스코프(hard) → Rule(결정론) → LLM(애매한 요청만) → 전송+캡처. 스코프 밖으로 아무것도 내보내지 않음</li><li><strong>자동 공격면 탐색</strong> — 링크·폼·JS 번들을 따라가는 크롤러(정적/헤드리스 옵트인) + 프록시 수동 캡처</li><li><strong>증적 기반</strong> — 각 finding에 재현 요청·증명 응답(민감값 마스킹)·상태코드</li><li><strong>규제 산출물</strong> — 도출리스트 11컬럼 xlsx(+증적 시트) · 점검결과표(양호/취약/미점검) · 감사 CSV</li><li><strong>멀티테넌시·RBAC·영속화</strong> — 프로젝트별 격리 프록시, 리더/수행원 권한, bcrypt 로그인, 인증정보 AES-256-GCM 암호화, 재시작 넘어 데이터 유지</li></ul>
+<hr>
+<h3>문서 안내</h3>
+<p>이 README는 <strong>표지·요약</strong>입니다. 각 기능의 상세는 웹 GUI 좌측 내비게이션과 1:1로 대응하는 <code>docs/</code> 문서를 참고하세요.</p>
+<div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p><strong>브라우저로 한 번에 보기:</strong> <a href="docs/index.html"><code>docs/index.html</code></a>을 더블클릭하면 아래 문서 전체를 사이드바 탐색·다크모드가 있는 단일 페이지로 볼 수 있습니다(서버·인터넷 불필요, 오프라인 열람 가능). 이 파일은 <strong><code>.md</code>에서 자동 생성</strong>됩니다 — 직접 편집하지 말고 <code>.md</code>를 고친 뒤 <code>node docs/build.mjs</code>로 재생성하세요.</p></div>
+<h4>설계·운영</h4>
+<ul><li><a href="#sec-00" data-go="00">docs/00-아키텍처.md</a> — 설계 배경, goproxy 선택, 2계층 구조, 판단 파이프라인, 프로젝트 구조, 빌드·실행, 알려진 한계, 함정, 성숙도</li></ul>
+<h4>화면별 기능 (사이드바 순서)</h4>
+<div class="table-wrap"><table><thead><tr><th>그룹</th><th>페이지</th><th>문서</th></tr></thead><tbody><tr><td>작업공간</td><td>개요</td><td><a href="#sec-01" data-go="01">docs/01-개요.md</a></td></tr><tr><td>작업공간</td><td>프로젝트</td><td><a href="#sec-02" data-go="02">docs/02-프로젝트.md</a></td></tr><tr><td>진단</td><td>정찰(대상 파악)</td><td><a href="#sec-03" data-go="03">docs/03-정찰.md</a></td></tr><tr><td>진단</td><td>스캔(자동화 진단)</td><td><a href="#sec-04" data-go="04">docs/04-스캔.md</a></td></tr><tr><td>결과</td><td>취약점</td><td><a href="#sec-05" data-go="05">docs/05-취약점.md</a></td></tr><tr><td>결과</td><td>커버리지</td><td><a href="#sec-06" data-go="06">docs/06-커버리지.md</a></td></tr><tr><td>결과</td><td>리포트</td><td><a href="#sec-07" data-go="07">docs/07-리포트.md</a></td></tr><tr><td>결과</td><td>이행점검</td><td><a href="#sec-08" data-go="08">docs/08-이행점검.md</a></td></tr><tr><td>인텔리전스</td><td>룰 제안</td><td><a href="#sec-09" data-go="09">docs/09-룰제안.md</a></td></tr><tr><td>인텔리전스</td><td>감사</td><td><a href="#sec-10" data-go="10">docs/10-감사.md</a></td></tr><tr><td>관리</td><td>사용자</td><td><a href="#sec-11" data-go="11">docs/11-사용자.md</a></td></tr></tbody></table></div>
+<hr>
+<h3>빠른 실행</h3>
+<p>프론트를 먼저 빌드해야 합니다(출력이 Go 바이너리에 embed됨):</p>
+<pre><code>cd proxy-poc/frontend
+npm install            # 최초 1회
+npm run build          # → backend/internal/webui/dist (embed)</code></pre>
+<p>백엔드 빌드 &amp; 실행:</p>
+<pre><code>cd proxy-poc/backend
+go build -o proxy-poc.exe ./cmd/proxy    # 프록시(:8080) + MCP(:8765) + 웹(:8090)
+./proxy-poc.exe                          # 최초 실행 시 ca.crt/ca.key 생성</code></pre>
+<p>웹 GUI: <strong>http://127.0.0.1:8090</strong> — 데모 계정 <code>leader / leader123</code>, <code>analyst / analyst123</code>. 프록시로 트래픽을 흘려 공격면을 채운 뒤 스캔합니다(상세는 <a href="#sec-00" data-go="00">docs/00-아키텍처.md</a> 참고):</p>
+<pre><code>curl.exe -sk -x http://127.0.0.1:8080 "https://httpbin.org/get?user=admin&amp;password=secret" -o NUL</code></pre>
+<p>빌드·CA 신뢰·브라우저 프록시 경유·설정(YAML)·테스트 등 전체 절차는 <a href="#sec-00" data-go="00">docs/00-아키텍처.md</a>에 정리돼 있습니다.</p>
+<hr>
+<h3>현황 (요약)</h3>
+<p>전 워크플로우가 end-to-end로 도는 <strong>잘 설계된 PoC</strong>입니다. 아키텍처(멀티테넌시·영속화·RBAC· 암호화·증적·커버리지)는 견고하며, 인젝션 계열 자동화(SQLi·XSS·cmd·SSRF·XXE·SSTI·LDAP·SSI)는 실앱(DVWA + 자체 vulnlab)으로 정탐 검증했습니다. 정밀도·커버리지·LLM 엔진(대형 모델 연동)·실운영 하드닝은 계속 고도화 중입니다. 자세한 성숙도·로드맵은 <a href="#sec-00" data-go="00">docs/00-아키텍처.md</a>의 "성숙도 &amp; 다음 단계"를 참고하세요.</p>
+<div class="callout warn"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 20h20L12 2z"/><path d="M12 9v5M12 17h.01"/></svg></span><p><strong>민감 파일(공유/커밋 금지):</strong> <code>ca.key</code>, <code>secret.key</code>, <code>users.json</code>, <code>projects.json</code>. <code>local.config.yaml</code>은 PC 전용(키 보관), <code>project.config.yaml</code>은 공유 가능(스코프·룰).</p></div>
+  </section>
+<section class="doc" id="sec-00">
+    <div class="eyebrow">00 · 설계 · 운영</div>
+    <h2 class="title">아키텍처 · 빌드 · 운영</h2>
+    
+    <p>제품 전반의 설계 배경, 구조, 빌드·실행, 한계, 함정을 모은 문서입니다. 화면별 기능은 <a href="#sec-home" data-go="home">01~11 문서</a>를 참고하세요.</p>
+<hr>
+<h3>1. 설계 배경 &amp; goproxy 선택</h3>
+<p>상위 폴더(<code>../</code>)에 세 개의 한글 설계 문서가 있습니다:</p>
+<div class="table-wrap"><table><thead><tr><th>문서</th><th>목적</th></tr></thead><tbody><tr><td><code>취약점진단도구_요구사항_아키텍처_정의서.md</code></td><td>전체 요구사항 &amp; 아키텍처</td></tr><tr><td><code>프록시_엔진_전략_비교분석.md</code></td><td>프록시 엔진 전략 비교(풀커스텀/세미커스텀/기성)</td></tr><tr><td><code>취약점진단도구_프록시 전략 및 추진 계획.md</code></td><td>프록시 결정 + 추진 계획</td></tr></tbody></table></div>
+<p><strong>문서 권고:</strong> *세미커스텀* 프록시 — 검증된 TLS 엔진을 재사용하고 판단 로직만 직접 구현. 1순위는 mitmproxy, goproxy는 단일 바이너리 배포가 꼭 필요해질 때 대비.</p>
+<p><strong>실제 선택(의도적 편차):</strong> 배포가 <strong>단일 Go 바이너리</strong>로 기우는 만큼 <strong>goproxy</strong>를 코어로 직접 검증. mitmproxy 폴백은 열어둠.</p>
+<h4>두 계층 (경쟁 아님)</h4>
+<pre><code>┌─────────────────────────────────────────────┐
+│  오케스트레이션 계층 (LLM 주도) = MCP        │  ← 공격면 조회 / 스코프·스캔 제어
+├─────────────────────────────────────────────┤
+│  코어 엔진 (goproxy)                          │  ← 가로채기 + 스코프 + 마스킹 + 공격면
+└─────────────────────────────────────────────┘</code></pre>
+<p>판단 파이프라인(스코프/마스킹)은 가로채는 지점에서 <strong>인라인</strong>으로 돌아 스코프 밖으로 아무것도 안 나갑니다. MCP는 그 위에서 LLM이 조회·제어하는 계층.</p>
+<h4>왜 Burp가 아니라 Go-native MCP인가 (중요 발견)</h4>
+<p>당초 Burp의 공식 MCP 확장을 붙일 계획이었으나 <strong>이 머신에서 실행 불가</strong>입니다. Burp MCP 확장(JVM/Netty)이 기동 시 <code>failed to create a child event loop</code>로 죽습니다. 근본 원인:</p>
+<ul><li>JVM의 NIO <code>Selector</code>가 내부 self-pipe를 <strong>AF_UNIX(유닉스 도메인 소켓)</strong> 로 만드는데,</li></ul>
+<p>  이 머신은 <strong>AF_UNIX <code>connect</code>가 전역으로 실패</strong>합니다(<code>connect: Invalid argument</code>).   번들 OpenJDK와 별도 Go 프로그램 양쪽에서 재현. <code>listen</code>/<code>bind</code>는 되고 <code>connect</code>만 실패 —   보안 소프트웨어/Winsock-LSP 간섭(보안 워크스테이션의 의도적 하드닝 추정).</p>
+<p><strong>결론 &amp; 교훈:</strong> 이 폐쇄/보안 환경에서 JVM-NIO·AF_UNIX 기반 IPC는 불안정. <strong>Go + TCP가 더 견고</strong>합니다(Go의 Windows 런타임은 IOCP+TCP를 쓰고 AF_UNIX를 안 씀). goproxy 선택을 강화하는 근거. Burp MCP를 나중에 쓰려면 머신을 고치거나(<code>netsh winsock reset</code>+재부팅) 다른 호스트에서 실행해야 합니다.</p>
+<hr>
+<h3>2. 판단 파이프라인</h3>
+<p><strong>스코프(host+path) → [설정된 스테이지: Rule → LLM] → (전송 + 캡처)</strong></p>
+<ul><li><strong>스코프(FR-2.1):</strong> 화이트리스트 밖 host/path는 하드 차단. 프록시·크롤러·스캔 모두 공유.</li><li><strong>Rule 스테이지(FR-2.2):</strong> 결정론적 룰로 위험/파괴적 요청을 전송 전 차단(logout·DELETE·</li></ul>
+<p>  삭제성·admin·결제확정). <code>recon_allow</code>로 접근통제 점검 시 관리자 경로 recon만 허용.</p>
+<ul><li><strong>LLM 스테이지(§5.2):</strong> Rule이 <code>llm</code>으로 표시한 상태변경 요청을 LLM이 allow/block 판단.</li></ul>
+<p>  입력 토큰 최소화(정규화 path + 파라미터 키만), 판정 캐싱·로깅. 프로바이더 교체형   (<code>mock|ollama|anthropic|openai</code>).</p>
+<p>판정 기록은 <a href="#sec-09" data-go="09">룰 제안</a> 페이지에서 룰 이관 후보의 근거가 됩니다.</p>
+<hr>
+<h3>3. 자동 진단 (탐지기 25종 + 데모)</h3>
+<p>내장 23종 + 외부도구 2종. 규제 점검항목표에 매핑됩니다(→ <a href="#sec-06" data-go="06">커버리지</a>).</p>
+<ul><li><strong>기본/정보노출:</strong> <code>security-headers</code>(보안헤더 누락) · <code>sensitive-data</code>(한국형 RRN/카드</li></ul>
+<p>  [Luhn 검증]/여권/계좌[날짜·전화 오탐 배제])</p>
+<ul><li><strong>XSS 3형태:</strong> <code>reflected-input</code>(반사형, <strong>컨텍스트 인식</strong> — 실행 가능 위치만) ·</li></ul>
+<p>  <code>stored-xss</code>(저장형, 고유 마커가 <strong>클린 재조회에 반사</strong>되면 확정 · 파괴적/옵트인) ·   <code>dom-xss</code>(source→sink <strong>정적 힌트</strong>). <strong>DVWA <code>xss_r</code>/<code>xss_s</code>/<code>xss_d</code> 실앱 검증 완료</strong></p>
+<ul><li><strong>접근통제:</strong> <code>idor</code>(수평/미인증노출) · <code>privesc</code>(수직 권한상승) — 차등 분석, 동적 콘텐츠</li></ul>
+<p>  정규화로 견고</p>
+<ul><li><strong>인젝션(공격형):</strong> <code>sqli</code>(에러) · <code>sqli-blind</code>(불린) · <code>sqli-time</code>(시간지연, <strong>2회 확증</strong>) ·</li></ul>
+<p>  <code>path-traversal</code> · <code>open-redirect</code> · <code>cmd-injection</code> · <code>ssrf</code> · <code>ssti</code> · <code>xxe</code> ·   <code>ldap-injection</code> · <code>ssi-injection</code> · <code>csrf</code>(수동적 분석) · <code>file-upload</code>(파괴적, 옵트인).   쿼리·폼바디·JSON(중첩 포함) 모두 주입</p>
+<ul><li><strong>설정 점검:</strong> <code>cookie-security</code>(쿠키 속성) · <code>http-method</code>(위험 메서드) · <code>dir-indexing</code></li><li><strong>외부 도구(FR-3.4):</strong> <code>openssl-tls</code> · <code>sslscan</code> (없으면 우아하게 skip)</li><li><strong>가드레일(FR-3.2):</strong> 파괴적 탐지기 기본 제외(<code>allow_destructive</code> 옵트인) · rate-limit ·</li></ul>
+<p>  safe-mode · 긴급 kill-switch</p>
+<ul><li><strong>증적(FR-4.2):</strong> 각 finding에 재현 요청 + 증명 응답 스니펫 + 상태코드(마스킹)</li><li><strong>비동기 잡(FR-3.8):</strong> 진행률·일시정지·재개·취소</li></ul>
+<p>각 탐지기는 <strong>정탐 + 오탐 회피 대조 테스트</strong>로 검증합니다(반사 XSS는 실행 컨텍스트만·textarea/ 인코딩 반사 무발동, 저장형은 반사형만인 경우 무발동, DOM은 sink만이면 무발동, 카드는 Luhn 유효만, CSRF는 토큰 있으면 무발동). 인젝션 계열은 실앱(DVWA + 자체 <code>vulnlab</code>)으로 정탐 검증했습니다.</p>
+<hr>
+<h3>4. 점검항목표 (§6, 3계층)</h3>
+<p>Detector(코드) → VulnDef(정의, 중복제거) → CheckItem(스킴별 규제항목). 동일 취약점은 2·1층을 공유하고 3층만 스킴별. 커버리지 매트릭스로 스킴별 <strong>양호|취약|미점검|미지원</strong>을 집계합니다.</p>
+<ul><li><strong>주요정보통신기반시설:</strong> 「26년 주요정보통신기반시설 기술적 취약점 분석·평가 상세가이드」</li></ul>
+<p>  10.웹(Web) 21항목 인코딩 완료(자동 13 / 수동 8).</p>
+<ul><li><strong>전자금융:</strong> 「2026년 전자금융기반시설 보안 취약점 평가기준 안내서」 웹·모바일·HTS 66항목</li></ul>
+<p>  인코딩 완료(자동 26 / 수동 40).</p>
+<div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p>점검항목표(seed.go) 수정 시 <code>checklist.config.yaml</code>을 삭제해야 재생성됩니다(런타임은 파일 우선 로드).</p></div>
+<hr>
+<h3>5. 멀티테넌시 (§5.1, Phase 2 완료)</h3>
+<p>프로젝트별 전용 프록시를 자체 포트에 기동. <strong>scope·endpoints·auth·traffic 4종 모두 인스턴스 격리</strong> → 두 프로젝트를 동시에 진단해도 교차오염 0. 공유는 stateless한 판단 파이프라인·마스킹뿐. 자세한 조작은 <a href="#sec-02" data-go="02">프로젝트</a> 문서를 참고하세요.</p>
+<hr>
+<h3>6. 프로젝트 구조</h3>
+<p>루트는 <strong><code>backend/</code></strong>(Go)와 <strong><code>frontend/</code></strong>(React) 두 갈래. 프론트는 <code>backend/internal/webui/dist</code>로 빌드되고 Go가 <code>//go:embed</code> → 런타임 단일 바이너리.</p>
+<pre><code>proxy-poc/
+  frontend/                React + TS + Vite + Tailwind (읽기전용 GUI)
+    src/pages              개요/프로젝트/정찰/스캔/취약점/커버리지/리포트/이행점검/룰제안/감사/사용자
+  backend/                 Go 모듈 (proxypoc)
+    cmd/
+      proxy/main.go        진입점: 조립 + 서빙 (프록시 + MCP + 웹GUI)
+      vulnapp/main.go      의도적 취약 테스트앱 (정탐/오탐 대조 검증용, :9099)
+      mcpclient/main.go    자체 MCP 서버용 데모 클라이언트
+    internal/
+      scope/       스코프 강제(FR-2.1) — Enforcer 인스턴스(테넌트별)
+      auth/        인증 크롤링(FR-2.5) + 다중신원(FR-3.6) + 로그인 시퀀스(세션 지속성)
+      rules/       Rule 스테이지(FR-2.2) + recon_allow + 채택 룰 영속화
+      payload/     페이로드셋(FR-3.7) — XSS·SQLi·순회·cmd/SSRF/XXE/SSTI/LDAP/SSI·한국형 민감패턴·Luhn
+      llm/         LLM 스테이지(§5.2/5.3) — Provider.Complete + Judge/Review(증적기반 오탐검토)
+      masking/     민감값 마스킹(§8, FR-2.3)
+      endpoints/   공격면 트리(FR-2.4) — Tree 인스턴스 + 왕복 영속화 + multipart/JSON 파라미터 캡처
+      traffic/     최근 트래픽 링버퍼 — Log 인스턴스(테넌트별)
+      crawler/     자동 크롤러(BFS Explore) + SPA 정적 JS 추출 + 헤드리스(chromedp) 옵트인
+      ca/          전용 CA + cert-manager(FR-2.6~2.9)
+      config/      계층 설정(§4) — local/project yaml 자동생성
+      proxyengine/ goproxy 조립 — New(공유) / NewFor(테넌트 주입)
+      tenant/      멀티테넌시(§5.1) — 프로젝트별 격리 프록시
+      detector/    탐지기 25종(§5.3)
+      scanengine/  스캔 오케스트레이션 — 비동기 잡·가드레일·LLM검토·영속화
+      checklist/   점검항목표(§6) — 3계층 + 커버리지 + 스킴선택
+      finding/     finding 저장소(§3) — 상태머신(FR-4.4) + 낙관적락(FR-1.3) + 영속화
+      reverify/    이행점검(§5.5) — replay + scan diff
+      advisor/     룰 제안(§5.6)
+      project/     프로젝트 엔티티 + ACL(FR-1.4)
+      user/session/secret/  RBAC·bcrypt·세션·AES암호화(FR-1.4)
+      bundle/audit/report/coverage/  번들·감사·엑셀·커버리지
+      mcpserver/   MCP 계층 (StreamableHTTP)
+      webui/       웹 GUI — 요청별 인증(멀티유저) + REST 리소스</code></pre>
+<p><strong>민감 파일(공유/커밋 금지):</strong> <code>ca.key</code>, <code>secret.key</code>, <code>users.json</code>, <code>projects.json</code>. <code>local.config.yaml</code>은 PC 전용(키 보관), <code>project.config.yaml</code>은 공유 가능(스코프·룰).</p>
+<p>의존성: <code>github.com/elazarl/goproxy</code>, <code>github.com/modelcontextprotocol/go-sdk</code>, <code>github.com/chromedp/chromedp</code>(헤드리스 크롤 옵트인).</p>
+<hr>
+<h3>7. 빌드 &amp; 실행</h3>
+<p>프론트를 먼저 빌드해야 합니다(출력이 Go 바이너리에 embed됨):</p>
+<pre><code>cd proxy-poc/frontend
+npm install            # 최초 1회
+npm run build          # → backend/internal/webui/dist (embed)</code></pre>
+<p>백엔드 빌드 &amp; 실행:</p>
+<pre><code>cd proxy-poc/backend
+go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765) + 웹(:8090)
+./proxy-poc.exe                          # 최초 실행 시 ca.crt/ca.key 생성</code></pre>
+<p>웹 GUI: <strong>http://127.0.0.1:8090</strong> (다크 기본, 우상단 테마 토글). 프론트 개발 시 <code>frontend/</code>에서 <code>npm run dev</code>(Vite :5173, <code>/api</code>를 백엔드로 프록시).</p>
+<p>프록시로 트래픽을 흘려 공격면을 채운 뒤 스캔:</p>
+<pre><code>curl.exe -sk -x http://127.0.0.1:8080 "https://httpbin.org/get?user=admin&amp;password=secret" -o NUL</code></pre>
+<p><strong>설정(§4).</strong> 최초 실행 시 CWD에 YAML 2개를 생성·로드(재빌드 없이 동작 변경):</p>
+<ul><li><code>local.config.yaml</code> — PC 전용: <code>proxy_addr</code>/<code>mcp_addr</code>/<code>web_addr</code>, <code>llm</code>(provider:</li></ul>
+<p>  <code>mock|ollama|anthropic|openai</code>, model, endpoint, api_key), <code>tools</code>(외부도구 경로),   <code>safe_mode</code>, <code>auth_disabled</code>(개발용 로그인 우회 — 운영 금지), <code>artifact_ext</code>(DRM 비간섭 확장자).   로컬 LLM: Ollama 설치 후 <code>ollama pull llama3.2:1b</code>, <code>provider: ollama</code>.</p>
+<ul><li><code>project.config.yaml</code> — 공유 가능: <code>scope</code>, <code>allow_paths</code>/<code>exclude_paths</code>, <code>recon_allow</code>,</li></ul>
+<p>  <code>stages</code>(예: <code>[rule, llm]</code>), <code>rules</code>, <code>auth</code>(인증 크롤링 쿠키/헤더), <code>identities</code>(다중신원 —   <code>admin: true</code>로 고권한 지정), <code>login</code>(세션 지속성), <code>schemes</code>, <code>payloads</code>.</p>
+<h4>테스트</h4>
+<pre><code>go test ./...            # 단위 테스트 (탐지기 정탐/오탐 대조 포함)</code></pre>
+<h4>문서 사이트 빌드</h4>
+<p>이 문서 세트(<code>README.md</code> + <code>docs/*.md</code>)를 사이드바 탐색·다크모드가 있는 단일 HTML로 묶어 <code>docs/index.html</code>을 생성합니다. 서버·인터넷 없이 더블클릭으로 열람 가능하며, 오프라인·공유용입니다.</p>
+<pre><code>node docs/build.mjs      # docs/*.md · README.md → docs/index.html (재)생성</code></pre>
+<p><code>docs/index.html</code>은 <strong>생성물이므로 직접 편집하지 않습니다.</strong> 내용을 고칠 땐 원본 <code>.md</code>를 수정한 뒤 위 명령으로 재생성하세요. 생성기는 의존성 없이 Node 16+만 있으면 됩니다(<code>docs/build.mjs</code>).</p>
+<hr>
+<h3>8. 브라우저 테스트 (실제 Edge/Chrome 프록시 경유)</h3>
+<ol><li>프록시를 한 번 실행해 <code>ca.crt</code> 생성.</li><li>CA 신뢰(현재 사용자 저장소, 관리자 불필요, 되돌림 가능). <strong>보안 설정 변경이라 직접 실행</strong>:</li></ol>
+<p>   ``<code>bash    proxy-poc.exe -cert-status      # 우리 CA가 신뢰됨? (지문 확인, 멱등)    proxy-poc.exe -cert-install     # 사용자 Root 저장소에 설치    proxy-poc.exe -cert-verify      # 프록시 실행 중: 경유 HTTPS로 인터셉트+신뢰 확인    proxy-poc.exe -cert-uninstall   # 완료 후 제거    </code>``</p>
+<ol><li>프록시를 가리키는 격리 브라우저 실행(시스템 프록시 변경 없음):</li></ol>
+<p>   ``<code>bash    &amp; "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" </code>      --proxy-server=http://127.0.0.1:8080 --user-data-dir=$env:TEMP\edge-proxytest <code>      --no-first-run --new-window https://example.com/    </code>``</p>
+<p><strong>보안:</strong> goproxy 내장 CA(개인키가 GitHub에 공개됨)가 아니라 <strong>자체 CA</strong>를 생성합니다. <code>ca.key</code>는 비공개.</p>
+<hr>
+<h3>9. 알려진 한계 — HTTP/2 다운그레이드</h3>
+<p>goproxy의 MITM은 ALPN에서 HTTP/1.1만 광고 → <strong>가로챈 HTTPS는 전부 HTTP/1.1로 다운그레이드</strong> (클라이언트↔프록시). 표준 웹앱 진단엔 문제없음(모든 요청/응답 가시·수정 가능). <strong>미지원:</strong> HTTP/2 특화 테스트(h2 스머글링, HPACK), gRPC/h2-only API, HTTP/3(QUIC). 필요해지면 문서상 <strong>mitmproxy 폴백</strong> 트리거(h2/h3 지원).</p>
+<hr>
+<h3>10. 함정 (겪은 것들)</h3>
+<ul><li><strong>8080 포트 충돌:</strong> Burp Suite 기본 프록시도 <code>127.0.0.1:8080</code>. Burp가 켜져 있으면 트래픽이</li></ul>
+<p>  Burp로 감 → 프록시가 "빈" 것처럼 보임.</p>
+<ul><li><strong>좀비 프록시:</strong> 백그라운드 실행이 stale <code>proxy-poc.exe</code>를 남김 → 재시작 전 <code>taskkill //F //IM proxy-poc.exe</code>.</li><li><strong>AF_UNIX 전역 고장(§1):</strong> JVM-NIO/AF_UNIX 기반 도구(Burp MCP 포함) 실패 → Go/TCP 선호.</li><li><strong>실행 중 exe 덮어쓰기 불가(Windows):</strong> 재빌드 전 프록시 종료.</li><li><strong>콘솔 한글 깨짐:</strong> 코드페이지 표시 문제일 뿐 파일은 UTF-8. 검증은 <code>PYTHONIOENCODING=utf-8</code> 등.</li><li><strong>Git Bash 경로 변환:</strong> <code>/</code>로 시작하는 curl URL을 Windows 경로로 변환 → <code>export MSYS_NO_PATHCONV=1</code>.</li></ul>
+<hr>
+<h3>11. 성숙도 &amp; 다음 단계 (정직하게)</h3>
+<p>이건 <strong>전 워크플로우가 end-to-end로 도는 잘 설계된 PoC</strong>입니다 — 아키텍처(멀티테넌시·영속화· RBAC·암호화·증적·커버리지)는 견고합니다. 다만 <strong>탐지 정밀도·커버리지는 계속 고도화 중</strong>이며 실운영에는 다음이 더 필요합니다:</p>
+<ul><li><strong>탐지 정밀도</strong> — 자체 vulnapp + DVWA-low + 자체 vulnlab에서 검증(XSS 3형태·cmd 실앱 확인).</li></ul>
+<p>  오탐은 2차까지 개선(컨텍스트 인식 XSS·차등 정규화·Luhn·계좌 날짜/전화 배제·sqli-time 2회 확증).   저장형 XSS 전용 재검증 pass·SPA/REST(Juice Shop) 대응 등은 남음</p>
+<ul><li><strong>커버리지</strong> — 자동 크롤러(BFS Explore + SPA 정적 JS 추출 + 헤드리스 옵트인) 있음. 인젝션 계열은</li></ul>
+<p>  쿼리/폼/JSON 바디까지 자동화. 남은 수동 항목은 거래보안·모바일 정적분석·바이너리 계열</p>
+<ul><li><strong>LLM 엔진</strong> — 오탐 검토는 붙였으나 소형 모델(llama3.2:1b)은 부적합. Claude/대형 모델 + 페이로드 적응이 실제 가치</li><li><strong>운영</strong> — JSON 파일 저장(실 DB 아님), 로컬 전용, 배포/모니터링 미비</li></ul>
+<p><strong>로드맵(설계 문서):</strong> 0.설계검증(이 PoC) → 1.서버기반 → 2.프록시/recon → 3.스캔엔진 → 4.결과/리포트/이행점검 → 5.LLM 게이트웨이/오탐검토/배포 → 6.모바일 확장. 현재 0~4 및 5의 상당 부분 구현. 남은 큰 항목: 모바일(§6.2, 별도 툴체인), 실운영 하드닝.</p>
+  </section>
+<section class="doc" id="sec-01">
+    <div class="eyebrow">01 · 작업공간</div>
+    <h2 class="title">개요 (Project Workspace)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>작업공간 &gt; 개요</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Overview.tsx</code></span><span class="meta-chip">모든 역할 접근</span></div>
+    <p>활성 프로젝트의 진단 현황을 <strong>한 화면 요약</strong>으로 보여주는 대시보드입니다. 별도 액션은 없고, 4초 주기 폴링으로 실시간 상태를 표시합니다.</p>
+<h3>화면 구성</h3>
+<p><strong>좌측 (2/3)</strong></p>
+<ul><li><strong>프로젝트 헤더</strong> — 활성 프로젝트명·ID·<code>Live Assessment</code> 배지, 대상 URL/스킴, LLM 프로바이더,</li></ul>
+<p>  생성일·프로젝트 수. 하단에 요약 지표 4개:</p>
+<ul><li><code>Scope</code> (호스트 수) · <code>Attack surface</code> (엔드포인트 수) · <code>Findings</code> (도출 수) ·</li></ul>
+<p>    <code>Risk profile</code> (high/medium/low — 색상 표시)</p>
+<ul><li><strong>Recent Scan Runs</strong> — 최근 스캔 실행 6건(ID·탐지기·상태·진행률·findings). <code>View all</code>로</li></ul>
+<p>  <a href="#sec-04" data-go="04">스캔</a> 페이지 이동</p>
+<p><strong>우측 (1/3)</strong></p>
+<ul><li><strong>Configuration Topology</strong> — 설정 3계층 로드 상태(Shared 점검항목표 / Project 스코프·룰 / Local PC·LLM)</li><li><strong>CA Certificate</strong> — OS 신뢰 저장소에 자체 CA가 신뢰됐는지(Trusted/Untrusted), 모바일 에뮬레이터 상태</li><li><strong>Guardrails</strong> — Safe mode On/Off, 사용 가능 탐지기 수</li></ul>
+<h3>뒷단 연결</h3>
+<p><code>/api/stats</code> · <code>/api/scanruns</code> · <code>/api/active-project</code> · <code>/api/projects</code> (모두 GET, 폴링)</p>
+<h3>관련 문서</h3>
+<ul><li>프로젝트 전환·생성 → <a href="#sec-02" data-go="02">02-프로젝트</a></li><li>스캔 실행·제어 → <a href="#sec-04" data-go="04">04-스캔</a></li><li>CA 신뢰 절차 → <a href="#sec-00" data-go="00">00-아키텍처 §8</a></li></ul>
+  </section>
+<section class="doc" id="sec-02">
+    <div class="eyebrow">02 · 작업공간</div>
+    <h2 class="title">프로젝트 (Projects)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>작업공간 &gt; 프로젝트</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Projects.tsx</code></span><span class="meta-chip">생성/가져오기</span><span class="meta-chip">인증정보</span><span class="meta-chip">전용 프록시는 <strong>리더 전용</strong></span></div>
+    <p>진단 대상(프로젝트)을 생성·전환·관리하는 페이지입니다. 활성 프로젝트를 바꾸면 스코프·점검항목이 그 프로젝트로 바뀌고, 취약점·커버리지·리포트·이행점검이 해당 프로젝트 기준으로 표시됩니다. 멀티테넌시(§5.1)·멤버 ACL·암호화 인증정보의 관리 지점입니다.</p>
+<h3>화면 구성</h3>
+<p>각 프로젝트 카드에 다음이 포함됩니다.</p>
+<ul><li><strong>기본 정보</strong> — 이름·ID·<code>active</code> 배지·findings 수, 대상 URL, 스코프·스킴 태그, 생성일</li><li><strong>활성 전환</strong> — <code>Activate</code> 버튼으로 공유 프록시(:8080)·화면 기준을 이 프로젝트로 전환</li><li><strong>내보내기/가져오기</strong> — 프로젝트 파일(<code>.cgpkg</code> 등 DRM 비간섭 확장자)로 export(<code>Download</code>) /</li></ul>
+<p>  import(<code>Import</code>, 리더)</p>
+<ul><li><strong>전용 프록시 (TenantSection)</strong> — 프로젝트 전용 프록시를 별도 포트에 시작/중지. 실행 중이면</li></ul>
+<p>  <code>127.0.0.1:&lt;port&gt;</code>·요청/캡처 수 표시. 두 프로젝트를 <strong>동시에 격리 진단</strong> 가능(교차오염 0)</p>
+<ul><li><strong>멤버 (MembersSection)</strong> — 소유자 + 멤버 목록. 리더가 멤버 추가/제거(프로젝트별 ACL, FR-1.4)</li><li><strong>인증정보 (CredentialsSection)</strong> — 쿠키/헤더 인증정보. <strong>AES-256-GCM으로 서버에 암호화 저장</strong>,</li></ul>
+<p>  평문은 저장/전송되지 않음. 마스킹 요약 표시(cookie/hdr/id 배지), 리더만 설정·변경</p>
+<p><strong>New Project 폼</strong> — 대상명·스코프(쉼표 구분)·스킴 선택(주요정보통신기반시설/전자금융/모바일)</p>
+<h3>주요 액션 → API</h3>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>권한</th></tr></thead><tbody><tr><td>프로젝트 생성</td><td><code>POST /api/projects</code></td><td>리더</td></tr><tr><td>활성 전환</td><td><code>POST /api/activate-project</code></td><td>—</td></tr><tr><td>내보내기/가져오기</td><td><code>GET /api/projects/{id}/bundle</code> · <code>POST /api/import-bundle</code></td><td>리더</td></tr><tr><td>전용 프록시 시작/중지</td><td><code>POST /api/tenants/{id}/start</code> · <code>/stop</code></td><td>리더</td></tr><tr><td>멤버 추가/제거</td><td><code>POST /api/projects/{id}/members</code> · <code>/members/remove</code></td><td>리더</td></tr><tr><td>인증정보 설정</td><td><code>POST /api/project-credentials?id=</code> (암호화)</td><td>리더</td></tr></tbody></table></div>
+<p>조회: <code>/api/projects</code> · <code>/api/active-project</code> · <code>/api/tenants</code> · <code>/api/project-credentials</code> · <code>/api/users</code></p>
+<h3>관련 문서</h3>
+<ul><li>멀티테넌시 설계 → <a href="#sec-00" data-go="00">00-아키텍처 §5</a></li><li>인증 주입·신원 → <a href="#sec-03" data-go="03">03-정찰</a></li></ul>
+  </section>
+<section class="doc" id="sec-03">
+    <div class="eyebrow">03 · 진단</div>
+    <h2 class="title">정찰 / 대상 파악 (Recon)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>진단 &gt; 정찰</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Recon.tsx</code></span><span class="meta-chip">크롤 실행은 <code>scan:run</code> 권한, 로그인 시퀀스 저장은 리더 전용</span></div>
+    <p>진단 대상의 <strong>공격면(엔드포인트)</strong>을 파악하고, 스코프·인증·판단 파이프라인 현황을 확인하는 페이지입니다. 요구사항 §5.2(대상 파악)·FR-2.x에 대응합니다.</p>
+<h3>화면 구성</h3>
+<p><strong>좌측 (2/3)</strong></p>
+<ul><li><strong>자동 크롤 (Explore)</strong> — 시작 URL에서 링크·폼·JS 번들을 따라 스코프 내를 BFS 크롤(AppScan</li></ul>
+<p>  Explore 대응). 비파괴(GET·폼 등록만). 정적 추출 기본, <strong>헤드리스(Chrome, JS 실행) 옵트인</strong>   (서버에 Chrome 없으면 비활성). 실행 상태·발견 수·JS 번들 수 표시</p>
+<ul><li><strong>Endpoint Tree</strong> — 호스트별로 그룹된 캡처 엔드포인트. 메서드·경로·인증 필요 표식·판정 배지,</li></ul>
+<p>  파라미터(위치 <code>query/body/json/file</code> · 이름 · 타입 · 필수 여부). 프록시(:8080) 경유 트래픽으로도 채워짐</p>
+<p><strong>우측 (1/3)</strong></p>
+<ul><li><strong>Judgment Pipeline</strong> — 스코프 → Rule → LLM → Forward 단계 시각화 + 활성 룰 목록(block/allow)</li><li><strong>Scope (whitelist)</strong> — 허용 스코프 목록</li><li><strong>Auth &amp; Identities</strong> — 세션 주입 On/Off, 주입 쿠키/헤더, 등록된 진단 신원(수평/수직 접근통제 대조용)</li><li><strong>로그인 시퀀스 (세션 지속성, FR-2.5)</strong> — 긴 스캔 중 세션 만료 시 자동 재로그인 절차 설정.</li></ul>
+<p>  로그인 URL·<strong>만료 표식(정규식, 있어야 활성화)</strong>·폼 필드·CSRF 토큰. 값은 마스킹, 저장은 리더 전용,   비밀번호는 응답 미노출·인메모리 주입기에만 반영</p>
+<h3>주요 액션 → API</h3>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>비고</th></tr></thead><tbody><tr><td>크롤 시작</td><td><code>POST /api/crawl</code> (`mode: static\</td><td>headless`)</td><td><code>scan:run</code></td></tr><tr><td>헤드리스 가용성</td><td><code>GET /api/crawl-modes</code></td><td></td></tr><tr><td>로그인 시퀀스 저장</td><td><code>POST /api/login-seq</code></td><td>리더, 감사 기록</td></tr></tbody></table></div>
+<p>조회: <code>/api/endpoints</code> · <code>/api/rules</code> · <code>/api/stats</code> · <code>/api/auth</code> · <code>/api/login-seq</code> · <code>/api/crawl</code></p>
+<h3>관련 문서</h3>
+<ul><li>크롤러 방식(정적/SPA/헤드리스) → <a href="#sec-00" data-go="00">00-아키텍처 §6, §11</a></li><li>인증정보 암호화 저장 → <a href="#sec-02" data-go="02">02-프로젝트</a></li><li>여기서 채운 공격면으로 스캔 → <a href="#sec-04" data-go="04">04-스캔</a></li></ul>
+  </section>
+<section class="doc" id="sec-04">
+    <div class="eyebrow">04 · 진단</div>
+    <h2 class="title">스캔 / 자동화 진단 (Scan)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>진단 &gt; 스캔</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Scan.tsx</code></span><span class="meta-chip">실행</span><span class="meta-chip">제어는 <code>scan:run</code> 권한</span></div>
+    <p>파악된 공격면을 대상으로 <strong>탐지기를 선택해 자동 진단</strong>을 실행하고, 실행 중인 스캔을 제어하는 페이지입니다. 요구사항 §5.3(자동화 진단)·FR-3.x에 대응합니다.</p>
+<h3>화면 구성</h3>
+<ul><li><strong>스캔 시작 (ScanControl)</strong> — 탐지기 체크박스 선택(전체선택/해제, 파괴적 <code>D</code> 배지, 외부도구</li></ul>
+<p>  미설치 표시), 옵션 토글:</p>
+<ul><li><strong>LLM 오탐 검토</strong> — 각 finding을 LLM이 증적으로 검토·주석(상태는 안 바꿈, HITL)</li><li><strong>파괴적 포함</strong> — <code>file-upload</code> 등 부작용 가능한 탐지기 포함(opt-in)</li><li><strong>Scan Runs (FR-3.8)</strong> — 실행 목록(ID·상태·탐지기·건너뜀·진행률·findings·safe). 각 행에서</li></ul>
+<p>  <strong>일시정지 / 재개 / 취소</strong> 제어(상태별 노출, 취소는 confirm). 상태 색상: 진행=blue·일시정지=amber·   완료=green·중단=muted. 2초 폴링</p>
+<ul><li><strong>Detectors 카탈로그</strong> — 탐지기 25종 목록(내장/외부도구, 파괴적 표식, 외부도구 ready/missing·버전)</li><li><strong>가드레일</strong> — Safe mode · Destructive opt-in · rate-limit(safe 500ms / 일반 150ms) · kill-switch</li><li><strong>페이로드</strong> — 페이로드 버전, XSS 페이로드, 한국형 민감정보 패턴</li><li><strong>외부 도구</strong> — openssl/sslscan 설치·버전 상태</li></ul>
+<h3>주요 액션 → API</h3>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th></tr></thead><tbody><tr><td>스캔 시작</td><td><code>POST /api/scan</code> (<code>detectors[]</code>, <code>allow_destructive</code>, <code>llm_review</code>)</td></tr><tr><td>일시정지/재개/취소</td><td><code>POST /api/scanruns/{id}/pause</code> · <code>/resume</code> · <code>/cancel</code> (멱등 가드, 완료·중단이면 409)</td></tr></tbody></table></div>
+<p>조회: <code>/api/scanruns</code> · <code>/api/detectors</code> · <code>/api/stats</code> · <code>/api/payloads</code> · <code>/api/endpoints</code></p>
+<h3>동작 메모</h3>
+<ul><li>스캔은 <strong>비동기</strong>입니다. 여러 run이 동시에 돌 수 있으니 finding 조회 전 <strong>모든 run이 '완료'인지</strong> 확인.</li><li><code>sqli-time</code>은 시간지연을 유발해 느립니다(2회 확증). 완료까지 대기 필요.</li></ul>
+<h3>관련 문서</h3>
+<ul><li>탐지기 25종 상세 → <a href="#sec-00" data-go="00">00-아키텍처 §3</a></li><li>도출된 취약점 검토 → <a href="#sec-05" data-go="05">05-취약점</a></li><li>LLM 판정 기록·룰 이관 → <a href="#sec-09" data-go="09">09-룰제안</a></li></ul>
+  </section>
+<section class="doc" id="sec-05">
+    <div class="eyebrow">05 · 결과</div>
+    <h2 class="title">취약점 목록 (Findings)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>결과 &gt; 취약점</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Findings.tsx</code></span><span class="meta-chip">전체 초기화는 리더 전용</span></div>
+    <p>도출된 취약점(finding)을 확인하고 <strong>검토 상태를 관리</strong>하는 페이지입니다. 각 finding의 증적을 펼쳐 보고, 상태머신에 따라 처리합니다. 요구사항 §5.4·FR-4.x에 대응합니다.</p>
+<h3>화면 구성</h3>
+<ul><li><strong>필터 바</strong> — 심각도별 카운트 칩(high/medium/low/info 토글), 상태 드롭다운, <code>LLM 오탐 숨기기</code></li></ul>
+<p>  (LLM이 오탐 표시한 항목을 보기에서만 숨김·데이터 유지), 표시/전체 수</p>
+<ul><li><strong>취약점 테이블</strong> — ID · 취약점명 · 심각도 · 대상(host·method·path) · 파라미터 · 탐지기(VulnDef) ·</li></ul>
+<p>  점검항목 배지 · 상태. <strong>심각도순(high 먼저) → 최신순</strong> 정렬</p>
+<ul><li><strong>증적 확장 (행 클릭, FR-4.2)</strong> — LLM 판정 배지+근거, 재현 요청, 증명 응답(HTTP 코드,</li></ul>
+<p>  <strong>민감값 마스킹</strong>) <code>pre</code> 블록</p>
+<h3>검토 상태머신 (FR-4.4)</h3>
+<pre><code>신규 → 검토중 → 확정 → 보고
+          ├→ 오탐 (종료)
+          └→ 보류 → 검토중</code></pre>
+<p>상태 전이는 <strong>낙관적 락(FR-1.3)</strong> — 다른 사용자가 먼저 수정하면 409 충돌 표시 후 폴링으로 최신화. 각 행에 버전(<code>v{n}</code>) 표시.</p>
+<h3>LLM 오탐 트리아지 (FR-3.3)</h3>
+<p>스캔 시 <code>LLM 오탐 검토</code>를 켜면 각 finding에 <code>real / false_positive / uncertain</code> 판정과 근거가 <strong>주석</strong>으로 붙습니다. ⚠️ <strong>상태는 자동으로 안 바꿈(HITL)</strong> — 약한 모델이 진짜 취약을 오탐 판정해도 숨기지 않도록 설계. 사용자가 <code>LLM 오탐 숨기기</code> 필터로 직접 판단합니다.</p>
+<h3>주요 액션 → API</h3>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>권한</th></tr></thead><tbody><tr><td>상태 전이</td><td><code>POST /api/findings/{id}/status</code> (<code>status</code>, <code>version</code>)</td><td>— (409 낙관적락)</td></tr><tr><td>전체 초기화</td><td><code>POST /api/findings/clear</code></td><td>리더, 감사 기록</td></tr></tbody></table></div>
+<p>조회: <code>/api/findings</code> (4초 폴링)</p>
+<h3>관련 문서</h3>
+<ul><li>규제 항목 대비 커버리지 → <a href="#sec-06" data-go="06">06-커버리지</a></li><li>산출물(xlsx)·증적 시트 → <a href="#sec-07" data-go="07">07-리포트</a></li><li>조치 여부 재점검 → <a href="#sec-08" data-go="08">08-이행점검</a></li></ul>
+  </section>
+<section class="doc" id="sec-06">
+    <div class="eyebrow">06 · 결과</div>
+    <h2 class="title">점검 커버리지 (Coverage)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>결과 &gt; 커버리지</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Coverage.tsx</code></span><span class="meta-chip">모든 역할 접근</span></div>
+    <p>취약점뿐 아니라 <strong>선택 스킴의 전 점검항목에 대한 수행 결과</strong>(양호·취약·미점검·미지원)를 보여주는 페이지입니다. 규제 제출용 "점검결과표"의 화면 버전으로, FR-4.3·§6에 대응합니다.</p>
+<h3>화면 구성</h3>
+<ul><li><strong>전체 준수 태세</strong> — 모든 항목의 상태 분포 세그먼트 바 + 건수 범례. <code>점검결과표 .xlsx</code> 다운로드.</li></ul>
+<p>  취약·미점검(=갭)을 먼저 확인하도록 안내</p>
+<ul><li><strong>스킴별 블록 (SchemeBlock)</strong> — 스킴(주요정보통신기반시설/전자금융/모바일)마다:</li><li>헤더: 전체 항목 수, <code>취약 N</code> · <code>자동가능 M/N</code> 배지</li><li>상태 분포 바</li><li>항목 테이블: 항목 ID(위험도 <code>R</code>) · 취약점명 · 매핑 탐지기 · findings 수 · 상태.</li></ul>
+<p>    <strong>취약·미점검 항목을 위로 정렬</strong>, 취약 행은 강조</p>
+<h3>상태 의미</h3>
+<div class="table-wrap"><table><thead><tr><th>상태</th><th>뜻</th></tr></thead><tbody><tr><td>취약</td><td>해당 항목에서 finding 도출</td></tr><tr><td>양호</td><td>탐지기 수행했으나 미도출</td></tr><tr><td>미점검</td><td>자동 가능하나 아직 미수행</td></tr><tr><td>미지원(도구없음/수동)</td><td>자동화 불가 — 수동 점검 대상</td></tr></tbody></table></div>
+<h3>3계층 매핑 (§6)</h3>
+<p>Detector(코드) → VulnDef(정의, 중복제거) → CheckItem(스킴별 규제항목). 커버리지는 이 매핑을 따라 스킴별로 집계됩니다. 항목표 인코딩 현황·수정 주의는 <a href="#sec-00" data-go="00">00-아키텍처 §4</a> 참고.</p>
+<h3>뒷단 연결</h3>
+<p><code>GET /api/coverage</code> (5초 폴링) · <code>GET /coverage.xlsx</code> (점검결과표 다운로드)</p>
+<h3>관련 문서</h3>
+<ul><li>점검항목표 구조·인코딩 → <a href="#sec-00" data-go="00">00-아키텍처 §4</a></li><li>산출물 허브 → <a href="#sec-07" data-go="07">07-리포트</a></li></ul>
+  </section>
+<section class="doc" id="sec-07">
+    <div class="eyebrow">07 · 결과</div>
+    <h2 class="title">리포트 / 도출리스트 (Report)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>결과 &gt; 리포트</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Report.tsx</code></span><span class="meta-chip">모든 역할 접근</span></div>
+    <p>규제 제출용 <strong>산출물을 내보내고 미리보는</strong> 페이지입니다. 표준 엑셀 양식(도출리스트 11컬럼)과 증적을 한곳에서 확인합니다. §5.4·FR-4.2에 대응합니다.</p>
+<h3>화면 구성</h3>
+<ul><li><strong>산출물 허브</strong> — 두 산출물 다운로드 버튼:</li><li><code>도출리스트 .xlsx</code> — 취약점 목록(11컬럼) <strong>+ 증적 시트</strong>(재현요청·증명응답)</li><li><code>점검결과표 .xlsx</code> — 전 항목 수행결과(→ <a href="#sec-06" data-go="06">커버리지</a>와 동일 산출물)</li><li>요약: 총 도출 건수 · 증적 건수 · 취약점 유형별 칩(심각도 색상)</li><li><strong>도출리스트 미리보기</strong> — 취약점 <strong>유형별 그룹</strong>(심각도 높은 유형 먼저), 유형마다 표</li></ul>
+<p>  (NO·대상·발견 URL·파라미터·설명·비고)</p>
+<ul><li><strong>증적 미리보기 (FR-4.2)</strong> — 각 발견의 재현 요청·증명 응답(민감정보 마스킹)을 접이식으로.</li></ul>
+<p>  <strong>다운로드 없이 화면에서 검토</strong> 가능</p>
+<h3>산출물 양식 메모</h3>
+<ul><li>도출리스트 xlsx는 <strong>11컬럼 표준 양식</strong>을 유지합니다("사용 구문" 컬럼은 재현요청 우선).</li><li>증적은 도출리스트 xlsx의 <strong>별도 시트</strong>로 함께 들어갑니다.</li></ul>
+<h3>뒷단 연결</h3>
+<p><code>GET /api/report</code> · <code>GET /api/evidence</code> (미리보기, 5초 폴링) · <code>GET /report.xlsx</code> · <code>GET /coverage.xlsx</code> (다운로드)</p>
+<h3>관련 문서</h3>
+<ul><li>증적의 원천(finding 행 확장) → <a href="#sec-05" data-go="05">05-취약점</a></li><li>점검결과표 상세 → <a href="#sec-06" data-go="06">06-커버리지</a></li></ul>
+  </section>
+<section class="doc" id="sec-08">
+    <div class="eyebrow">08 · 결과</div>
+    <h2 class="title">이행점검 (Reverify)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>결과 &gt; 이행점검</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Reverify.tsx</code></span><span class="meta-chip">재점검 실행은 <code>scan:run</code> 권한</span></div>
+    <p>이전에 도출된 취약 항목의 <strong>조치 여부를 재점검</strong>하고, 스캔 간 공격면 변화를 비교하는 페이지입니다. §5.5·FR-5.x에 대응합니다.</p>
+<h3>화면 구성</h3>
+<ul><li><strong>이행점검 실행 (ReverifyControl)</strong> — 재점검 대상(오탐 제외 finding) 수 표시, <code>취약 항목 재점검</code></li></ul>
+<p>  버튼으로 이전 취약 finding을 <strong>replay·재평가</strong>해 조치 여부 판정. 아래에 전체 이행 현황 세그먼트 바   (조치완료/미조치/부분조치/신규발생/미점검)</p>
+<ul><li><strong>스캔 간 변화 (DiffCard, FR-5.4)</strong> — 두 ScanRun을 <code>from → to</code>로 선택(기본: 최신 두 개 자동).</li></ul>
+<p>  <strong>신규(added) / 소멸(removed) / 공통</strong> finding을 나란히 표시</p>
+<ul><li><strong>이행점검 실행 이력</strong> — 실행별 카드: 조치율 바(조치완료/미조치/미확인), 결과 테이블</li></ul>
+<p>  (Finding·취약점·대상·탐지기·<strong>판정</strong>·상세). 미조치·신규발생을 위로 정렬·강조</p>
+<h3>판정(verdict) 의미</h3>
+<div class="table-wrap"><table><thead><tr><th>판정</th><th>뜻</th></tr></thead><tbody><tr><td>조치완료</td><td>재점검 시 재현 안 됨</td></tr><tr><td>미조치</td><td>여전히 재현</td></tr><tr><td>부분조치</td><td>일부만 해소</td></tr><tr><td>신규발생</td><td>이전엔 없던 취약</td></tr><tr><td>미확인</td><td>재평가 불가</td></tr></tbody></table></div>
+<h3>주요 액션 → API</h3>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>비고</th></tr></thead><tbody><tr><td>재점검 실행</td><td><code>POST /api/reverify</code></td><td><code>scan:run</code>, 오탐 제외 replay·재평가</td></tr><tr><td>스캔 diff</td><td><code>GET /api/scan-diff?from=&amp;to=</code></td><td></td></tr></tbody></table></div>
+<p>조회: <code>GET /api/reverify</code> · <code>GET /api/scanruns</code> · <code>GET /api/findings</code></p>
+<h3>동작 메모</h3>
+<ul><li>이행점검 실행 결과(run)는 <strong>인메모리</strong>입니다(미영속). 이행상태는 finding의 <code>reverify_status</code>에 반영.</li></ul>
+<h3>관련 문서</h3>
+<ul><li>재점검 대상이 되는 finding·상태 → <a href="#sec-05" data-go="05">05-취약점</a></li><li>스캔 실행 → <a href="#sec-04" data-go="04">04-스캔</a></li></ul>
+  </section>
+<section class="doc" id="sec-09">
+    <div class="eyebrow">09 · 인텔리전스</div>
+    <h2 class="title">룰 제안 (Rule Advisor)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>인텔리전스 &gt; 룰 제안</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Advisor.tsx</code></span><span class="meta-chip">룰 채택은 <code>rule:promote</code> (리더 전용)</span></div>
+    <p>LLM 판단 기록을 분석해 <strong>반복·일관된 패턴을 결정론적 룰로 이관</strong>하도록 추천하는 페이지입니다. LLM 질의 비용을 줄이고 판단을 재현 가능하게 만듭니다. §5.6에 대응합니다.</p>
+<h3>화면 구성</h3>
+<ul><li><strong>룰 추천 후보</strong> — 판단 로그가 시그니처별로 반복·일관되면(빈도≥2, 일관성≥70%) 룰 초안을 제안.</li></ul>
+<p>  각 후보: verdict(block/allow) · method·path · 적중 수 · 일관성 · 신뢰도 · 예상 절감 질의 수,   draft rule(YAML) 미리보기, 경고(있으면). <strong><code>룰로 채택(승인)</code></strong> 버튼(리더)으로 활성 룰셋에 반영</p>
+<ul><li><strong>활성 룰셋</strong> — 현재 적용 룰 목록(위에서부터 우선, 첫 매칭). #·이름·action·methods·path·reason.</li></ul>
+<p>  채택된 룰은 앞쪽에 prepend되어 영속화(<code>rules.adopted.json</code>)</p>
+<ul><li><strong>LLM Decision Log</strong> — 프록시·진단의 모든 LLM 판정 기록. allow/block 필터, <strong>캐시 적중률</strong></li></ul>
+<p>  (높을수록 룰 이관 효과 큼). 요청·판정·신뢰도·근거·모델·캐시 hit 표시</p>
+<h3>HITL(사람 개입) 설계</h3>
+<p>후보는 <strong>제안일 뿐</strong> — 리더가 검토·승인해야 룰이 됩니다. 채택 후엔 동일 요청을 LLM 없이 결정론적으로 판단합니다. 이름 중복은 거부, 채택은 감사에 기록됩니다.</p>
+<h3>주요 액션 → API</h3>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>권한</th></tr></thead><tbody><tr><td>룰 채택</td><td><code>POST /api/rules/adopt</code> (<code>signature</code>)</td><td>리더(<code>rule:promote</code>), 감사 기록</td></tr></tbody></table></div>
+<p>조회: <code>/api/llm-decisions</code> · <code>/api/rule-candidates</code> · <code>/api/rules</code></p>
+<h3>관련 문서</h3>
+<ul><li>판단 파이프라인(Rule/LLM 스테이지) → <a href="#sec-00" data-go="00">00-아키텍처 §2</a></li><li>룰 적용 현황(정찰 파이프라인) → <a href="#sec-03" data-go="03">03-정찰</a></li></ul>
+  </section>
+<section class="doc" id="sec-10">
+    <div class="eyebrow">10 · 인텔리전스</div>
+    <h2 class="title">감사 로그 (Audit)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>인텔리전스 &gt; 감사</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Audit.tsx</code></span><span class="meta-chip">모든 역할 조회</span></div>
+    <p><strong>누가·언제·무엇을</strong> 했는지 모든 변경 이력을 남기는 페이지입니다. 규제 제출용 증적으로 CSV 내보내기를 지원합니다. FR-1.4(RBAC·감사)에 대응합니다.</p>
+<h3>화면 구성</h3>
+<ul><li><strong>요약 + 필터</strong> — 총 건수, <strong>거부(denied) 건수</strong> 강조, 결과 필터(전체/성공/거부),</li></ul>
+<p>  행위(action) 드롭다운, 사용자·대상·상세 검색</p>
+<ul><li><strong>로그 테이블</strong> — Time · User · Role · Action · Target · Result · Detail. <strong>거부 항목은 붉게 강조</strong></li><li><strong>CSV 내보내기</strong> — <code>CSV 내보내기</code> 버튼(UTF-8 BOM, 한글 안전)</li></ul>
+<h3>무엇이 기록되나</h3>
+<p>프로젝트 생성·전환, 인증정보 설정, 스캔 시작·일시정지·취소, 룰 채택, 사용자 생성·삭제·비번 재설정, finding 전체 초기화, 로그인 시퀀스 저장 등 <strong>상태를 바꾸는 행위</strong>와 <strong>권한 거부(denied)</strong>가 남습니다.</p>
+<h3>뒷단 연결</h3>
+<p><code>GET /api/audit</code> (4초 폴링) · <code>GET /audit.csv</code> (UTF-8 BOM, encoding/csv)</p>
+<h3>관련 문서</h3>
+<ul><li>권한(RBAC) 체계 → <a href="#sec-11" data-go="11">11-사용자</a></li><li>각 액션의 권한 표기 → 해당 기능 문서(02·03·04·05·09·11)</li></ul>
+  </section>
+<section class="doc" id="sec-11">
+    <div class="eyebrow">11 · 관리</div>
+    <h2 class="title">사용자 관리 (Users)</h2>
+    <div class="meta-row"><span class="meta-chip">사이드바 <strong>관리 &gt; 사용자</strong></span><span class="meta-chip">소스 <code>frontend/src/pages/Users.tsx</code></span><span class="meta-chip">생성</span><span class="meta-chip">삭제</span><span class="meta-chip">비번 재설정은 <code>user:manage</code> (리더 전용)</span></div>
+    <p>계정을 조회하고, 리더가 계정을 생성·삭제·비밀번호 재설정하는 페이지입니다. FR-1.4(RBAC)에 대응합니다.</p>
+<h3>역할(RBAC)</h3>
+<div class="table-wrap"><table><thead><tr><th>역할</th><th>표기</th><th>권한</th></tr></thead><tbody><tr><td>leader</td><td>리더</td><td>관리·승인 — 프로젝트/사용자 관리, 인증정보 설정, 룰 채택, finding 초기화 등</td></tr><tr><td>analyst</td><td>수행원</td><td>진단 수행 — 크롤·스캔·이행점검·상태 전이</td></tr></tbody></table></div>
+<h3>화면 구성</h3>
+<ul><li><strong>계정 생성 (리더만 노출)</strong> — 이름·역할(수행원/리더)·비밀번호(6자 이상). 비밀번호는 **bcrypt로만</li></ul>
+<p>  저장**, 응답에 노출되지 않음</p>
+<ul><li><strong>사용자 목록</strong> — ID·이름(역할 아이콘·<code>(나)</code> 표시)·역할 배지. 리더에게는 행별 작업 버튼:</li><li><strong>비번</strong> — 비밀번호 재설정(6자 이상)</li><li><strong>삭제</strong> — 계정 삭제. <strong>자기 자신·마지막 리더는 삭제 불가</strong>(버튼 disabled)</li></ul>
+<h3>가드레일</h3>
+<ul><li>이름 중복 → 409 · 비번 6자 미만/잘못된 역할 → 400</li><li>자기 자신 삭제 → 400 · 마지막 리더 삭제 → 409</li><li>수행원이 생성 시도 → 403</li></ul>
+<h3>주요 액션 → API</h3>
+<div class="table-wrap"><table><thead><tr><th>액션</th><th>엔드포인트</th><th>권한</th></tr></thead><tbody><tr><td>계정 생성</td><td><code>POST /api/users</code></td><td>리더, 감사 기록</td></tr><tr><td>비번 재설정</td><td><code>POST /api/users/{id}/password</code></td><td>리더</td></tr><tr><td>계정 삭제</td><td><code>POST /api/users/{id}/delete</code></td><td>리더</td></tr></tbody></table></div>
+<p>조회: <code>GET /api/users</code> · <code>GET /api/me</code></p>
+<h3>데모 계정</h3>
+<p><code>leader / leader123</code> (리더) · <code>analyst / analyst123</code> (수행원). 개발용 <code>auth_disabled: true</code>(local.config.yaml)면 로그인 우회 — <strong>운영 금지</strong>.</p>
+<h3>관련 문서</h3>
+<ul><li>변경 이력 추적 → <a href="#sec-10" data-go="10">10-감사</a></li><li>프로젝트별 멤버 ACL → <a href="#sec-02" data-go="02">02-프로젝트</a></li></ul>
+  </section>
+    </div>
+  </main>
+</div>
+<script>
+  document.documentElement.classList.remove('no-js');
+  var CRUMBS = {"10":"감사 로그 (Audit)","11":"사용자 관리 (Users)","home":"개요","00":"아키텍처 · 빌드 · 운영","01":"개요 (Overview)","02":"프로젝트 (Projects)","03":"정찰 · 대상 파악 (Recon)","04":"스캔 · 자동화 진단 (Scan)","05":"취약점 목록 (Findings)","06":"점검 커버리지 (Coverage)","07":"리포트 · 도출리스트 (Report)","08":"이행점검 (Reverify)","09":"룰 제안 (Rule Advisor)"};
+  var secs = [].slice.call(document.querySelectorAll('.doc'));
+  var links = [].slice.call(document.querySelectorAll('.nav-link'));
+  var crumbEl = document.getElementById('crumb');
+  var sidebar = document.getElementById('sidebar');
+  var scrim = document.getElementById('scrim');
+  function closeMenu(){ if(sidebar) sidebar.classList.remove('open'); if(scrim) scrim.classList.remove('open'); }
+  function go(id){
+    var sec = document.getElementById('sec-'+id) || document.getElementById('sec-home');
+    if(!sec){ return; }
+    secs.forEach(function(s){ s.classList.remove('active'); });
+    sec.classList.add('active');
+    links.forEach(function(a){ a.classList.toggle('active', a.getAttribute('data-go')===id); });
+    if(CRUMBS[id] && crumbEl) crumbEl.textContent = CRUMBS[id];
+    window.scrollTo(0,0);
+    closeMenu();
+  }
+  function curId(){ var h=(location.hash||'').replace(/^#(sec-)?/,''); return CRUMBS[h]!==undefined ? h : 'home'; }
+  document.addEventListener('click', function(e){
+    var t = e.target.closest && e.target.closest('[data-go]');
+    if(t){ e.preventDefault(); var id=t.getAttribute('data-go');
+      if(('#sec-'+id)!==location.hash){ location.hash='#sec-'+id; } else { go(id); } }
+  });
+  window.addEventListener('hashchange', function(){ go(curId()); });
+
+  var root = document.documentElement;
+  var tBtn = document.getElementById('themeBtn'), tIco = document.getElementById('themeIco'), tLbl = document.getElementById('themeLbl');
+  var SUN='<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5 4 4M19 19l1 1M5 19l-1 1M19 5l1-1"/>', MOON='<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
+  function applyTheme(m){ root.setAttribute('data-theme', m); if(tIco) tIco.innerHTML = (m==='dark'?SUN:MOON); if(tLbl) tLbl.textContent = (m==='dark'?'라이트':'다크'); }
+  if(tBtn) tBtn.addEventListener('click', function(){
+    var cur = root.getAttribute('data-theme') || (matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+    applyTheme(cur==='dark'?'light':'dark');
+  });
+  applyTheme(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
+
+  var menuBtn = document.getElementById('menuBtn');
+  if(menuBtn) menuBtn.addEventListener('click', function(){ sidebar.classList.toggle('open'); scrim.classList.toggle('open'); });
+  if(scrim) scrim.addEventListener('click', closeMenu);
+
+  go(curId());</script>
+</body>
+</html>
