@@ -1,0 +1,97 @@
+import type { ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
+
+export function Card({ title, icon: Icon, right, children, className = '', pad = true }: {
+  title?: ReactNode; icon?: LucideIcon; right?: ReactNode; children: ReactNode; className?: string; pad?: boolean
+}) {
+  return (
+    <div className={`rounded-xl border bg-[var(--panel)] border-[var(--border)] shadow-[var(--shadow)] ${className}`}>
+      {(title || right) && (
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)]">
+          <h3 className="flex items-center gap-2 text-sm font-semibold">
+            {Icon && <Icon size={15} strokeWidth={2} style={{ color: 'var(--accent)' }} />}
+            {title}
+          </h3>
+          {right}
+        </div>
+      )}
+      <div className={pad ? 'p-5' : ''}>{children}</div>
+    </div>
+  )
+}
+
+export function Stat({ label, value, icon: Icon, accent, hint }: {
+  label: string; value: ReactNode; icon?: LucideIcon; accent?: string; hint?: string
+}) {
+  const c = accent ?? 'var(--accent)'
+  return (
+    <div className="rounded-xl border bg-[var(--panel)] border-[var(--border)] shadow-[var(--shadow)] p-4">
+      <div className="flex items-start justify-between">
+        <div className="eyebrow">{label}</div>
+        {Icon && (
+          <span className="grid h-7 w-7 place-items-center rounded-lg"
+                style={{ color: c, background: `color-mix(in srgb, ${c} 14%, transparent)` }}>
+            <Icon size={15} strokeWidth={2} />
+          </span>
+        )}
+      </div>
+      <div className="mt-2 text-[26px] font-bold leading-none">{value}</div>
+      {hint && <div className="mt-1.5 text-xs text-[var(--muted)]">{hint}</div>}
+    </div>
+  )
+}
+
+const SEVERITY: Record<string, string> = {
+  high: 'var(--red)', medium: 'var(--amber)', low: 'var(--blue)', info: 'var(--muted)',
+}
+const STATUS: Record<string, string> = {
+  '취약': 'var(--red)',
+  '양호': 'var(--green)',
+  '미점검': 'var(--amber)',
+  '해당없음': 'var(--muted)',
+  '미지원(도구없음)': 'var(--muted)',
+  '미지원(수동)': 'var(--muted)',
+  // finding 검토 상태머신 (FR-4.4)
+  '신규': 'var(--blue)', '검토중': 'var(--amber)', '확정': 'var(--red)',
+  '오탐': 'var(--muted)', '보류': 'var(--muted)', '보고': 'var(--green)',
+  // 이행점검 판정 (FR-5.3)
+  '조치완료': 'var(--green)', '미조치': 'var(--red)', '부분조치': 'var(--amber)',
+  '신규발생': 'var(--blue)', '미확인': 'var(--muted)',
+  // ScanRun 상태
+  '진행': 'var(--blue)', '완료': 'var(--green)', '일시정지': 'var(--amber)', '중단': 'var(--red)',
+}
+
+export function Badge({ text, color, dot }: { text: string; color?: string; dot?: boolean }) {
+  const c = color ?? SEVERITY[text.toLowerCase()] ?? STATUS[text] ?? 'var(--muted)'
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium"
+      style={{ color: c, backgroundColor: `color-mix(in srgb, ${c} 14%, transparent)` }}
+    >
+      {dot && <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />}
+      {text}
+    </span>
+  )
+}
+
+// Dot — 텍스트 상태 표시(테이블용). 배지보다 가벼움.
+export function Dot({ text, color }: { text: string; color?: string }) {
+  const c = color ?? STATUS[text] ?? 'var(--muted)'
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: c }}>
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />{text}
+    </span>
+  )
+}
+
+export function severityColor(s: string) { return SEVERITY[s?.toLowerCase()] ?? 'var(--muted)' }
+export function statusColor(s: string) { return STATUS[s] ?? 'var(--muted)' }
+
+export function Empty({ icon: Icon, children }: { icon?: LucideIcon; children: ReactNode }) {
+  return (
+    <div className="flex flex-col items-center gap-2 py-12 text-center text-sm text-[var(--muted)]">
+      {Icon && <Icon size={26} strokeWidth={1.5} className="opacity-50" />}
+      {children}
+    </div>
+  )
+}
