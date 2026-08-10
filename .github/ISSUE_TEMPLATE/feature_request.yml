@@ -24,6 +24,8 @@ body:
     id: area
     attributes:
       label: 관련 영역
+      description: 해당하는 영역을 모두 선택하세요 (다중 선택 가능).
+      multiple: true
       options:
         - 프록시 엔진 / 판단 파이프라인
         - MCP 오케스트레이션
@@ -41,6 +43,18 @@ body:
     attributes:
       label: 고려한 대안
       description: 다른 접근이나 우회책이 있었다면 적어주세요.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 완료 기준
+      description: 이 기능이 "완료"로 인정되는 조건을 체크박스로 적어주세요. `- [ ]` 형식은 이슈에서 클릭 가능한 체크리스트로 렌더됩니다.
+      value: |
+        - [ ]
+        - [ ]
+        - [ ]
+    validations:
+      required: true
 
   - type: checkboxes
     id: checks
