@@ -62,6 +62,9 @@
 >   - `mcpserver` 툴 **54 → 56** (`proxy_status`, `set_capture` — `proxy:control` 리더·감사), LOC 797 → 831
 >   - `proxyengine` +`control.go`(캡처 on/off·상태), LOC 153 → 196
 >   - 이 삽입으로 §4.2·§4.3의 **개별 라인 참조가 소폭 밀렸다**(`webui.go` +약 41줄, `mcpserver.go` +약 34줄). 개수·설명은 패키지 표·§4.2·§4.3에 반영함.
+> - **이슈 #7 (엔드포인트 조회 강화):** `GET /api/endpoints`에 필터/검색/페이징(+`X-Total-Count`),
+>   `GET /api/endpoints/tree`·`GET /api/endpoints/detail` 신설 → **라우트 60 → 62**(`webui` LOC → 1,148).
+>   `endpoints` 모델에 발견 시각(`first_seen`/`last_seen`) 추가·영속화. 정찰 페이지에 필터바 + 상세 드릴다운.
 
 ---
 
@@ -97,8 +100,8 @@ LOC는 테스트 포함 기준. **test 0**은 `_test.go`가 없는 패키지.
 | 패키지 | 역할 | LOC | test |
 |---|---|---|---|
 | `detector` | **엔진 핵심.** 26종 취약점 탐지기 (XSS/SQLi/traversal 등) | 2,972 | 1,172 |
-| `webui` | HTTP JSON API 60개 라우트 + SPA 임베드 서빙 | 1,057 | **0** |
-| `endpoints` | 공격면 트리 (host → 정규화 경로 → 파라미터) + JSON 영속 | 870 | 230 |
+| `webui` | HTTP JSON API 62개 라우트 + SPA 임베드 서빙 | 1,148 | 143 |
+| `endpoints` | 공격면 트리 (host → 정규화 경로 → 파라미터 + 발견 시각) + JSON 영속 | 870 | 230 |
 | `crawler` | 정적 + 헤드리스(chromedp) 크롤러 | 860 | 171 |
 | `mcpserver` | MCP 툴 56종 (StreamableHTTP) | 831 | **0** |
 | `checklist` | 규제 점검항목표 3계층, YAML 로드 | 765 | 219 |
@@ -368,15 +371,16 @@ webui.SetAuthDisabled         :166
 
 > **추정**: 26개 인터페이스가 백엔드 응답 모델을 충실히 반영하고 있는 점으로 보아, `api.ts`는 삭제되었거나 애초에 커밋되지 않은 UI의 잔존물로 보인다.
 
-### 4.2 백엔드 라우트 — **60개 등록, 전부 실제 로직**
+### 4.2 백엔드 라우트 — **62개 등록, 전부 실제 로직**
 
-> 이슈 #5로 `GET /api/proxy`·`POST /api/proxy/capture` 2개가 추가됐다(58→60). 아래 표의
-> 등록 줄·`@줄` 참조는 스냅샷 값이라 이 삽입(webui.go +약 41줄)만큼 소폭 밀려 있다 — §0 갱신 2 참조.
+> 이슈 #5로 `GET /api/proxy`·`POST /api/proxy/capture`, 이슈 #7로 `GET /api/endpoints/tree`·
+> `GET /api/endpoints/detail`가 추가됐다(58→60→62). 아래 표의 등록 줄·`@줄` 참조는 스냅샷 값이라
+> 이 삽입(webui.go 누적 +약 130줄)만큼 밀려 있다 — §0 갱신 2 참조.
 
-`internal/webui/webui.go`의 `Serve()`에 등록. 정확히 **59개 `mux.HandleFunc` + 1개 `mux.Handle("/")` = 60개**.
+`internal/webui/webui.go`의 `Serve()`에 등록. 정확히 **61개 `mux.HandleFunc` + 1개 `mux.Handle("/")` = 62개**.
 스텁·TODO·플레이스홀더 핸들러는 **이 파일에 하나도 없다.**
 
-등록 형식은 두 갈래다: **39개는 경로만**(메서드는 핸들러 내부 검사 또는 미검사), **21개는 `METHOD /path/{id}` 패턴**.
+등록 형식은 두 갈래다: **39개는 경로만**(메서드는 핸들러 내부 검사 또는 미검사), **23개는 `METHOD /path/{id}` 패턴**.
 
 | 경로 | 줄 | 종단 |
 |---|---|---|
@@ -384,7 +388,9 @@ webui.SetAuthDisabled         :166
 | `/api/findings` | 93 | `finding.ByProject` |
 | `/api/scanruns` | 94 | `scanengine.RunsByProject` |
 | `/api/coverage` | 95 | `coverage.Report` |
-| `/api/endpoints` | 96 | `endpoints.Targets` |
+| `/api/endpoints` | 96 | `endpointsListHandler` — 필터/검색/페이징 (이슈 #7) |
+| `GET /api/endpoints/tree` | — | `endpoints.Snapshot` — 풍부한 트리 (이슈 #7) |
+| `GET /api/endpoints/detail` | — | `endpointDetailHandler` — 단일 상세 (이슈 #7) |
 | `GET /api/proxy` | 98 | `proxyStatus` (이슈 #5) |
 | `POST /api/proxy/capture` | 99 | `proxyCaptureHandler` — `proxy:control` 리더·감사 (이슈 #5) |
 | `/api/crawl` | 97 | `crawlHandler` @555 |

@@ -21,9 +21,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"proxypoc/internal/masking"
 )
+
+// nowRFC3339 — 캡처 시각(UTC, 초 단위). 발견 시각 기록용 (이슈 #7).
+func nowRFC3339() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // Param — 파라미터 (§3 Parameter). 원문 값 대신 마스킹 샘플만 저장.
 type Param struct {
@@ -42,16 +46,18 @@ type paramAgg struct {
 }
 
 type node struct {
-	segment  string
-	path     string
-	lastPath string // 마지막으로 본 concrete 경로 (스캔 재요청용)
-	scheme   string // http | https (스캔 재요청 시 원 스킴 보존)
-	methods  map[string]bool
-	params   map[string]*paramAgg
-	count    int
-	auth     bool
-	verdict  string
-	children map[string]*node
+	segment   string
+	path      string
+	lastPath  string // 마지막으로 본 concrete 경로 (스캔 재요청용)
+	scheme    string // http | https (스캔 재요청 시 원 스킴 보존)
+	methods   map[string]bool
+	params    map[string]*paramAgg
+	count     int
+	auth      bool
+	verdict   string
+	firstSeen string // 최초 캡처 시각 (RFC3339, FR-2.4 조회 강화 — 이슈 #7)
+	lastSeen  string // 최근 캡처 시각 (RFC3339)
+	children  map[string]*node
 }
 
 func newNode(seg, path string) *node {
@@ -267,6 +273,11 @@ func (t *Tree) Record(scheme, host, method, rawPath string, params []Param, auth
 	if verdict != "" {
 		cur.verdict = verdict
 	}
+	now := nowRFC3339()
+	if cur.firstSeen == "" {
+		cur.firstSeen = now
+	}
+	cur.lastSeen = now
 
 	// 파라미터 집계 (위치 합집합, 타입·샘플 유지, 요청당 1회 seen 증가)
 	namesThisReq := map[string]bool{}
@@ -296,25 +307,29 @@ func (t *Tree) Record(scheme, host, method, rawPath string, params []Param, auth
 
 // OutNode — 트리 출력(JSON·MCP·파일).
 type OutNode struct {
-	Segment  string    `json:"segment"`
-	Path     string    `json:"path,omitempty"`
-	Methods  []string  `json:"methods,omitempty"`
-	Params   []Param   `json:"params,omitempty"`
-	Count    int       `json:"count,omitempty"`
-	Auth     bool      `json:"auth_required,omitempty"`
-	Verdict  string    `json:"verdict,omitempty"`
-	Children []OutNode `json:"children,omitempty"`
+	Segment   string    `json:"segment"`
+	Path      string    `json:"path,omitempty"`
+	Methods   []string  `json:"methods,omitempty"`
+	Params    []Param   `json:"params,omitempty"`
+	Count     int       `json:"count,omitempty"`
+	Auth      bool      `json:"auth_required,omitempty"`
+	Verdict   string    `json:"verdict,omitempty"`
+	FirstSeen string    `json:"first_seen,omitempty"` // 최초 캡처 시각 (이슈 #7)
+	LastSeen  string    `json:"last_seen,omitempty"`  // 최근 캡처 시각
+	Children  []OutNode `json:"children,omitempty"`
 }
 
 func toOut(n *node) OutNode {
 	o := OutNode{
-		Segment: n.segment,
-		Path:    n.path,
-		Methods: sortedKeys(n.methods),
-		Params:  outParams(n),
-		Count:   n.count,
-		Auth:    n.auth,
-		Verdict: n.verdict,
+		Segment:   n.segment,
+		Path:      n.path,
+		Methods:   sortedKeys(n.methods),
+		Params:    outParams(n),
+		Count:     n.count,
+		Auth:      n.auth,
+		Verdict:   n.verdict,
+		FirstSeen: n.firstSeen,
+		LastSeen:  n.lastSeen,
 	}
 	keys := make([]string, 0, len(n.children))
 	for k := range n.children {
@@ -366,13 +381,16 @@ func (t *Tree) Find(host, path string) (OutNode, bool) {
 
 // Target — 스캔 대상 엔드포인트 (concrete 경로 포함).
 type Target struct {
-	Scheme  string   `json:"scheme,omitempty"` // http | https (스캔 재요청용)
-	Host    string   `json:"host"`             // authority (host[:port])
-	Path    string   `json:"path"`             // concrete (재요청 가능)
-	Methods []string `json:"methods,omitempty"`
-	Params  []Param  `json:"params,omitempty"`
-	Auth    bool     `json:"auth_required"`     // 정상 접근 시 인증을 동반했는가 (접근통제 판정 힌트)
-	Verdict string   `json:"verdict,omitempty"` // 위험 판단 결과 (§5.2; 자동 대상선정 힌트, FR-3.9)
+	Scheme    string   `json:"scheme,omitempty"` // http | https (스캔 재요청용)
+	Host      string   `json:"host"`             // authority (host[:port])
+	Path      string   `json:"path"`             // concrete (재요청 가능)
+	Methods   []string `json:"methods,omitempty"`
+	Params    []Param  `json:"params,omitempty"`
+	Auth      bool     `json:"auth_required"`         // 정상 접근 시 인증을 동반했는가 (접근통제 판정 힌트)
+	Verdict   string   `json:"verdict,omitempty"`     // 위험 판단 결과 (§5.2; 자동 대상선정 힌트, FR-3.9)
+	Count     int      `json:"count,omitempty"`       // 누적 히트 수 (조회 강화 — 이슈 #7)
+	FirstSeen string   `json:"first_seen,omitempty"`  // 최초 캡처 시각 (RFC3339)
+	LastSeen  string   `json:"last_seen,omitempty"`   // 최근 캡처 시각 (RFC3339)
 }
 
 // Interesting — 공격면이 넓은 대상인가 (파라미터/인증/위험판단 존재). FR-3.9 자동선정용.
@@ -389,13 +407,16 @@ func (t *Tree) Targets() []Target {
 	walk = func(host string, n *node) {
 		if len(n.methods) > 0 && n.lastPath != "" {
 			out = append(out, Target{
-				Scheme:  n.scheme,
-				Host:    host,
-				Path:    n.lastPath,
-				Methods: sortedKeys(n.methods),
-				Params:  outParams(n),
-				Auth:    n.auth,
-				Verdict: n.verdict,
+				Scheme:    n.scheme,
+				Host:      host,
+				Path:      n.lastPath,
+				Methods:   sortedKeys(n.methods),
+				Params:    outParams(n),
+				Auth:      n.auth,
+				Verdict:   n.verdict,
+				Count:     n.count,
+				FirstSeen: n.firstSeen,
+				LastSeen:  n.lastSeen,
 			})
 		}
 		for _, c := range n.children {
@@ -470,22 +491,25 @@ type storeParam struct {
 }
 
 type storeNode struct {
-	Segment  string       `json:"segment"`
-	Path     string       `json:"path,omitempty"`
-	LastPath string       `json:"last_path,omitempty"`
-	Scheme   string       `json:"scheme,omitempty"`
-	Methods  []string     `json:"methods,omitempty"`
-	Params   []storeParam `json:"params,omitempty"`
-	Count    int          `json:"count,omitempty"`
-	Auth     bool         `json:"auth,omitempty"`
-	Verdict  string       `json:"verdict,omitempty"`
-	Children []storeNode  `json:"children,omitempty"`
+	Segment   string       `json:"segment"`
+	Path      string       `json:"path,omitempty"`
+	LastPath  string       `json:"last_path,omitempty"`
+	Scheme    string       `json:"scheme,omitempty"`
+	Methods   []string     `json:"methods,omitempty"`
+	Params    []storeParam `json:"params,omitempty"`
+	Count     int          `json:"count,omitempty"`
+	Auth      bool         `json:"auth,omitempty"`
+	Verdict   string       `json:"verdict,omitempty"`
+	FirstSeen string       `json:"first_seen,omitempty"` // 이슈 #7
+	LastSeen  string       `json:"last_seen,omitempty"`
+	Children  []storeNode  `json:"children,omitempty"`
 }
 
 func toStore(n *node) storeNode {
 	s := storeNode{
 		Segment: n.segment, Path: n.path, LastPath: n.lastPath, Scheme: n.scheme,
 		Methods: sortedKeys(n.methods), Count: n.count, Auth: n.auth, Verdict: n.verdict,
+		FirstSeen: n.firstSeen, LastSeen: n.lastSeen,
 	}
 	pnames := make([]string, 0, len(n.params))
 	for name := range n.params {
@@ -510,6 +534,7 @@ func toStore(n *node) storeNode {
 func fromStore(s storeNode) *node {
 	n := newNode(s.Segment, s.Path)
 	n.lastPath, n.scheme, n.count, n.auth, n.verdict = s.LastPath, s.Scheme, s.Count, s.Auth, s.Verdict
+	n.firstSeen, n.lastSeen = s.FirstSeen, s.LastSeen
 	for _, m := range s.Methods {
 		n.methods[m] = true
 	}
