@@ -1,0 +1,51 @@
+# CodeRabbit 설정 — https://docs.coderabbit.ai/reference/configuration
+# AVA (LLM 기반 웹 취약점 진단 도구) 자동 코드 리뷰 설정
+language: "ko-KR"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+
+  # 리뷰 제외 경로 (생성물·산출물·바이너리)
+  path_filters:
+    - "!**/dist/**"
+    - "!backend/internal/webui/dist/**"
+    - "!docs/index.html"
+    - "!**/*.zip"
+    - "!**/*.exe"
+    - "!**/node_modules/**"
+    - "!frontend/package-lock.json"
+
+  # 경로별 리뷰 지침
+  path_instructions:
+    - path: "backend/**/*.go"
+      instructions: >
+        Go 백엔드 코드. 에러 처리 누락, 고루틴/컨텍스트 누수, panic 가능성,
+        입력 검증을 중점적으로 본다. 판단 파이프라인(스코프→Rule→LLM)에서
+        스코프 밖으로 데이터가 나가지 않는지, 증적/응답 마스킹이 유지되는지 확인.
+    - path: "frontend/**/*.{ts,tsx}"
+      instructions: >
+        React/TypeScript 프론트. 타입 안정성, XSS 위험(dangerouslySetInnerHTML 등),
+        상태 관리, 접근성을 확인한다.
+    - path: "**/*.{yaml,yml}"
+      instructions: >
+        설정 파일. 민감값 하드코딩 여부를 확인한다.
+
+  # 커밋에 절대 포함되면 안 되는 민감 파일 감지
+  auto_review:
+    enabled: true
+    drafts: false
+
+chat:
+  auto_reply: true
+
+# 민감 파일 유출 경고 — 아래 파일이 diff에 포함되면 강하게 지적하도록 요청
+tone_instructions: >
+  이 저장소에는 절대 커밋되면 안 되는 민감 파일이 있다:
+  ca.key, secret.key, users.json, projects.json, local.config.yaml.
+  이런 파일이나 그 안의 개인키/시크릿/비밀번호/인증정보가 diff에 포함되면
+  최우선으로 강하게 경고하라. 실제 인증정보나 마스킹되지 않은 증적도 동일하게 지적하라.

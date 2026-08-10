@@ -1,0 +1,34 @@
+# ── 시크릿 / 런타임 상태 (절대 커밋 금지) ──
+backend/ca.key
+backend/ca.crt
+backend/secret.key
+backend/*.config.yaml
+backend/findings.json
+backend/endpoints.json
+backend/profiles.json
+backend/projects.json
+backend/users.json
+backend/audit.json
+backend/scanruns.json
+backend/rules.adopted.json
+
+# ── 배포용 압축본 (재생성 가능) ──
+*.zip
+_docsite_preview.html
+
+# ── 빌드 산출물 ──
+backend/*.exe
+*.exe
+
+# ── 프론트엔드 ──
+frontend/node_modules/
+# 임베드 대상: `npm run build` 로 생성됨. go build 전에 빌드 필요.
+backend/internal/webui/dist/
+
+# ── 잡동사니 ──
+.DS_Store
+*.log
+
+# test-run artifacts (packages write to cwd during go test)
+backend/internal/**/*.json
+backend/internal/**/*.cgpkg
