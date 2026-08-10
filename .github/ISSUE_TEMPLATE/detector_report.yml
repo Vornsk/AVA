@@ -1,0 +1,51 @@
+name: 🎯 탐지 정확도 (오탐/미탐)
+description: 탐지기의 오탐(False Positive) 또는 미탐(False Negative)을 신고합니다
+title: "[Detector] "
+labels: ["detector", "accuracy"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        탐지 정밀도 개선을 위한 리포트입니다. 재현 요청/응답 증적이 있으면 가장 좋습니다.
+        > ⚠️ 증적을 붙일 때 진단 대상의 실제 인증정보·개인정보는 반드시 마스킹해주세요.
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 유형
+      options:
+        - 오탐 (False Positive) — 취약하지 않은데 탐지됨
+        - 미탐 (False Negative) — 취약한데 놓침
+    validations:
+      required: true
+
+  - type: input
+    id: detector
+    attributes:
+      label: 탐지기
+      description: 어떤 탐지기인가요? (예 XSS-reflected, SQLi-error, SSRF ...)
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 재현 요청 / 응답 증적
+      description: 재현에 사용한 요청과 판단 근거가 된 응답을 붙여주세요. (민감값 마스킹)
+      render: http
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 올바른 판단
+      description: 이 케이스에서 탐지기가 어떻게 판단했어야 하는지 설명해주세요.
+    validations:
+      required: true
+
+  - type: input
+    id: target
+    attributes:
+      label: 검증 대상
+      description: DVWA, 자체 vulnlab, 실제 대상 등 (URL은 스코프 내에서만)

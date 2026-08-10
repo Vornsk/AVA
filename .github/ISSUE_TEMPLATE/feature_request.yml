@@ -1,0 +1,51 @@
+name: ✨ 기능 제안
+description: 새 기능이나 개선 아이디어를 제안합니다
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 어떤 문제/불편을 해결하나요?
+      description: 배경과 현재의 한계를 설명해주세요.
+      placeholder: 스캔 결과를 규제 점검항목으로 필터링할 수 없어서...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 제안하는 해결책
+      description: 원하는 동작이나 UI/API를 구체적으로 적어주세요.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: 관련 영역
+      options:
+        - 프록시 엔진 / 판단 파이프라인
+        - MCP 오케스트레이션
+        - 웹 GUI
+        - 탐지기 (신규/개선)
+        - 리포트/규제 산출물
+        - 크롤러/공격면 탐색
+        - 인증/RBAC/영속화
+        - 기타
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 고려한 대안
+      description: 다른 접근이나 우회책이 있었다면 적어주세요.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 확인
+      options:
+        - label: 중복 제안이 없는지 검색했습니다.
+          required: true
