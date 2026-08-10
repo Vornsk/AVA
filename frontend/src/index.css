@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+/* 클래스 기반 다크모드: <html class="dark"> */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 시맨틱 컬러 토큰 — 다크 기본, 라이트 오버라이드. CyberGuard 팔레트. */
+/* 라이트 — Cyber-Sentinel Professional (Primary 인디고블루, Secondary 그린, Tertiary 앰버) */
+:root {
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --panel-2: #eef1f8;
+  --border: #e1e5ef;
+  --text: #131826;
+  --muted: #626b81;
+  --accent: #4f5bef;      /* Primary */
+  --accent-fg: #ffffff;
+  --green: #10b981;       /* Secondary */
+  --red: #e5484d;
+  --amber: #f59e0b;       /* Tertiary */
+  --blue: #3b82f6;
+}
+/* 다크 — 네이비 슬레이트 (기본 테마). 가독성 위해 명도 상향. */
+.dark {
+  --bg: #2e3a54;
+  --panel: #3a4767;
+  --panel-2: #47567b;
+  --border: #586889;
+  --text: #f7f9fd;
+  --muted: #c8d1e4;
+  --accent: #6f7fff;      /* Primary */
+  --accent-fg: #ffffff;
+  --green: #3ddfad;       /* Secondary */
+  --red: #ff8585;
+  --amber: #f9c463;       /* Tertiary */
+  --blue: #74acff;
+}
+
+:root { --shadow: 0 1px 2px rgba(16, 20, 40, 0.06), 0 8px 24px rgba(16, 20, 40, 0.05); }
+.dark { --shadow: 0 1px 2px rgba(0, 0, 0, 0.30), 0 8px 28px rgba(0, 0, 0, 0.28); }
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-sans-serif, system-ui, "Segoe UI", "Malgun Gothic", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* label: 섹션 소제목 통일 */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* 얇은 스크롤바 */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); }
