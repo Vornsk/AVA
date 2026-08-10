@@ -1,7 +1,14 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play } from 'lucide-react'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
+
+// fmtTime — RFC3339 시각을 로캘 표기로. 값 없으면 —.
+function fmtTime(s?: string) {
+  if (!s) return '—'
+  const d = new Date(s)
+  return isNaN(d.getTime()) ? s : d.toLocaleString()
+}
 
 // CrawlExplore — 자동 공격면 탐색(AppScan Explore 대응). 시작 URL에서 링크·폼을 따라 자동 크롤.
 function CrawlExplore() {
@@ -56,63 +63,150 @@ function CrawlExplore() {
   )
 }
 
+// EndpointTree — 캡처된 공격면 조회 (이슈 #7): 검색·메서드·인증·판정 필터 + 행 클릭 상세 드릴다운.
+function EndpointTree({ targets }: { targets: Target[] | null }) {
+  const [q, setQ] = useState('')
+  const [method, setMethod] = useState('')
+  const [authOnly, setAuthOnly] = useState(false)
+  const [verdictOnly, setVerdictOnly] = useState(false)
+  const [open, setOpen] = useState<string | null>(null)
+
+  const all = targets ?? []
+  const methods = Array.from(new Set(all.flatMap((t) => t.methods ?? []))).sort()
+  const hasFilter = !!(q || method || authOnly || verdictOnly)
+
+  const filtered = all.filter((t) => {
+    if (q && !`${t.host}${t.path}`.toLowerCase().includes(q.toLowerCase())) return false
+    if (method && !(t.methods ?? []).includes(method)) return false
+    if (authOnly && !t.auth_required) return false
+    if (verdictOnly && !t.verdict) return false
+    return true
+  })
+
+  const byHost: Record<string, Target[]> = {}
+  for (const t of filtered) (byHost[t.host] ??= []).push(t)
+
+  const count = targets ? (hasFilter ? `${filtered.length}/${all.length}` : `${all.length}`) : ''
+  const inp = 'rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1.5 text-xs'
+
+  return (
+    <Card title={`Endpoint Tree${count ? ` (${count})` : ''}`} icon={Network}>
+      {/* 필터 바 */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[180px] flex-1">
+          <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="호스트·경로 검색"
+                 className="w-full rounded-lg border border-[var(--border)] bg-[var(--panel-2)] py-1.5 pl-8 pr-3 font-mono text-xs" />
+        </div>
+        <select value={method} onChange={(e) => setMethod(e.target.value)} className={inp} aria-label="메서드 필터">
+          <option value="">모든 메서드</option>
+          {methods.map((m) => <option key={m} value={m}>{m}</option>)}
+        </select>
+        <button onClick={() => setAuthOnly((v) => !v)}
+                className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${authOnly ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
+          <KeyRound size={12} /> 인증
+        </button>
+        <button onClick={() => setVerdictOnly((v) => !v)}
+                className={`rounded-lg border px-2 py-1.5 text-xs ${verdictOnly ? 'border-[var(--red)] text-[var(--red)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
+          판정
+        </button>
+      </div>
+
+      {!targets || all.length === 0 ? (
+        <Empty icon={Network}>아직 캡처된 엔드포인트가 없습니다. 프록시(:8080) 경유로 트래픽을 흘리면 채워집니다.</Empty>
+      ) : filtered.length === 0 ? (
+        <Empty icon={Search}>필터에 맞는 엔드포인트가 없습니다.</Empty>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(byHost).map(([host, eps]) => (
+            <div key={host}>
+              <div className="mb-1.5 flex items-center gap-2 font-mono text-xs font-semibold text-[var(--muted)]">
+                <Globe size={13} /> {host}
+              </div>
+              <div className="overflow-hidden rounded-lg border border-[var(--border)]">
+                {eps.map((t, i) => {
+                  const key = `${host}${t.path}${i}`
+                  const isOpen = open === key
+                  return (
+                    <div key={key} className="border-t border-[var(--border)] first:border-t-0">
+                      <button onClick={() => setOpen(isOpen ? null : key)}
+                              className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-[var(--panel-2)]">
+                        <ChevronRight size={13} className={`shrink-0 text-[var(--muted)] transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+                        {(t.methods ?? []).map((m) => (
+                          <span key={m} className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                                style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>{m}</span>
+                        ))}
+                        <span className="font-mono text-sm">{t.path}</span>
+                        {t.auth_required && <KeyRound size={12} className="text-[var(--amber)]" />}
+                        {t.verdict && <Badge text={t.verdict} color="var(--red)" />}
+                        {t.params && t.params.length > 0 && (
+                          <span className="text-[10px] text-[var(--muted)]">· {t.params.length}p</span>
+                        )}
+                        {typeof t.count === 'number' && t.count > 0 && (
+                          <span className="ml-auto shrink-0 text-[11px] text-[var(--muted)]">{t.count} hits</span>
+                        )}
+                      </button>
+                      {isOpen && (
+                        <div className="border-t border-[var(--border)] bg-[var(--panel-2)] px-3 py-2.5 pl-8 text-xs">
+                          <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1 text-[var(--muted)]">
+                            <span>히트 <b className="text-[var(--text)]">{t.count ?? 0}</b></span>
+                            <span className="inline-flex items-center gap-1"><Clock size={11} /> 최초 <b className="text-[var(--text)]">{fmtTime(t.first_seen)}</b></span>
+                            <span className="inline-flex items-center gap-1"><Clock size={11} /> 최근 <b className="text-[var(--text)]">{fmtTime(t.last_seen)}</b></span>
+                            <span>인증 <b className="text-[var(--text)]">{t.auth_required ? '필요' : '—'}</b></span>
+                          </div>
+                          {t.verdict && <div className="mb-2 text-[var(--muted)]">판정: <span className="text-[var(--text)]">{t.verdict}</span></div>}
+                          {t.params && t.params.length > 0 ? (
+                            <div className="overflow-x-auto">
+                              <table className="w-full border-collapse text-[11px]">
+                                <thead>
+                                  <tr className="text-left text-[var(--muted)]">
+                                    <th className="py-1 pr-3 font-medium">위치</th>
+                                    <th className="py-1 pr-3 font-medium">이름</th>
+                                    <th className="py-1 pr-3 font-medium">타입</th>
+                                    <th className="py-1 pr-3 font-medium">필수</th>
+                                    <th className="py-1 font-medium">샘플</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="font-mono">
+                                  {t.params.map((p) => (
+                                    <tr key={p.in + p.name} className="border-t border-[var(--border)]">
+                                      <td className="py-1 pr-3 text-[var(--muted)]">{p.in}</td>
+                                      <td className="py-1 pr-3">{p.name}</td>
+                                      <td className="py-1 pr-3 text-[var(--muted)]">{p.type ?? '—'}</td>
+                                      <td className="py-1 pr-3">{p.required ? <span className="text-[var(--red)]">필수</span> : '—'}</td>
+                                      <td className="py-1 text-[var(--muted)]">{p.sample ?? '—'}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : <div className="text-[var(--muted)]">파라미터 없음</div>}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
+}
+
 export function Recon() {
   const { data: targets } = usePoll<Target[]>('/api/endpoints', 4000)
   const { data: rules } = usePoll<Rule[]>('/api/rules', 8000)
   const { data: stats } = usePoll<Stats>('/api/stats', 5000)
   const { data: auth } = usePoll<AuthSummary>('/api/auth', 8000)
 
-  // 호스트별 그룹핑
-  const byHost: Record<string, Target[]> = {}
-  for (const t of targets ?? []) (byHost[t.host] ??= []).push(t)
-
   return (
     <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
       {/* 엔드포인트 트리 (FR-2.4) */}
       <div className="space-y-5">
         <CrawlExplore />
-        <Card title={`Endpoint Tree${targets ? ` (${targets.length})` : ''}`} icon={Network}>
-          {!targets || targets.length === 0 ? (
-            <Empty icon={Network}>아직 캡처된 엔드포인트가 없습니다. 프록시(:8080) 경유로 트래픽을 흘리면 채워집니다.</Empty>
-          ) : (
-            <div className="space-y-4">
-              {Object.entries(byHost).map(([host, eps]) => (
-                <div key={host}>
-                  <div className="mb-1.5 flex items-center gap-2 font-mono text-xs font-semibold text-[var(--muted)]">
-                    <Globe size={13} /> {host}
-                  </div>
-                  <div className="overflow-hidden rounded-lg border border-[var(--border)]">
-                    {eps.map((t, i) => (
-                      <div key={t.path + i} className="border-t border-[var(--border)] first:border-t-0 px-3 py-2.5 hover:bg-[var(--panel-2)]">
-                        <div className="flex items-center gap-2">
-                          {(t.methods ?? []).map((m) => (
-                            <span key={m} className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-                                  style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>{m}</span>
-                          ))}
-                          <span className="font-mono text-sm">{t.path}</span>
-                          {t.auth_required && <KeyRound size={12} className="text-[var(--amber)]" />}
-                          {t.verdict && <Badge text={t.verdict} color="var(--red)" />}
-                        </div>
-                        {t.params && t.params.length > 0 && (
-                          <div className="mt-1.5 flex flex-wrap gap-1.5">
-                            {t.params.map((p) => (
-                              <span key={p.in + p.name} className="inline-flex items-center gap-1 rounded-md border border-[var(--border)] bg-[var(--panel)] px-1.5 py-0.5 text-[11px]">
-                                <span className="text-[var(--muted)]">{p.in}:</span>
-                                <span className="font-mono">{p.name}</span>
-                                {p.type && <span className="text-[var(--muted)]">·{p.type}</span>}
-                                {p.required && <span className="text-[var(--red)]">*</span>}
-                              </span>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
+        <EndpointTree targets={targets} />
       </div>
 
       {/* 우측: 파이프라인·스코프·인증 */}

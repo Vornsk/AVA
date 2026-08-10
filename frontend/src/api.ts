@@ -103,6 +103,9 @@ export interface Target {
   params?: Param[]
   auth_required?: boolean
   verdict?: string
+  count?: number
+  first_seen?: string
+  last_seen?: string
 }
 export interface Rule {
   name: string
