@@ -33,13 +33,24 @@
 | `go test ./...` | ⚠️ 21개 패키지 통과, 2개 `[setup failed]` (동일 embed 원인). **실패한 테스트 단언은 0건** |
 | `npm run build` | ❌ 엔트리 `main.tsx` 미존재로 실패 (**추정** — `npm install` 미실행, 정적 분석 기반) |
 
-> **갱신 (이 문서 작성 이후):** 위 빌드 실패는 `backend/internal/webui/dist/index.html`
-> **임시 플레이스홀더**를 커밋해 해소했다. fresh clone 기준 `go build`·`go vet`·`go test`
-> 모두 종료코드 0이며, `internal/webui`와 `cmd/proxy`가 처음으로 컴파일된다.
-> 다만 **2번(프론트엔드 소스 부재)은 그대로 남아 있다** — 플레이스홀더는 "UI 미구현"
-> 안내를 표시하는 정적 페이지일 뿐 실제 빌드 산출물이 아니다. 제거 조건은
-> README "프론트엔드 상태" 절 참조. 이 문서의 나머지 부분은 플레이스홀더 도입 **이전**
-> 상태를 기술한다.
+> **갱신 (이 문서 작성 이후 — 두 단절 모두 해소됨):**
+>
+> 프론트엔드 소스 19개 파일(2,755줄 — 화면 11개 + Login·App·main.tsx·공용 컴포넌트)과
+> `vite.config.ts`·`tsconfig.json`이 도입되어, **위 1·2번이 모두 사라졌다.**
+> `vite.config.ts`의 `build.outDir`이 `../backend/internal/webui/dist`를 가리키므로
+> `npm run build` 산출물이 그대로 임베드 대상이 된다.
+>
+> fresh clone 기준 실측: `npm ci` ✅ → `npm run build` ✅ (1,811 모듈) →
+> `npx tsc --noEmit` **에러 0건**(`strict` 활성) → `go build`·`go vet`·`go test` 모두 종료코드 0.
+> `internal/webui`와 `cmd/proxy`가 정상 컴파일된다.
+>
+> 빌드 순서 의존이 생겼다: **`npm run build`를 `go build`보다 먼저** 수행해야 한다
+> (`dist/`는 빌드 산출물이라 커밋하지 않는다). README "빠른 실행" 절 참조.
+>
+> **이 문서의 나머지 부분은 UI 도입 이전 상태를 기술한다.** 특히 §3.4·§4.1·§5의
+> "UI 부재" 관련 서술은 더 이상 유효하지 않다 — `api.ts`는 12개 파일이 import하는
+> 실사용 코드가 되었고(`usePoll` 51회, `apiPost` 22회), 화면 11개가 모두 존재한다.
+> 그 외 백엔드 분석(§1~§3.3, §3.5~§3.8, §4.2~§4.4, §5.2~§5.6, §6, §7)은 그대로 유효하다.
 
 ---
 

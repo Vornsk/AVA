@@ -52,28 +52,21 @@ backend/internal/**/*.cgpkg
 backend/cmd/**/*.json
 backend/cmd/**/*.cgpkg
 
-# ── //go:embed 대상 — 반드시 무시 대상에서 제외 ───────────────────────
+# ── //go:embed 대상 (프론트 빌드 산출물) ──────────────────────────────
 # backend/internal/webui/webui.go:46 의
 #     //go:embed all:dist
 # 는 backend/internal/webui/dist/ 가 "빌드 시점에 존재"할 것을 요구한다.
 # 없으면 컴파일 자체가 실패한다:
 #     internal/webui/webui.go:46:12: pattern all:dist: no matching files found
-# 이 실패는 internal/webui 와 제품 본체 cmd/proxy 를 함께 무너뜨린다.
 #
-# 그래서 dist/ 를 여기서 무시하지 않는다. 두 가지 이유가 겹친다.
-#   1) 바로 위 backend/internal/**/*.json 규칙이 dist 내부의 asset manifest
-#      (예: dist/assets/*.json) 까지 삼켜 임베드 트리를 조용히 망가뜨린다.
-#      → 아래 되살리기 규칙으로 명시적으로 예외 처리한다.
-#   2) dist/ 를 통째로 무시하면 fresh clone → go build 가 항상 실패한다.
-#      프론트 소스(main.tsx)가 아직 레포에 없는 현 상태에서는
-#      dist/ 를 재생성할 방법조차 없다.
+# 이 디렉터리는 frontend 의 `npm run build` 산출물이다
+# (frontend/vite.config.ts 의 build.outDir → ../backend/internal/webui/dist,
+#  emptyOutDir: true 라 매 빌드마다 통째로 교체된다).
+# 재생성 가능한 빌드 산출물이므로 커밋하지 않는다.
 #
-# ※ 트레이드오프: 빌드 산출물을 리포지토리에 두는 것은 일반적으로 권장되지
-#    않는다. 프론트엔드 소스가 복구되고 CI 가 `npm run build` 를 수행하게 되면
-#    아래 두 줄을 지우고 `backend/internal/webui/dist/` 를 무시로 되돌리는 것이
-#    맞다. 그때까지는 "빌드되는 레포" 쪽을 우선한다.
-!backend/internal/webui/dist/
-!backend/internal/webui/dist/**
+# ※ go build 전에 반드시 `npm run build` 를 먼저 수행해야 한다.
+#   CI 도 같은 순서로 배선되어야 하며, 이 순서가 깨지면 위 컴파일 에러가 난다.
+backend/internal/webui/dist/
 
 # ── Go 빌드 산출물 ────────────────────────────────────────────────────
 # `go build ./...` 는 모듈 루트에 확장자 없는 바이너리를 떨군다.
