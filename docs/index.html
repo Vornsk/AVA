@@ -448,6 +448,8 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
     <p>진단 대상의 <strong>공격면(엔드포인트)</strong>을 파악하고, 스코프·인증·판단 파이프라인 현황을 확인하는 페이지입니다. 요구사항 §5.2(대상 파악)·FR-2.x에 대응합니다.</p>
 <h3>화면 구성</h3>
 <p><strong>좌측 (2/3)</strong></p>
+<ul><li><strong>프록시 도구</strong> — 공용 프록시(:8080) 상태(리슨 주소·<strong>캡처 on/off 배지</strong>·누적 캡처 수·수집</li></ul>
+<p>  엔드포인트/호스트·스코프 호스트)와 <strong>캡처 토글</strong>(리더 <code>proxy:control</code>, 무권한 시 비활성),   <strong>CA 신뢰 상태</strong>(미신뢰 시 <code>-cert-install</code> 명령 안내)·브라우저 프록시·<strong>트래픽 유도 <code>curl</code></strong>   가이드를 한 카드에 모음. 캡처가 꺼져 있으면 "Endpoint Tree가 안 채워짐" 경고. 기존 API만 사용(이슈 #9)</p>
 <ul><li><strong>자동 크롤 (Explore)</strong> — 시작 URL에서 링크·폼·JS 번들을 따라 스코프 내를 BFS 크롤(AppScan</li></ul>
 <p>  Explore 대응). 비파괴(GET·폼 등록만). 정적 추출 기본, <strong>헤드리스(Chrome, JS 실행) 옵트인</strong>   (서버에 Chrome 없으면 비활성). 실행 상태·발견 수·JS 번들 수 표시</p>
 <ul><li><strong>Endpoint Tree</strong> — 호스트별로 그룹된 캡처 엔드포인트. 메서드·경로·인증 필요 표식·판정 배지·히트 수.</li></ul>
@@ -467,7 +469,7 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <h3>프록시 캡처 제어 (공용 :8080)</h3>
 <p>공용 프록시는 항상 켜져 있고, <strong>엔드포인트 캡처(공격면 기록)만 런타임에 on/off</strong> 합니다 (프로세스·스코프·인증·판단 파이프라인은 영향 없음). 캡처를 끄면 트래픽은 그대로 통과하되 <code>endpoints.json</code>에 새 엔드포인트가 기록되지 않고, 다시 켜면 재개됩니다.</p>
 <ul><li><strong>상태 조회</strong> <code>GET /api/proxy</code> — 리슨 주소·캡처 여부·스코프 호스트 수·누적 캡처 수·공격면 규모</li><li><strong>캡처 토글</strong> <code>POST /api/proxy/capture</code> <code>{on}</code> — 리더(<code>proxy:control</code>), 감사 기록</li><li><strong>MCP</strong> <code>proxy_status</code>(조회) · <code>set_capture</code>(토글, 리더) — 외부 에이전트용</li><li>테넌트 전용 프록시(<a href="#sec-02" data-go="02">02-프로젝트</a>)는 이 토글의 영향을 받지 않습니다(격리 유지)</li></ul>
-<div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p>GUI 연동(정찰 페이지의 상태·토글 UI)은 후속 프론트 작업에서 붙습니다. 현재는 <strong>API·MCP로 제공</strong>됩니다.</p></div>
+<div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p>GUI 연동 완료(이슈 #9) — 위 상태·토글은 정찰 페이지 좌측 <strong>프록시 도구</strong> 카드에서 바로 쓸 수 있고, API·MCP로도 동일하게 제공됩니다. (CA 설치는 OS 신뢰저장소 변경이라 웹에서 실행 불가 → 명령 안내로 제공)</p></div>
 <h3>관련 문서</h3>
 <ul><li>크롤러 방식(정적/SPA/헤드리스) → <a href="#sec-00" data-go="00">00-아키텍처 §6, §11</a></li><li>인증정보 암호화 저장 → <a href="#sec-02" data-go="02">02-프로젝트</a></li><li>여기서 채운 공격면으로 스캔 → <a href="#sec-04" data-go="04">04-스캔</a></li></ul>
   </section>
