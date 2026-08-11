@@ -243,6 +243,14 @@ export interface AuthSummary {
   headers: string[] | null
   identities: AuthIdentity[]
 }
+export interface ProxyStatus {
+  listen: string
+  capturing: boolean
+  scope_hosts: number
+  captured_requests: number
+  endpoints: number
+  hosts: number
+}
 export interface LoginSeqInfo {
   enabled: boolean
   url: string

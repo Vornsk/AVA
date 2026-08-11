@@ -1,7 +1,102 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock } from 'lucide-react'
-import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo } from '../api'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power } from 'lucide-react'
+import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
+
+// CopyLine — 복사 가능한 명령/코드 한 줄.
+function CopyLine({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1.5">
+      <code className="flex-1 overflow-x-auto whitespace-nowrap font-mono text-[11px]">{text}</code>
+      <button type="button" aria-label="복사"
+              onClick={() => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200) }}
+              className="shrink-0 text-[var(--muted)] hover:text-[var(--text)]">
+        {copied ? <Check size={13} className="text-[var(--green)]" /> : <Copy size={13} />}
+      </button>
+    </div>
+  )
+}
+
+// ProxyTool — 정찰 페이지 프록시 도구(이슈 #9): 공용 :8080 상태·캡처 제어·설정 안내·트래픽 유도.
+// 신규 백엔드 없이 기존 API만 사용 (상태 GET /api/proxy, 토글 POST /api/proxy/capture — #5).
+function ProxyTool({ stats }: { stats: Stats | null }) {
+  const { data: proxy } = usePoll<ProxyStatus>('/api/proxy', 4000)
+  const { data: me } = usePoll<Me>('/api/me', 30000)
+  const canControl = !!me?.can?.includes('proxy:control')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  async function toggle() {
+    if (!proxy) return
+    setBusy(true); setErr('')
+    try { await apiPost('/api/proxy/capture', { on: !proxy.capturing }) }
+    catch (e) { setErr(String(e)) } finally { setBusy(false) }
+  }
+
+  const listen = proxy?.listen || '127.0.0.1:8080'
+  const capturing = proxy?.capturing ?? false
+
+  return (
+    <Card title="프록시 도구" icon={Server}
+          right={<Dot text={capturing ? '캡처 중' : '캡처 정지'} color={capturing ? 'var(--green)' : 'var(--muted)'} />}>
+      {/* 상태 */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Stat label="리슨" value={listen} mono />
+        <Stat label="누적 캡처" value={String(proxy?.captured_requests ?? 0)} />
+        <Stat label="엔드포인트" value={`${proxy?.endpoints ?? 0} / ${proxy?.hosts ?? 0}host`} />
+        <Stat label="스코프" value={`${proxy?.scope_hosts ?? 0}host`} />
+      </div>
+
+      {/* 캡처 제어 */}
+      <div className="mt-3 flex items-center gap-2">
+        <button type="button" onClick={toggle} disabled={!canControl || busy || !proxy}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                style={{ background: capturing ? 'transparent' : 'var(--accent)', color: capturing ? 'var(--text)' : 'var(--accent-fg)', border: capturing ? '1px solid var(--border)' : 'none' }}>
+          <Power size={13} /> {busy ? '적용 중…' : capturing ? '캡처 끄기' : '캡처 켜기'}
+        </button>
+        {!canControl && <span className="text-[11px] text-[var(--muted)]">캡처 제어는 리더 권한(proxy:control)이 필요합니다</span>}
+        {err && <span className="text-[11px]" style={{ color: 'var(--red)' }}>실패: {err}</span>}
+      </div>
+      {!capturing && (
+        <p className="mt-1.5 text-[11px] text-[var(--amber)]">캡처가 꺼져 있어 트래픽을 흘려도 Endpoint Tree가 채워지지 않습니다.</p>
+      )}
+
+      {/* 설정 안내 */}
+      <div className="mt-3 border-t border-[var(--border)] pt-2.5">
+        <div className="mb-1.5 flex items-center justify-between text-xs">
+          <span className="text-[var(--muted)]">CA 신뢰 상태</span>
+          <Dot text={stats?.ca_trusted ? '신뢰됨' : '미신뢰'} color={stats?.ca_trusted ? 'var(--green)' : 'var(--amber)'} />
+        </div>
+        {!stats?.ca_trusted && (
+          <div className="space-y-1">
+            <p className="text-[11px] text-[var(--muted)]">HTTPS 가로채기를 하려면 CA를 OS 신뢰저장소에 설치하세요(서버에서 1회, 관리자 권한):</p>
+            <CopyLine text="proxy-poc.exe -cert-install" />
+          </div>
+        )}
+      </div>
+
+      {/* 트래픽 유도 */}
+      <div className="mt-3 border-t border-[var(--border)] pt-2.5">
+        <div className="eyebrow mb-1.5">트래픽 유도</div>
+        <p className="mb-1.5 text-[11px] text-[var(--muted)]">
+          브라우저 프록시를 <code className="font-mono">{listen}</code>로 설정하거나, 아래처럼 스코프 내 URL을
+          프록시로 흘리면 Endpoint Tree가 채워집니다.
+        </p>
+        <CopyLine text={`curl.exe -sk -x http://${listen} "<스코프 내 URL>"`} />
+      </div>
+    </Card>
+  )
+}
+
+function Stat({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2.5 py-1.5">
+      <div className="text-[10px] text-[var(--muted)]">{label}</div>
+      <div className={`truncate text-sm font-semibold ${mono ? 'font-mono text-xs' : ''}`}>{value}</div>
+    </div>
+  )
+}
 
 // fmtTime — RFC3339 시각을 로캘 표기로. 값 없으면 —.
 function fmtTime(s?: string) {
@@ -205,6 +300,7 @@ export function Recon() {
     <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
       {/* 엔드포인트 트리 (FR-2.4) */}
       <div className="space-y-5">
+        <ProxyTool stats={stats} />
         <CrawlExplore />
         <EndpointTree targets={targets} />
       </div>
