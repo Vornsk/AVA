@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ShieldCheck, LogIn } from 'lucide-react'
+import { LogIn } from 'lucide-react'
+import { AvaMark } from '../components/AvaMark'
 
 export function Login({ onSuccess }: { onSuccess: () => void }) {
   const [username, setU] = useState('leader')
@@ -30,11 +31,11 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         <div className="mb-6 flex flex-col items-center gap-2 text-center">
           <div className="grid h-12 w-12 place-items-center rounded-2xl shadow-[var(--shadow)]"
                style={{ background: 'linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #000))', color: 'var(--accent-fg)' }}>
-            <ShieldCheck size={24} strokeWidth={2.2} />
+            <AvaMark size={26} />
           </div>
           <div>
-            <div className="text-lg font-bold">CyberGuard</div>
-            <div className="text-[11px] uppercase tracking-[0.12em] text-[var(--muted)]">Vulnerability Engine</div>
+            <div className="text-xl font-extrabold tracking-[0.02em]">AVA</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--muted)]">Automated Vulnerability Assessment</div>
           </div>
         </div>
 

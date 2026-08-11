@@ -1,4 +1,5 @@
-import { LayoutDashboard, FolderKanban, Network, Radar, ShieldAlert, ListChecks, FileSpreadsheet, RotateCcw, BrainCircuit, ScrollText, ShieldCheck, Users, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, FolderKanban, Network, Radar, ShieldAlert, ListChecks, FileSpreadsheet, RotateCcw, BrainCircuit, ScrollText, Users, type LucideIcon } from 'lucide-react'
+import { AvaMark } from './AvaMark'
 
 export type Page = 'overview' | 'projects' | 'recon' | 'scan' | 'findings' | 'coverage' | 'report' | 'reverify' | 'advisor' | 'audit' | 'users'
 
@@ -32,11 +33,11 @@ export function Sidebar({ page, onNav }: { page: Page; onNav: (p: Page) => void 
       <div className="flex items-center gap-2.5 px-5 py-[18px] border-b border-[var(--border)]">
         <div className="grid h-9 w-9 place-items-center rounded-xl shadow-[var(--shadow)]"
              style={{ background: 'linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #000))', color: 'var(--accent-fg)' }}>
-          <ShieldCheck size={19} strokeWidth={2.2} />
+          <AvaMark size={20} />
         </div>
-        <div>
-          <div className="text-[15px] font-bold leading-tight">CyberGuard</div>
-          <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--muted)]">Vulnerability Engine</div>
+        <div className="min-w-0">
+          <div className="text-[17px] font-extrabold leading-none tracking-[0.02em]">AVA</div>
+          <div className="mt-0.5 text-[9px] font-semibold uppercase leading-[1.3] tracking-[0.1em] text-[var(--muted)]">Automated Vulnerability Assessment</div>
         </div>
       </div>
 

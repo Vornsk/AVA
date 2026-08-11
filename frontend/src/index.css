@@ -3,7 +3,7 @@
 /* 클래스 기반 다크모드: <html class="dark"> */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* 시맨틱 컬러 토큰 — 다크 기본, 라이트 오버라이드. CyberGuard 팔레트. */
+/* 시맨틱 컬러 토큰 — 다크 기본, 라이트 오버라이드. AVA 팔레트. */
 /* 라이트 — Cyber-Sentinel Professional (Primary 인디고블루, Secondary 그린, Tertiary 앰버) */
 :root {
   --bg: #f5f7fb;
