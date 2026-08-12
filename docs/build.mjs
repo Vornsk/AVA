@@ -157,7 +157,7 @@ function renderDoc(entry) {
     lines.splice(j, k - j);
   }
   const eyebrow = entry.id === 'home'
-    ? 'proxy-poc · 문서'
+    ? 'AVA · 문서'
     : `${entry.idx}${entry.group ? ' · ' + entry.group : ''}`;
   const body = mdBlocks(lines);
   return `<section class="doc${entry.id === 'home' ? ' active' : ''}" id="sec-${entry.id}">
@@ -272,6 +272,7 @@ const CSS = `
   .theme-btn:hover{color:var(--text);border-color:var(--border-strong)}
   .theme-btn svg{width:15px;height:15px}
   .menu-btn{display:none}
+  .scrim{display:none}
 
   .content{max-width:860px;margin:0 auto;padding:40px 30px 100px}
   .doc{display:none;animation:fade .22s ease}
@@ -374,7 +375,7 @@ const html = `<!doctype html>
 <html lang="ko" class="no-js">
 <head>
 <meta charset="utf-8">
-<title>CyberGuard 문서 — proxy-poc</title>
+<title>AVA 문서 — Automated Vulnerability Assessment</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>${CSS}</style>
 </head>
@@ -382,8 +383,8 @@ const html = `<!doctype html>
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <span class="mark" aria-hidden="true">${svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/>', 2)}</span>
-      <div><h1>CyberGuard</h1><div class="sub">Vulnerability Engine</div></div>
+      <span class="mark" aria-hidden="true">${svg('<path d="M4.2 19.5 12 4l7.8 15.5"/><path d="M8 13h8"/><circle cx="12" cy="4" r="1.5" fill="currentColor" stroke="none"/>', 2.2)}</span>
+      <div><h1>AVA</h1><div class="sub">Automated Vulnerability Assessment</div></div>
     </div>
     <nav>${buildNav()}</nav>
   </aside>
@@ -392,7 +393,7 @@ const html = `<!doctype html>
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:12px;min-width:0">
         <button class="menu-btn" id="menuBtn" aria-label="메뉴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
-        <div class="crumbs"><span class="sep">proxy-poc</span><span class="sep">/</span><b id="crumb">개요</b></div>
+        <div class="crumbs"><span class="sep">AVA</span><span class="sep">/</span><b id="crumb">개요</b></div>
       </div>
       <button class="theme-btn" id="themeBtn" aria-label="테마 전환">
         <svg id="themeIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
