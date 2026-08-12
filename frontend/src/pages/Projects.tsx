@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { FolderKanban, Plus, Check, Power, Globe, Lock, KeyRound, Save, ShieldCheck, Download, Upload, Users, X, Server, Radio, Trash2, RotateCcw, AlertTriangle } from 'lucide-react'
-import { usePoll, apiPost, type Project, type Me, type CredSummary, type Finding, type User, type TenantInfo } from '../api'
+import { usePoll, apiPost, type Project, type Me, type CredSummary, type Finding, type User, type TenantInfo, type Stats } from '../api'
 import { Card, Badge, Empty } from '../components/ui'
 
 const SCHEMES = ['주요정보통신기반시설', '전자금융', '모바일']
@@ -8,6 +8,7 @@ const SCHEMES = ['주요정보통신기반시설', '전자금융', '모바일']
 export function Projects() {
   const { data, error } = usePoll<Project[]>('/api/projects', 4000)
   const { data: trash } = usePoll<Project[]>('/api/projects/trash', 4000)
+  const { data: stats } = usePoll<Stats>('/api/stats', 30000)
   const { data: active } = usePoll<Project>('/api/active-project', 4000)
   const { data: me } = usePoll<Me>('/api/me', 5000)
   const { data: extInfo } = usePoll<{ ext: string }>('/api/artifact-ext', 30000)
@@ -172,7 +173,12 @@ export function Projects() {
                       <div className="mt-0.5 flex items-center gap-1.5 font-mono text-xs text-[var(--muted)]">
                         <Globe size={11} /> {p.main_url}
                       </div>
-                      <div className="mt-0.5 text-[10px] text-[var(--muted)]">삭제됨: {fmtTime(p.deleted_at)}</div>
+                      <div className="mt-0.5 text-[10px] text-[var(--muted)]">
+                        삭제됨: {fmtTime(p.deleted_at)}
+                        {daysLeft(p.deleted_at, stats?.retention_days) != null && (
+                          <span> · 영구삭제까지 <b className="text-[var(--amber)]">{daysLeft(p.deleted_at, stats?.retention_days)}일</b></span>
+                        )}
+                      </div>
                     </div>
                     {canDelete ? (
                       <>
@@ -271,6 +277,16 @@ function fmtTime(s?: string) {
   if (!s) return '—'
   const d = new Date(s)
   return isNaN(d.getTime()) ? s : d.toLocaleString()
+}
+
+// daysLeft — 자동 영구삭제까지 남은 일수 (이슈 #15). deleted_at + retentionDays 기준.
+function daysLeft(deletedAt?: string, retentionDays?: number): number | null {
+  if (!deletedAt) return null
+  const d = new Date(deletedAt)
+  if (isNaN(d.getTime())) return null
+  const ret = retentionDays ?? 30
+  const elapsedDays = (Date.now() - d.getTime()) / 86400000
+  return Math.max(0, Math.ceil(ret - elapsedDays))
 }
 
 // TenantSection — 프록시 멀티테넌시 (§5.1 FR-1.1). 프로젝트 전용 프록시 포트 시작/중지.
