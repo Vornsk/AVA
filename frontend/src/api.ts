@@ -185,6 +185,7 @@ export interface Project {
   schemes?: string[]
   created: string
   modified: string
+  deleted_at?: string // 소프트 삭제 시각(휴지통). 빈 값=정상 (이슈 #14)
 }
 
 export interface User {
