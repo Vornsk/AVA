@@ -35,6 +35,7 @@ import (
 	"proxypoc/internal/project"
 	"proxypoc/internal/proxyengine"
 	"proxypoc/internal/report"
+	"proxypoc/internal/retention"
 	"proxypoc/internal/reverify"
 	"proxypoc/internal/rules"
 	"proxypoc/internal/scanengine"
@@ -56,6 +57,16 @@ func SetAuthDisabled(v bool) { authDisabled = v }
 
 // SetArtifactExt — 산출물 네이티브 확장자 설정(bundle 위임, FR-1.6).
 func SetArtifactExt(ext string) { bundle.SetExt(ext) }
+
+// retentionDays — 휴지통 자동 영구삭제 보존기간(일). 프론트 D-n 표시에 노출 (이슈 #15).
+var retentionDays = 30
+
+// SetRetentionDays — 기동 시 config 로 설정.
+func SetRetentionDays(n int) {
+	if n > 0 {
+		retentionDays = n
+	}
+}
 
 // 요청별 사용자 (§5.1 FR-1.1 멀티유저). 전역 current 를 덮어쓰지 않고 요청 context 로 신원을 전달한다.
 type ctxKey int
@@ -301,7 +312,8 @@ type Stats struct {
 	Rules       int      `json:"rules"`
 	Detectors   int      `json:"detectors"`
 	LLMProvider string   `json:"llm_provider"`
-	RiskProfile string   `json:"risk_profile"` // 최고 심각도 기반 (high/medium/low/none)
+	RiskProfile string   `json:"risk_profile"`   // 최고 심각도 기반 (high/medium/low/none)
+	RetentionDays int    `json:"retention_days"` // 휴지통 자동 영구삭제 보존기간(일) — D-n 표시용 (이슈 #15)
 }
 
 // authorize — 현재 사용자가 action 권한이 있는지. 없으면 403 + 감사기록 후 false.
@@ -965,12 +977,7 @@ func projectPurgeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "휴지통에 있는 프로젝트만 영구삭제할 수 있습니다(먼저 삭제하세요)", http.StatusConflict)
 		return
 	}
-	nf := finding.DeleteByProject(pid)     // cascade: findings
-	ns := scanengine.DeleteByProject(pid)  // cascade: scanruns
-	if !project.Purge(pid) {
-		http.Error(w, "영구삭제 실패", http.StatusInternalServerError)
-		return
-	}
+	nf, ns := retention.PurgeCascade(pid) // findings·scanruns cascade + project.Purge (이슈 #14/#15 공용)
 	detail := fmt.Sprintf("영구삭제 (findings %d · scanruns %d)", nf, ns)
 	audit.Record(u.Name, string(u.Role), "project:purge", pid, "ok", detail)
 	log.Printf("[WEB ] %s(%s) project:purge %s (%s)", u.Name, u.Role, pid, detail)
@@ -1095,8 +1102,9 @@ func stats() any {
 		CATrusted:   trusted,
 		Rules:       len(rules.Snapshot()),
 		Detectors:   len(detector.Catalog()),
-		LLMProvider: llm.ProviderName(),
-		RiskProfile: riskProfile(),
+		LLMProvider:   llm.ProviderName(),
+		RiskProfile:   riskProfile(),
+		RetentionDays: retentionDays,
 	}
 }
 

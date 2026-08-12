@@ -36,6 +36,7 @@ type Local struct {
 	SafeMode     bool              `yaml:"safe_mode"`     // 안전모드 기본값 (FR-3.2): 파괴성 강제제외 + 요청간격 강화
 	AuthDisabled bool              `yaml:"auth_disabled"` // 개발용: 로그인 게이트 우회(항상 리더). 운영 금지.
 	ArtifactExt  string            `yaml:"artifact_ext"`  // 산출물 네이티브 확장자 (FR-1.6 DRM 비간섭). 예: .cgpkg
+	RetentionDays int              `yaml:"retention_days"` // 휴지통 프로젝트 자동 영구삭제 보존기간(일). 기본 30 (이슈 #15)
 }
 
 // Project — 공유/프로젝트 설정 (서버 버전관리). 문서 §4.
@@ -66,8 +67,9 @@ func defaultLocal() Local {
 		MCPAddr:     "127.0.0.1:8765",
 		WebAddr:     "127.0.0.1:8090",
 		LLM:         LLM{Provider: "mock", Endpoint: "http://127.0.0.1:11434", Model: "llama3.2"},
-		Tools:       map[string]string{}, // 예: {sslscan: "C:/tools/sslscan.exe"}
-		ArtifactExt: ".cgpkg",            // DRM 비간섭 사용자 지정 확장자 (FR-1.6)
+		Tools:         map[string]string{}, // 예: {sslscan: "C:/tools/sslscan.exe"}
+		ArtifactExt:   ".cgpkg",            // DRM 비간섭 사용자 지정 확장자 (FR-1.6)
+		RetentionDays: 30,                  // 휴지통 보존기간 기본 30일 (이슈 #15)
 	}
 }
 
