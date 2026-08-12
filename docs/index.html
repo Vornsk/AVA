@@ -2,7 +2,7 @@
 <html lang="ko" class="no-js">
 <head>
 <meta charset="utf-8">
-<title>CyberGuard 문서 — proxy-poc</title>
+<title>AVA 문서 — Automated Vulnerability Assessment</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   :root {
@@ -66,6 +66,7 @@
   .theme-btn:hover{color:var(--text);border-color:var(--border-strong)}
   .theme-btn svg{width:15px;height:15px}
   .menu-btn{display:none}
+  .scrim{display:none}
 
   .content{max-width:860px;margin:0 auto;padding:40px 30px 100px}
   .doc{display:none;animation:fade .22s ease}
@@ -121,8 +122,8 @@
 <div class="layout">
   <aside class="sidebar" id="sidebar">
     <div class="brand">
-      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="m9 12 2 2 4-4"/></svg></span>
-      <div><h1>CyberGuard</h1><div class="sub">Vulnerability Engine</div></div>
+      <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4.2 19.5 12 4l7.8 15.5"/><path d="M8 13h8"/><circle cx="12" cy="4" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+      <div><h1>AVA</h1><div class="sub">Automated Vulnerability Assessment</div></div>
     </div>
     <nav>
     <div class="nav-group">
@@ -211,7 +212,7 @@
     <div class="topbar">
       <div style="display:flex;align-items:center;gap:12px;min-width:0">
         <button class="menu-btn" id="menuBtn" aria-label="메뉴"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h18M3 6h18M3 18h18"/></svg></button>
-        <div class="crumbs"><span class="sep">proxy-poc</span><span class="sep">/</span><b id="crumb">개요</b></div>
+        <div class="crumbs"><span class="sep">AVA</span><span class="sep">/</span><b id="crumb">개요</b></div>
       </div>
       <button class="theme-btn" id="themeBtn" aria-label="테마 전환">
         <svg id="themeIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></svg>
@@ -220,14 +221,14 @@
     </div>
     <div class="content">
       <section class="doc active" id="sec-home">
-    <div class="eyebrow">proxy-poc · 문서</div>
-    <h2 class="title">proxy-poc — LLM 기반 웹 취약점 진단 도구 (CyberGuard Vulnerability Engine)</h2>
+    <div class="eyebrow">AVA · 문서</div>
+    <h2 class="title">AVA — LLM 기반 웹 취약점 진단 도구 (Automated Vulnerability Assessment)</h2>
     
     <p>Go(goproxy) <strong>MITM 프록시 엔진</strong>을 코어로, 그 위에 <strong>MCP 오케스트레이션 계층</strong>과 <strong>React 웹 GUI</strong>를 얹은 LLM 기반 웹 취약점 진단 도구입니다. 프론트를 <code>go:embed</code>로 넣어 <strong>단일 실행 바이너리</strong>로 배포됩니다. 주요정보통신기반시설·전자금융 규제 점검항목표에 맞춘 자동 진단 → 도출리스트/점검결과표(xlsx) → 이행점검까지 전 워크플로우를 커버합니다.</p>
-<div class="table-wrap"><table><thead><tr><th>구성</th><th>포트</th><th>역할</th></tr></thead><tbody><tr><td><strong>프록시</strong></td><td><code>:8080</code></td><td>HTTPS 가로채기(MITM) + 스코프 강제 + 인증 주입 + 판단 파이프라인 + 마스킹 + 공격면 캡처(런타임 on/off·상태 조회)</td></tr><tr><td><strong>MCP</strong></td><td><code>:8765</code></td><td>외부 LLM 에이전트/번들 클라이언트가 라이브 프록시를 조회·제어 (StreamableHTTP)</td></tr><tr><td><strong>웹 GUI</strong></td><td><code>:8090</code></td><td>진단 현황·취약점·증적·커버리지·리포트 (다크 기본, 테마 토글)</td></tr></tbody></table></div>
+<div class="table-wrap"><table><thead><tr><th>구성</th><th>포트</th><th>역할</th></tr></thead><tbody><tr><td><strong>프록시</strong></td><td><code>:8080</code></td><td>HTTPS 가로채기(MITM) + 스코프 강제 + 인증 주입 + 판단 파이프라인 + 마스킹 + 공격면 캡처</td></tr><tr><td><strong>MCP</strong></td><td><code>:8765</code></td><td>외부 LLM 에이전트/번들 클라이언트가 라이브 프록시를 조회·제어 (StreamableHTTP)</td></tr><tr><td><strong>웹 GUI</strong></td><td><code>:8090</code></td><td>진단 현황·취약점·증적·커버리지·리포트 (다크 기본, 테마 토글)</td></tr></tbody></table></div>
 <hr>
 <h3>한눈에</h3>
-<ul><li><strong>탐지기 25종</strong>(내장 23 + 외부도구 2) — XSS 3형태·SQLi 3종·인젝션 계열(cmd/SSRF/XXE/SSTI/LDAP/SSI)·접근통제·설정 점검. 규제 점검항목에 매핑돼 <strong>수동 항목 최소화</strong></li><li><strong>판단 파이프라인</strong> — 스코프(hard) → Rule(결정론) → LLM(애매한 요청만) → 전송+캡처. 스코프 밖으로 아무것도 내보내지 않음</li><li><strong>자동 공격면 탐색</strong> — 링크·폼·JS 번들을 따라가는 크롤러(정적/헤드리스 옵트인) + 프록시 수동 캡처(런타임 캡처 on/off·상태 API/MCP)</li><li><strong>증적 기반</strong> — 각 finding에 재현 요청·증명 응답(민감값 마스킹)·상태코드</li><li><strong>규제 산출물</strong> — 도출리스트 11컬럼 xlsx(+증적 시트) · 점검결과표(양호/취약/미점검) · 감사 CSV</li><li><strong>멀티테넌시·RBAC·영속화</strong> — 프로젝트별 격리 프록시, 리더/수행원 권한, bcrypt 로그인, 인증정보 AES-256-GCM 암호화, 재시작 넘어 데이터 유지</li></ul>
+<ul><li><strong>탐지기 25종</strong>(내장 23 + 외부도구 2) — XSS 3형태·SQLi 3종·인젝션 계열(cmd/SSRF/XXE/SSTI/LDAP/SSI)·접근통제·설정 점검. 규제 점검항목에 매핑돼 <strong>수동 항목 최소화</strong></li><li><strong>판단 파이프라인</strong> — 스코프(hard) → Rule(결정론) → LLM(애매한 요청만) → 전송+캡처. 스코프 밖으로 아무것도 내보내지 않음</li><li><strong>자동 공격면 탐색</strong> — 링크·폼·JS 번들을 따라가는 크롤러(정적/헤드리스 옵트인) + 프록시 수동 캡처</li><li><strong>증적 기반</strong> — 각 finding에 재현 요청·증명 응답(민감값 마스킹)·상태코드</li><li><strong>규제 산출물</strong> — 도출리스트 11컬럼 xlsx(+증적 시트) · 점검결과표(양호/취약/미점검) · 감사 CSV</li><li><strong>멀티테넌시·RBAC·영속화</strong> — 프로젝트별 격리 프록시, 리더/수행원 권한, bcrypt 로그인, 인증정보 AES-256-GCM 암호화, 재시작 넘어 데이터 유지</li></ul>
 <hr>
 <h3>문서 안내</h3>
 <p>이 README는 <strong>표지·요약</strong>입니다. 각 기능의 상세는 웹 GUI 좌측 내비게이션과 1:1로 대응하는 <code>docs/</code> 문서를 참고하세요.</p>
