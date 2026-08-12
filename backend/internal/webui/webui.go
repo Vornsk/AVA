@@ -157,6 +157,11 @@ func Serve(addr string) error {
 	// 멤버 관리 (FR-1.4 ACL, 리더 전용)
 	mux.HandleFunc("POST /api/projects/{id}/members", memberAddHandler)
 	mux.HandleFunc("POST /api/projects/{id}/members/remove", memberRemoveHandler)
+	// 프로젝트 소프트 삭제 · 휴지통 (이슈 #14, 리더 전용·감사)
+	mux.HandleFunc("GET /api/projects/trash", jsonHandler(func() any { return project.Trash() }))
+	mux.HandleFunc("POST /api/projects/{id}/delete", projectDeleteHandler)   // 소프트 삭제
+	mux.HandleFunc("POST /api/projects/{id}/restore", projectRestoreHandler) // 복구
+	mux.HandleFunc("POST /api/projects/{id}/purge", projectPurgeHandler)     // 영구삭제(cascade)
 	// 프록시 멀티테넌시 (§5.1 FR-1.1) — 프로젝트별 전용 프록시 포트
 	mux.HandleFunc("/api/tenants", jsonHandler(func() any { return tenant.List() }))
 	mux.HandleFunc("POST /api/tenants/{id}/start", tenantStartHandler)
@@ -904,6 +909,72 @@ func memberRemoveHandler(w http.ResponseWriter, r *http.Request) {
 	audit.Record(u.Name, string(u.Role), "project:member_remove", pid, "ok", in.UserID)
 	p, _ := project.Get(pid)
 	writeJSON(w, p)
+}
+
+// projectDeleteHandler — POST: 프로젝트 소프트 삭제(휴지통 이동, 이슈 #14). 리더 전용·감사.
+// 활성 프로젝트는 삭제 불가 → 먼저 다른 프로젝트로 전환해야 한다(스코프 꼬임 방지).
+func projectDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	pid := r.PathValue("id")
+	u, ok := authorize(w, r, "project:delete", pid)
+	if !ok {
+		return
+	}
+	if ap, ok := project.Active(); ok && ap.ID == pid {
+		http.Error(w, "활성 프로젝트는 삭제할 수 없습니다 — 먼저 다른 프로젝트로 전환하세요", http.StatusConflict)
+		return
+	}
+	if !project.Delete(pid) {
+		http.Error(w, "삭제 실패(없거나 이미 휴지통에 있음)", http.StatusConflict)
+		return
+	}
+	audit.Record(u.Name, string(u.Role), "project:delete", pid, "ok", "소프트 삭제(휴지통)")
+	log.Printf("[WEB ] %s(%s) project:delete %s (soft)", u.Name, u.Role, pid)
+	writeJSON(w, map[string]any{"deleted": pid})
+}
+
+// projectRestoreHandler — POST: 휴지통에서 복구(이슈 #14). 리더 전용·감사.
+func projectRestoreHandler(w http.ResponseWriter, r *http.Request) {
+	pid := r.PathValue("id")
+	u, ok := authorize(w, r, "project:delete", pid)
+	if !ok {
+		return
+	}
+	if !project.Restore(pid) {
+		http.Error(w, "복구 실패(없거나 휴지통에 있지 않음)", http.StatusConflict)
+		return
+	}
+	audit.Record(u.Name, string(u.Role), "project:restore", pid, "ok", "휴지통에서 복구")
+	log.Printf("[WEB ] %s(%s) project:restore %s", u.Name, u.Role, pid)
+	writeJSON(w, map[string]any{"restored": pid})
+}
+
+// projectPurgeHandler — POST: 영구삭제(이슈 #14). 리더 전용·감사.
+// 휴지통에 있는 프로젝트만 대상 · findings·scanruns 를 함께 cascade 삭제(고아 데이터 방지).
+func projectPurgeHandler(w http.ResponseWriter, r *http.Request) {
+	pid := r.PathValue("id")
+	u, ok := authorize(w, r, "project:delete", pid)
+	if !ok {
+		return
+	}
+	p, exists := project.Get(pid)
+	if !exists {
+		http.Error(w, "not found: "+pid, http.StatusNotFound)
+		return
+	}
+	if p.DeletedAt == "" {
+		http.Error(w, "휴지통에 있는 프로젝트만 영구삭제할 수 있습니다(먼저 삭제하세요)", http.StatusConflict)
+		return
+	}
+	nf := finding.DeleteByProject(pid)     // cascade: findings
+	ns := scanengine.DeleteByProject(pid)  // cascade: scanruns
+	if !project.Purge(pid) {
+		http.Error(w, "영구삭제 실패", http.StatusInternalServerError)
+		return
+	}
+	detail := fmt.Sprintf("영구삭제 (findings %d · scanruns %d)", nf, ns)
+	audit.Record(u.Name, string(u.Role), "project:purge", pid, "ok", detail)
+	log.Printf("[WEB ] %s(%s) project:purge %s (%s)", u.Name, u.Role, pid, detail)
+	writeJSON(w, map[string]any{"purged": pid, "findings": nf, "scanruns": ns})
 }
 
 // activateHandler — POST {id}: 활성 프로젝트 전환 + 엔진에 scope·스킴 적용 (§5.1).
