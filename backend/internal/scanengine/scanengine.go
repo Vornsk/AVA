@@ -348,3 +348,28 @@ func RunsByProject(pid string) []ScanRun {
 	}
 	return out
 }
+
+// DeleteByProject — 프로젝트 귀속 ScanRun 이력 제거 + 파일 갱신 (프로젝트 영구삭제 cascade, 이슈 #14).
+// 반환: 지운 건수. pid 가 비면 아무것도 안 지운다(안전).
+func DeleteByProject(pid string) int {
+	if pid == "" {
+		return 0
+	}
+	mu.Lock()
+	kept := make([]string, 0, len(order))
+	n := 0
+	for _, id := range order {
+		if j := jobs[id]; j != nil && j.pid == pid {
+			delete(jobs, id)
+			n++
+			continue
+		}
+		kept = append(kept, id)
+	}
+	order = kept
+	mu.Unlock()
+	if n > 0 {
+		persistRuns()
+	}
+	return n
+}

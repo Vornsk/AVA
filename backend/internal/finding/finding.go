@@ -260,3 +260,28 @@ func ByProject(pid string) []Finding {
 	}
 	return out
 }
+
+// DeleteByProject — 프로젝트 귀속 finding 제거 + 파일 갱신 (프로젝트 영구삭제 cascade, 이슈 #14).
+// 반환: 지운 건수. pid 가 비면 아무것도 안 지운다(안전).
+func DeleteByProject(pid string) int {
+	if pid == "" {
+		return 0
+	}
+	mu.Lock()
+	kept := make([]Finding, 0, len(store))
+	n := 0
+	for _, f := range store {
+		if f.ProjectID == pid {
+			n++
+			continue
+		}
+		kept = append(kept, f)
+	}
+	store = kept
+	snap := append([]Finding(nil), store...)
+	mu.Unlock()
+	if n > 0 {
+		persist(snap)
+	}
+	return n
+}
