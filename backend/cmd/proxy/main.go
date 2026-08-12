@@ -26,6 +26,7 @@ import (
 	"proxypoc/internal/payload"
 	projects "proxypoc/internal/project"
 	"proxypoc/internal/proxyengine"
+	"proxypoc/internal/retention"
 	"proxypoc/internal/rules"
 	"proxypoc/internal/scanengine"
 	"proxypoc/internal/scope"
@@ -145,6 +146,9 @@ func main() {
 		log.Printf("스캔 이력 복원: %d건 (scanruns.json)", n)
 	}
 
+	// 휴지통 자동 영구삭제 스위퍼 (이슈 #15) — 기동 시 1회 + 6시간 주기.
+	retention.StartSweeper(local.RetentionDays)
+
 	// LLM 스테이지 프로바이더 (config 기반, 교체는 llm.New 한 곳에서)
 	llm.SetProvider(llm.New(local.LLM.Provider, local.LLM.Model, local.LLM.Endpoint, local.LLM.APIKey))
 	log.Printf("LLM 프로바이더: %s (model=%s)", local.LLM.Provider, local.LLM.Model)
@@ -165,7 +169,8 @@ func main() {
 
 	// 웹 GUI (§5.1) — 같은 프로세스, 라이브 상태 공유
 	webui.SetAuthDisabled(local.AuthDisabled)
-	webui.SetArtifactExt(local.ArtifactExt) // 산출물 네이티브 확장자 (FR-1.6)
+	webui.SetArtifactExt(local.ArtifactExt)      // 산출물 네이티브 확장자 (FR-1.6)
+	webui.SetRetentionDays(local.RetentionDays)  // 휴지통 D-n 표시용 (이슈 #15)
 	if local.AuthDisabled {
 		log.Printf("⚠ 인증 비활성(개발 모드): 로그인 없이 리더로 동작 — 운영 배포 금지")
 	}

@@ -14,6 +14,7 @@ export interface Stats {
   detectors: number
   llm_provider: string
   risk_profile: string
+  retention_days?: number // 휴지통 자동 영구삭제 보존기간(일) — D-n 표시용 (이슈 #15)
 }
 
 export interface Finding {
@@ -185,6 +186,7 @@ export interface Project {
   schemes?: string[]
   created: string
   modified: string
+  deleted_at?: string // 소프트 삭제 시각(휴지통). 빈 값=정상 (이슈 #14)
 }
 
 export interface User {

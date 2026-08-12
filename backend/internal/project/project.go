@@ -30,6 +30,7 @@ type Project struct {
 	Schemes      []string `json:"schemes,omitempty"` // 선택된 탭 (§6)
 	Created      string   `json:"created"`
 	Modified     string   `json:"modified"`
+	DeletedAt    string   `json:"deleted_at,omitempty"` // 소프트 삭제 시각(RFC3339). 빈 값=정상 (이슈 #14)
 	// 인증정보는 암호화된 blob 으로만 저장(§5.1 FR-1.4). 평문은 파일/JSON 어디에도 없다.
 	EncCreds string `json:"enc_creds,omitempty"`
 }
@@ -118,11 +119,83 @@ func Create(p Project) Project {
 	return p
 }
 
-// List — 전체 프로젝트.
+// List — 정상(휴지통 아닌) 프로젝트 (이슈 #14: 소프트 삭제된 것은 제외).
 func List() []Project {
 	mu.Lock()
 	defer mu.Unlock()
-	return append([]Project(nil), store...)
+	out := make([]Project, 0, len(store))
+	for _, p := range store {
+		if p.DeletedAt == "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Trash — 휴지통(소프트 삭제된) 프로젝트 (이슈 #14).
+func Trash() []Project {
+	mu.Lock()
+	defer mu.Unlock()
+	out := make([]Project, 0)
+	for _, p := range store {
+		if p.DeletedAt != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Delete — 소프트 삭제(휴지통 이동, 이슈 #14). DeletedAt 설정.
+// 활성 프로젝트는 삭제 불가(먼저 전환) · 미존재 · 이미 휴지통이면 false.
+func Delete(id string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range store {
+		if store[i].ID == id {
+			if store[i].DeletedAt != "" || activeID == id {
+				return false
+			}
+			store[i].DeletedAt = time.Now().UTC().Format(time.RFC3339)
+			persist()
+			return true
+		}
+	}
+	return false
+}
+
+// Restore — 휴지통에서 복구(이슈 #14). 미존재 · 휴지통 상태 아니면 false.
+func Restore(id string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range store {
+		if store[i].ID == id {
+			if store[i].DeletedAt == "" {
+				return false
+			}
+			store[i].DeletedAt = ""
+			persist()
+			return true
+		}
+	}
+	return false
+}
+
+// Purge — 영구삭제(하드, 이슈 #14). store 에서 제거 + 활성이면 해제.
+// 관련 findings·scanruns cascade 는 호출부(webui)에서 처리한다.
+func Purge(id string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	for i := range store {
+		if store[i].ID == id {
+			store = append(store[:i], store[i+1:]...)
+			if activeID == id {
+				activeID = ""
+			}
+			persist()
+			return true
+		}
+	}
+	return false
 }
 
 // Get — id 로 조회.
@@ -148,12 +221,12 @@ func Active() (Project, bool) {
 	return Get(id)
 }
 
-// SetActive — 활성 프로젝트 지정. 존재해야 성공.
+// SetActive — 활성 프로젝트 지정. 존재하고 휴지통이 아니어야 성공 (이슈 #14).
 func SetActive(id string) bool {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, p := range store {
-		if p.ID == id {
+		if p.ID == id && p.DeletedAt == "" {
 			activeID = id
 			persist()
 			return true
