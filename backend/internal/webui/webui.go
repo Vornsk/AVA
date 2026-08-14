@@ -1110,9 +1110,15 @@ func stats() any {
 
 // reportDownload — 도출리스트 xlsx 다운로드 (§5.4, FR-4.1). 온디맨드 export.
 func reportDownload(w http.ResponseWriter, r *http.Request) {
+	// ?lang=en 이면 영문 리포트, 그 외(기본)는 한국어 (#18).
+	lang := "ko"
+	fname := "report.xlsx"
+	if r.URL.Query().Get("lang") == "en" {
+		lang, fname = "en", "findings.xlsx"
+	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", `attachment; filename="report.xlsx"`)
-	if _, err := report.WriteExcelTo(w); err != nil {
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fname+`"`)
+	if _, err := report.WriteExcelToLang(w, lang); err != nil {
 		http.Error(w, "excel 생성 실패: "+err.Error(), http.StatusInternalServerError)
 	}
 }

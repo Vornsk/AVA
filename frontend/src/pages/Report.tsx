@@ -48,9 +48,13 @@ export function Report() {
       <Card title={t('report.hub.title')} icon={FileSpreadsheet}
             right={
               <div className="flex items-center gap-2">
-                <a href="/report.xlsx" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                <a href="/report.xlsx?lang=ko" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
                    style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }} title={t('report.hub.xlsxFindings.tooltip')}>
                   <Download size={14} /> {t('report.hub.xlsxFindings.btn')}
+                </a>
+                <a href="/report.xlsx?lang=en" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
+                   title={t('report.hub.findingsEnTooltip')}>
+                  <Download size={14} /> {t('report.hub.findingsEnBtn')}
                 </a>
                 <a href="/coverage.xlsx" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
                    title={t('report.hub.xlsxCoverage.tooltip')}>

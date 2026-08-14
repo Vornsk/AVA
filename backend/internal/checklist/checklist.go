@@ -29,12 +29,31 @@ const (
 )
 
 // VulnDef — 2층: 취약점 정의(설명·분류, 중복 제거). detector id(들)로 1층에 연결.
+// NameEn/DescEn — 영문 로케일용(리포트 en 산출). 비면 한국어로 폴백(#18).
 type VulnDef struct {
 	ID        string   `yaml:"id" json:"id"`
 	Name      string   `yaml:"이름" json:"name"`
 	Desc      string   `yaml:"설명" json:"desc"`
+	NameEn    string   `yaml:"name_en,omitempty" json:"name_en,omitempty"`
+	DescEn    string   `yaml:"desc_en,omitempty" json:"desc_en,omitempty"`
 	Detectors []string `yaml:"detector" json:"detectors"` // 1층 detector id(들). 비면 자동탐지 미구현(수동)
 	CWE       string   `yaml:"cwe,omitempty" json:"cwe,omitempty"`
+}
+
+// LocName — 로케일별 취약점명. lang=="en" 이고 영문이 있으면 영문, 아니면 한국어.
+func (v VulnDef) LocName(lang string) string {
+	if lang == "en" && v.NameEn != "" {
+		return v.NameEn
+	}
+	return v.Name
+}
+
+// LocDesc — 로케일별 설명. 규칙은 LocName 과 동일.
+func (v VulnDef) LocDesc(lang string) string {
+	if lang == "en" && v.DescEn != "" {
+		return v.DescEn
+	}
+	return v.Desc
 }
 
 // CheckItem — 3층: 스킴별 점검항목(규제 매핑·위험도). vuln id로 2층에 연결.
