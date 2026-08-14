@@ -8,7 +8,7 @@
 # ⚠️ 이 정답셋은 대표 엔드포인트 큐레이션이다. 실제 기동 버전에 맞춰 검증·확장할 것.
 #   (Juice Shop 은 버전에 따라 라우트가 조금씩 다르다. baseline 기록 시 사용한 버전을 남길 것.)
 app: juice-shop
-base: https://localhost:3000
+base: http://localhost:3000
 endpoints:
   # 상품
   - { method: GET,  path: "/rest/products/search" }

@@ -3,10 +3,12 @@ package bench
 import (
 	"crypto/tls"
 	"net/http"
+	"net/url"
 	"time"
 
 	"proxypoc/internal/crawler"
 	"proxypoc/internal/endpoints"
+	"proxypoc/internal/scope"
 )
 
 // Reachable — 대상 base 가 응답하는가(기동 여부 프로브). 어떤 HTTP 응답이든 오면 true.
@@ -30,6 +32,11 @@ func Reachable(base string) bool {
 //	반환: 발견 엔드포인트(method 확장), 제품 구분 수(rawCount=팽창률 분자), 페이지수(≈요청수), 소요시간.
 func RunProfile(seed, mode string, maxPages int, timeout time.Duration) (disc []Endpoint, rawCount, pages int, dur time.Duration, err error) {
 	endpoints.Reset()
+
+	// 크롤러는 scope.Allowed(host,path) 로 모든 fetch 를 게이트한다. 대상 호스트를 스코프에 넣는다.
+	if u, perr := url.Parse(seed); perr == nil && u.Hostname() != "" {
+		scope.Configure([]string{u.Hostname()}, nil, nil)
+	}
 
 	start := time.Now()
 	res := crawler.Start(seed, crawler.Options{Mode: mode, MaxPages: maxPages})
