@@ -20,7 +20,27 @@ type GTEndpoint struct {
 type GroundTruth struct {
 	App       string       `yaml:"app"`
 	Base      string       `yaml:"base"`
+	Auth      *Auth        `yaml:"auth"` // (선택) 인증 크롤 설정 (#31). 없으면 비인증.
 	Endpoints []GTEndpoint `yaml:"endpoints"`
+}
+
+// Auth — 인증 크롤 설정 (#31). 정적 쿠키/헤더(1차) 또는 로그인 시퀀스(2차).
+// 벤치 대상은 폐기용 훈련 앱이라 test 크리덴셜을 YAML 에 둬도 무방(실 크리덴셜 금지).
+type Auth struct {
+	Cookies map[string]string `yaml:"cookies"`
+	Headers map[string]string `yaml:"headers"`
+	Login   *AuthLogin        `yaml:"login"`
+}
+
+// AuthLogin — 로그인 시퀀스(제품 auth.LoginSeq 재사용). CSRF 토큰 사전취득 지원.
+type AuthLogin struct {
+	URL        string            `yaml:"url"`
+	Method     string            `yaml:"method"` // 기본 POST
+	Fields     map[string]string `yaml:"fields"`
+	TokenURL   string            `yaml:"token_url"`   // (선택) CSRF 토큰 페이지
+	TokenField string            `yaml:"token_field"` // 예: user_token
+	TokenParam string            `yaml:"token_param"` // 폼 파라미터명(기본 token_field)
+	LoggedOut  string            `yaml:"logged_out"`  // 세션 만료 판단 정규식
 }
 
 // LoadGroundTruth — YAML 정답셋 로드.

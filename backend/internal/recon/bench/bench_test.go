@@ -117,6 +117,17 @@ func gtFiles() ([]string, error) {
 
 // benchOne — 한 대상에 대해 프로파일별 채점 표를 출력한다.
 func benchOne(t *testing.T, gt GroundTruth) {
+	// 인증 크롤 설정(#31). 대상 간 격리를 위해 끝나면 해제.
+	cleanup := ApplyAuth(gt.Auth)
+	defer cleanup()
+	if gt.Auth != nil {
+		if gt.Auth.Login != nil {
+			t.Logf("인증: 로그인 시퀀스 %s → 성공=%v", gt.Auth.Login.URL, LoginNow())
+		} else {
+			t.Logf("인증: 정적 쿠키/헤더 주입 (cookies=%d headers=%d)", len(gt.Auth.Cookies), len(gt.Auth.Headers))
+		}
+	}
+
 	profiles := []string{"static"}
 	if crawler.HeadlessAvailable() {
 		profiles = append(profiles, "headless")

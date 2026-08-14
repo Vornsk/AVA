@@ -9,6 +9,19 @@
 #   - 만약 /DVWA/ 같은 접두사로 서빙하면 아래 각 path 앞에 그 접두사를 붙일 것.
 app: dvwa
 base: http://localhost:8081
+# 인증 크롤(#31): DVWA 취약점 페이지는 로그인 뒤에 있다. 하네스가 로그인 후 크롤한다.
+#   전제: 최초 1회 http://localhost:8081/setup.php 에서 DB 생성 필요(안 하면 로그인 실패).
+#   훈련용 앱이라 기본 크리덴셜(admin/password)을 그대로 둔다(실 크리덴셜 금지).
+auth:
+  cookies:
+    security: low            # DVWA 보안 레벨(로그인과 별개로 심어둠)
+  login:
+    url: "http://localhost:8081/login.php"
+    method: POST
+    fields: { username: admin, password: password, Login: Login }
+    token_url: "http://localhost:8081/login.php"   # CSRF user_token 사전 취득
+    token_field: user_token
+    logged_out: "(?i)login\\.php"
 endpoints:
   # 루트 페이지 / 인증 / 설정
   - { method: GET,  path: "/login.php" }
