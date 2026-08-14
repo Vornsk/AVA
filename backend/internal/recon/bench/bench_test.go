@@ -2,6 +2,8 @@ package bench
 
 import (
 	"os"
+	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -11,16 +13,16 @@ import (
 // ── 유닛: canonical 폴딩 (대상 없이 항상 실행, 제품 NormalizePath 비의존) ──
 func TestCanon(t *testing.T) {
 	cases := map[string]string{
-		"/rest/products/42":                            "/rest/products/{}",
-		"/rest/products/{id}":                          "/rest/products/{}", // GT 플레이스홀더
-		"/rest/basket/:id":                             "/rest/basket/{}",   // :id 스타일
-		"/api/Feedbacks":                               "/api/Feedbacks",    // 정적 세그먼트 보존(대소문자 유지)
-		"/u/550e8400-e29b-41d4-a716-446655440000":      "/u/{}",             // uuid
-		"/logs/2026-08-14":                             "/logs/{}",          // date
-		"/t/0123456789abcdef0123":                      "/t/{}",             // hex ≥16
-		"/x/cafe":                                      "/x/cafe",           // 짧은 hex 는 단어로 보존
-		"/rest/products/search?q=apple":                "/rest/products/search", // 쿼리 제거
-		"/":                                            "/",
+		"/rest/products/42":                       "/rest/products/{}",
+		"/rest/products/{id}":                     "/rest/products/{}", // GT 플레이스홀더
+		"/rest/basket/:id":                        "/rest/basket/{}",   // :id 스타일
+		"/api/Feedbacks":                          "/api/Feedbacks",    // 정적 세그먼트 보존(대소문자 유지)
+		"/u/550e8400-e29b-41d4-a716-446655440000": "/u/{}",             // uuid
+		"/logs/2026-08-14":                        "/logs/{}",          // date
+		"/t/0123456789abcdef0123":                 "/t/{}",             // hex ≥16
+		"/x/cafe":                                 "/x/cafe",           // 짧은 hex 는 단어로 보존
+		"/rest/products/search?q=apple":           "/rest/products/search", // 쿼리 제거
+		"/":                                       "/",
 	}
 	for in, want := range cases {
 		if got := Canon(in); got != want {
@@ -60,22 +62,61 @@ func TestScore(t *testing.T) {
 
 func approx(a, b float64) bool { return a-b < 1e-9 && b-a < 1e-9 }
 
-// ── 통합: 실제 정찰 실행 대조. 대상 미기동이면 skip ──
+// ── 통합: 실제 정찰 실행 대조. docs/recon-groundtruth/ 의 정답셋을 순회하며 대상별 채점. ──
 //
-//	재현: Juice Shop 기동 후 → cd backend && go test ./internal/recon/bench -run ReconBench -v
+//	재현: 대상 웹 애플리케이션 기동 후 →
+//	  cd backend && go test ./internal/recon/bench -run ReconBench -v
+//	각 대상은 서브테스트로 격리되며, 미기동 대상은 skip(실패 아님).
+//	특정 정답셋만: BENCH_GT=../../../../docs/recon-groundtruth/dvwa.yaml go test ...
 func TestReconBench(t *testing.T) {
-	gtPath := os.Getenv("BENCH_GT")
-	if gtPath == "" {
-		gtPath = "../../../../docs/recon-groundtruth/juice-shop.yaml"
-	}
-	gt, err := LoadGroundTruth(gtPath)
+	files, err := gtFiles()
 	if err != nil {
-		t.Fatalf("ground-truth 로드 실패: %v", err)
+		t.Fatalf("정답셋 탐색 실패: %v", err)
 	}
-	if !Reachable(gt.Base) {
-		t.Skipf("대상 %s 미응답 — 벤치 skip. (예: Juice Shop 기동 후 재실행)", gt.Base)
+	if len(files) == 0 {
+		t.Skip("정답셋 YAML 없음 (docs/recon-groundtruth/*.yaml)")
 	}
+	for _, f := range files {
+		gt, err := LoadGroundTruth(f)
+		if err != nil {
+			t.Errorf("%s 로드 실패: %v", f, err)
+			continue
+		}
+		name := gt.App
+		if name == "" {
+			name = filepath.Base(f)
+		}
+		t.Run(name, func(t *testing.T) {
+			if !Reachable(gt.Base) {
+				t.Skipf("대상 %s 미응답 — skip (기동 후 재실행)", gt.Base)
+			}
+			benchOne(t, gt)
+		})
+	}
+}
 
+// gtFiles — 채점할 정답셋 파일 목록.
+//
+//	BENCH_GT=<file>    : 그 파일 하나만.
+//	BENCH_GT_DIR=<dir> : 해당 폴더의 *.yaml 전부 (기본 docs/recon-groundtruth).
+func gtFiles() ([]string, error) {
+	if f := os.Getenv("BENCH_GT"); f != "" {
+		return []string{f}, nil
+	}
+	dir := os.Getenv("BENCH_GT_DIR")
+	if dir == "" {
+		dir = "../../../../docs/recon-groundtruth"
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "*.yaml"))
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+// benchOne — 한 대상에 대해 프로파일별 채점 표를 출력한다.
+func benchOne(t *testing.T, gt GroundTruth) {
 	profiles := []string{"static"}
 	if crawler.HeadlessAvailable() {
 		profiles = append(profiles, "headless")
@@ -96,5 +137,5 @@ func TestReconBench(t *testing.T) {
 		t.Logf("%s", m.Table())
 		t.Logf("%s", m.Summary(10))
 	}
-	t.Logf("↑ 이 수치를 이슈 #22 baseline 으로 기록하세요 (static/headless 각각).")
+	t.Logf("↑ 이 수치를 baseline 으로 기록하세요 (README/이슈 #22·#23).")
 }
