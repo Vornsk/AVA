@@ -43,6 +43,11 @@ func signature(d llm.Decision) string {
 //	minHits        : 최소 빈도 (이보다 적으면 제외)
 //	minConsistency : 최소 일관성 (다수 verdict 비율)
 func Analyze(decisions []llm.Decision, minHits int, minConsistency float64) []Candidate {
+	return analyzeLang(decisions, minHits, minConsistency, "ko")
+}
+
+// analyzeLang — 로케일별 후보 도출. Reason/Warning 자유서술을 lang 으로 생성(#18).
+func analyzeLang(decisions []llm.Decision, minHits int, minConsistency float64, lang string) []Candidate {
 	groups := map[string][]llm.Decision{}
 	order := []string{}
 	for _, d := range decisions {
@@ -104,18 +109,18 @@ func Analyze(decisions []llm.Decision, minHits int, minConsistency float64) []Ca
 				Action:      verdict,
 				Methods:     methods,
 				PathPattern: pathPat,
-				Reason:      fmt.Sprintf("LLM 판단 이관 후보 (일관성 %.0f%%, %d건)", consistency*100, hits),
+				Reason:      reasonText(lang, consistency, hits),
 			},
 		}
 		var warns []string
 		if consistency < 1.0 {
-			warns = append(warns, fmt.Sprintf("반대 판정 %d건 — 오탐 위험, 섀도검증 권장(FR-6.4)", hits-maj))
+			warns = append(warns, warnDissent(lang, hits-maj))
 		}
 		if len(models) > 1 {
-			warns = append(warns, "모델 버전 혼재 — 안정성 재확인")
+			warns = append(warns, warnMixedModel(lang))
 		}
 		if c.AvgConfidence < 0.7 {
-			warns = append(warns, fmt.Sprintf("평균 신뢰도 낮음(%.0f%%)", c.AvgConfidence*100))
+			warns = append(warns, warnLowConf(lang, c.AvgConfidence))
 		}
 		c.Warning = strings.Join(warns, " / ")
 		out = append(out, c)
@@ -130,7 +135,41 @@ func Analyze(decisions []llm.Decision, minHits int, minConsistency float64) []Ca
 	return out
 }
 
-// Candidates — 현재 판단 로그로 기본 임계(빈도≥2, 일관성≥70%) 후보 도출.
+// Candidates — 현재 판단 로그로 기본 임계(빈도≥2, 일관성≥70%) 후보 도출(한국어).
 func Candidates() []Candidate {
-	return Analyze(llm.Decisions(), 2, 0.7)
+	return CandidatesLang("ko")
+}
+
+// CandidatesLang — 로케일별 후보 도출 (Reason/Warning 문구 로케일화, #18).
+func CandidatesLang(lang string) []Candidate {
+	return analyzeLang(llm.Decisions(), 2, 0.7, lang)
+}
+
+// ── 후보 서술 문구 로케일 (#18) ──
+func reasonText(lang string, consistency float64, hits int) string {
+	if lang == "en" {
+		return fmt.Sprintf("LLM decision migration candidate (consistency %.0f%%, %d hits)", consistency*100, hits)
+	}
+	return fmt.Sprintf("LLM 판단 이관 후보 (일관성 %.0f%%, %d건)", consistency*100, hits)
+}
+
+func warnDissent(lang string, dissent int) string {
+	if lang == "en" {
+		return fmt.Sprintf("%d dissenting verdicts — false-positive risk, shadow-verification recommended (FR-6.4)", dissent)
+	}
+	return fmt.Sprintf("반대 판정 %d건 — 오탐 위험, 섀도검증 권장(FR-6.4)", dissent)
+}
+
+func warnMixedModel(lang string) string {
+	if lang == "en" {
+		return "Mixed model versions — re-verify stability"
+	}
+	return "모델 버전 혼재 — 안정성 재확인"
+}
+
+func warnLowConf(lang string, avg float64) string {
+	if lang == "en" {
+		return fmt.Sprintf("Low average confidence (%.0f%%)", avg*100)
+	}
+	return fmt.Sprintf("평균 신뢰도 낮음(%.0f%%)", avg*100)
 }

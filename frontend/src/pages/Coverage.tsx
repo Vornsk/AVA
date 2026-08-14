@@ -1,6 +1,6 @@
 import { ListChecks, Download } from 'lucide-react'
-import { usePoll, type CoverageReport, type SchemeCoverage, type ItemStatus } from '../api'
-import { Card, Badge, Empty, Dot, statusColor } from '../components/ui'
+import { usePoll, useLocName, type CoverageReport, type SchemeCoverage, type ItemStatus } from '../api'
+import { Card, Badge, Empty, Dot, statusColor, useStatusLabel } from '../components/ui'
 import { useT } from '../i18n'
 
 // 상태 우선순위(조치할 것부터): 취약 → 미점검 → 미지원 → 양호.
@@ -29,19 +29,20 @@ const SEGMENTS = [
 
 // StatusBar — 양호/취약/미점검/미지원 비율 세그먼트 바 + 건수 범례.
 function StatusBar({ items }: { items: ItemStatus[] }) {
+  const sl = useStatusLabel()
   const b = buckets(items)
   const total = items.length || 1
   return (
     <div>
       <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-[var(--panel-2)]">
         {SEGMENTS.map((x) => b[x.k] > 0 && (
-          <div key={x.k} style={{ width: `${(b[x.k] / total) * 100}%`, background: x.c }} title={`${x.k} ${b[x.k]}`} />
+          <div key={x.k} style={{ width: `${(b[x.k] / total) * 100}%`, background: x.c }} title={`${sl(x.k)} ${b[x.k]}`} />
         ))}
       </div>
       <div className="mt-1.5 flex flex-wrap gap-3 text-[11px]">
         {SEGMENTS.map((x) => b[x.k] > 0 && (
           <span key={x.k} className="inline-flex items-center gap-1 text-[var(--muted)]">
-            <span className="h-2 w-2 rounded-full" style={{ background: x.c }} />{x.k} <b className="text-[var(--text)]">{b[x.k]}</b>
+            <span className="h-2 w-2 rounded-full" style={{ background: x.c }} />{sl(x.k)} <b className="text-[var(--text)]">{b[x.k]}</b>
           </span>
         ))}
       </div>
@@ -79,14 +80,16 @@ export function Coverage() {
 
 function SchemeBlock({ s }: { s: SchemeCoverage }) {
   const t = useT()
+  const loc = useLocName()
+  const sl = useStatusLabel()
   const items = [...s.items].sort((a, b) => rank(a.status) - rank(b.status)) // 취약·미점검 먼저
   return (
     <Card
-      title={<span className="flex items-center gap-2">{s.scheme}
+      title={<span className="flex items-center gap-2">{sl(s.scheme)}
         <span className="text-xs font-normal text-[var(--muted)]">{t('coverage.itemCount', { count: s.total })}</span></span>}
       right={
         <div className="flex items-center gap-2 text-xs">
-          <Badge text={`취약 ${s.vulnerable}`} color="var(--red)" />
+          <Badge text={`${sl('취약')} ${s.vulnerable}`} color="var(--red)" />
           <Badge text={`${t('coverage.automatable')} ${s.automatable}/${s.total}`} color="var(--blue)" />
         </div>
       }
@@ -113,7 +116,7 @@ function SchemeBlock({ s }: { s: SchemeCoverage }) {
                   <span className="ml-1 text-[10px] text-[var(--muted)]">R{it.check_item.risk}</span>
                 )}
               </td>
-              <td className="py-2 pr-3">{it.vuln_name}</td>
+              <td className="py-2 pr-3">{loc(it.check_item.vuln, it.vuln_name)}</td>
               <td className="py-2 pr-3 text-xs text-[var(--muted)]">
                 {(it.detectors ?? []).join(', ') || '—'}
               </td>

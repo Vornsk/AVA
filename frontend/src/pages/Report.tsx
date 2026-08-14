@@ -1,7 +1,7 @@
 import { FileSpreadsheet, Download, Inbox, ListChecks, FileSearch } from 'lucide-react'
 import { usePoll } from '../api'
 import { Card, Empty, Badge, severityColor } from '../components/ui'
-import { useT } from '../i18n'
+import { useT, useI18n } from '../i18n'
 
 interface ReportRow {
   no: number; target: string; main_url: string; vuln: string; path: string
@@ -18,11 +18,15 @@ interface EvidenceData { headers: string[]; rows: EvidenceRow[] }
 
 const SEV_RANK: Record<string, number> = { high: 0, medium: 1, low: 2, info: 3 }
 const sevRank = (s: string) => SEV_RANK[(s || '').toLowerCase()] ?? 9
-const sevLabel: Record<string, string> = { high: '높음', medium: '중간', low: '낮음', info: '정보' }
-const sevKr = (s: string) => sevLabel[(s || '').toLowerCase()] ?? (s || '—')
+const sevLabel: Record<'ko' | 'en', Record<string, string>> = {
+  ko: { high: '높음', medium: '중간', low: '낮음', info: '정보' },
+  en: { high: 'High', medium: 'Medium', low: 'Low', info: 'Info' },
+}
 
 function SevBadge({ s }: { s: string }) {
-  return <Badge text={sevKr(s)} color={severityColor(s)} />
+  const { lang } = useI18n()
+  const label = sevLabel[lang][(s || '').toLowerCase()] ?? (s || '—')
+  return <Badge text={label} color={severityColor(s)} />
 }
 
 export function Report() {
@@ -48,13 +52,21 @@ export function Report() {
       <Card title={t('report.hub.title')} icon={FileSpreadsheet}
             right={
               <div className="flex items-center gap-2">
-                <a href="/report.xlsx" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                <a href="/report.xlsx?lang=ko" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
                    style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }} title={t('report.hub.xlsxFindings.tooltip')}>
                   <Download size={14} /> {t('report.hub.xlsxFindings.btn')}
                 </a>
-                <a href="/coverage.xlsx" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
+                <a href="/report.xlsx?lang=en" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
+                   title={t('report.hub.findingsEnTooltip')}>
+                  <Download size={14} /> {t('report.hub.findingsEnBtn')}
+                </a>
+                <a href="/coverage.xlsx?lang=ko" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
                    title={t('report.hub.xlsxCoverage.tooltip')}>
                   <ListChecks size={14} /> {t('report.hub.xlsxCoverage.btn')}
+                </a>
+                <a href="/coverage.xlsx?lang=en" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
+                   title={t('report.hub.coverageEnTooltip')}>
+                  <ListChecks size={14} /> {t('report.hub.coverageEnBtn')}
                 </a>
               </div>
             }>

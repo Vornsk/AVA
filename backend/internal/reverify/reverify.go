@@ -29,6 +29,7 @@ const (
 type ItemResult struct {
 	FindingID  string `json:"finding_id"`
 	Vuln       string `json:"vuln"`
+	VulnDef    string `json:"vuln_def,omitempty"` // 2층 VulnDef id (화면 로케일용, #18)
 	Target     string `json:"target"`
 	Detector   string `json:"detector"`
 	Verdict    string `json:"verdict"`
@@ -68,7 +69,7 @@ func Reverify(ctx context.Context, items []finding.Finding, source string) Run {
 	run := Run{ID: id, Source: source, Time: now}
 	for _, f := range items {
 		res := ItemResult{
-			FindingID: f.ID, Vuln: f.Vuln, Target: f.Host + f.Path,
+			FindingID: f.ID, Vuln: f.Vuln, VulnDef: f.VulnDef, Target: f.Host + f.Path,
 			Detector: f.Detector, Time: now,
 		}
 		dets := detector.Select([]string{f.Detector})

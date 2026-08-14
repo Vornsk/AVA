@@ -124,9 +124,10 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/detectors", jsonHandler(func() any { return detector.Catalog() }))
 	mux.HandleFunc("/api/payloads", jsonHandler(func() any { return payload.Info() }))
 	mux.HandleFunc("/api/llm-decisions", jsonHandler(func() any { return llm.Decisions() }))
-	mux.HandleFunc("/api/rule-candidates", jsonHandler(func() any { return advisor.Candidates() }))
+	mux.HandleFunc("/api/rule-candidates", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, advisor.CandidatesLang(langOf(r))) }) // X-Lang 반영(#18)
 	mux.HandleFunc("/api/rules/adopt", ruleAdoptHandler) // POST: 추천 후보를 활성 룰로 채택(rule:promote)
 	mux.HandleFunc("/api/checkitems", jsonHandler(func() any { return checklist.Current().CheckItems }))
+	mux.HandleFunc("/api/vulndefs", jsonHandler(func() any { return checklist.Current().Vulns })) // 취약점 카탈로그(name_en 포함, 화면 로케일용 #18)
 	mux.HandleFunc("/api/projects", projectsHandler)               // GET list / POST create (§5.1)
 	mux.HandleFunc("/api/activate-project", activateHandler)       // POST {id} (§5.1)
 	mux.HandleFunc("/api/project-credentials", credentialsHandler) // GET summary / POST set (encrypted, §5.1 FR-1.4)
@@ -212,12 +213,12 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/logout", logoutHandler) // POST
 	mux.HandleFunc("/api/reverify", reverifyHandler)
 	mux.HandleFunc("/api/scan-diff", scanDiff)
-	mux.HandleFunc("/api/report", jsonHandler(func() any {
-		return map[string]any{"headers": report.Headers, "rows": report.Rows()}
-	}))
-	mux.HandleFunc("/api/evidence", jsonHandler(func() any {
-		return map[string]any{"headers": report.EvidenceHeaders, "rows": report.EvidenceRows()}
-	}))
+	mux.HandleFunc("/api/report", func(w http.ResponseWriter, r *http.Request) { // X-Lang: 화면 취약점명·설명 로케일(#18)
+		writeJSON(w, map[string]any{"headers": report.Headers, "rows": report.RowsLang(langOf(r))})
+	})
+	mux.HandleFunc("/api/evidence", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"headers": report.EvidenceHeaders, "rows": report.EvidenceRowsLang(langOf(r))})
+	})
 	mux.HandleFunc("/report.xlsx", reportDownload)
 	mux.HandleFunc("/coverage.xlsx", coverageDownload)
 	mux.HandleFunc("/api/auth", jsonHandler(authSummary))
@@ -1076,6 +1077,14 @@ func writeJSON(w http.ResponseWriter, v any) {
 	_ = enc.Encode(v)
 }
 
+// langOf — 요청 로케일. 프론트가 보내는 X-Lang 헤더 기준, en 만 인식하고 기본은 ko (#18).
+func langOf(r *http.Request) string {
+	if r.Header.Get("X-Lang") == "en" {
+		return "en"
+	}
+	return "ko"
+}
+
 // activePID — 활성 프로젝트 id (없으면 "" = 전체).
 func activePID() string {
 	if p, ok := project.Active(); ok {
@@ -1110,9 +1119,15 @@ func stats() any {
 
 // reportDownload — 도출리스트 xlsx 다운로드 (§5.4, FR-4.1). 온디맨드 export.
 func reportDownload(w http.ResponseWriter, r *http.Request) {
+	// ?lang=en 이면 영문 리포트, 그 외(기본)는 한국어 (#18).
+	lang := "ko"
+	fname := "report.xlsx"
+	if r.URL.Query().Get("lang") == "en" {
+		lang, fname = "en", "findings.xlsx"
+	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", `attachment; filename="report.xlsx"`)
-	if _, err := report.WriteExcelTo(w); err != nil {
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fname+`"`)
+	if _, err := report.WriteExcelToLang(w, lang); err != nil {
 		http.Error(w, "excel 생성 실패: "+err.Error(), http.StatusInternalServerError)
 	}
 }
@@ -1143,9 +1158,15 @@ func auditCSV(w http.ResponseWriter, r *http.Request) {
 
 // coverageDownload — 점검결과표 xlsx 다운로드 (§5.4, FR-4.3). 스킴별 시트 + 요약.
 func coverageDownload(w http.ResponseWriter, r *http.Request) {
+	// ?lang=en 이면 영문 점검결과표, 그 외(기본)는 한국어 (#18).
+	lang := "ko"
+	fname := "coverage.xlsx"
+	if r.URL.Query().Get("lang") == "en" {
+		lang, fname = "en", "coverage_en.xlsx"
+	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", `attachment; filename="coverage.xlsx"`)
-	if _, err := report.WriteCoverageExcelTo(w); err != nil {
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fname+`"`)
+	if _, err := report.WriteCoverageExcelToLang(w, lang); err != nil {
 		http.Error(w, "excel 생성 실패: "+err.Error(), http.StatusInternalServerError)
 	}
 }

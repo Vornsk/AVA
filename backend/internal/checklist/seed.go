@@ -11,7 +11,7 @@ package checklist
 //	  서버 접근이 필요한 config 감사 항목이라 블랙박스 스캐너 대상이 아님 → 여기선 미인코딩.
 //	· 전자금융(항목표2)·모바일(§6.2) 원본표는 아직 확보 전이라 대표 항목만 유지.
 func Default() Set {
-	return Set{
+	s := Set{
 		Vulns: []VulnDef{
 			// ── 자동 탐지기 있음 (우리 detector 커버) ──
 			{ID: "vuln.sqli", Name: "SQL 인젝션",
@@ -182,5 +182,54 @@ func Default() Set {
 			// ── 모바일 (§6.2, 원본표 확보 전 — 인터페이스 수용만) ──
 			{ID: "MOB-01", Scheme: SchemeMobile, Vuln: "vuln.info-exposure"},
 		},
+	}
+	applyEn(s.Vulns) // 영문 로케일 주입 (리포트 en 산출, #18)
+	return s
+}
+
+// vulnEn — VulnDef 영문 이름/설명 (id → {name_en, desc_en}). 표준 보안 용어 위주.
+// ⚠️ 번역 검수 대상: 규제 제출용 산출물이면 보안 담당 확인 권장(#18).
+var vulnEn = map[string][2]string{
+	"vuln.sqli":               {"SQL Injection", "Malicious SQL executed via insufficient input validation (error / boolean / time-based blind)"},
+	"vuln.xss":                {"Cross-Site Scripting (XSS)", "Unvalidated input is reflected/stored in the response and executed as script"},
+	"vuln.csrf":               {"Cross-Site Request Forgery (CSRF)", "Missing anti-forgery token lets attackers force requests without user intent"},
+	"vuln.file-upload":        {"Malicious File Upload", "Executable files can be uploaded due to weak extension/type validation"},
+	"vuln.file-download":      {"File Download / Path Traversal", "Weak download-path validation enables path traversal and system-file exposure"},
+	"vuln.access-control":     {"Broken Access Control (authorization / admin page exposure)", "Weak authN/authZ allows access to other users' or higher-privilege resources and exposes admin pages"},
+	"vuln.info-exposure":      {"Information Exposure", "Sensitive data (resident registration numbers, cards, accounts) exposed in responses"},
+	"vuln.code-injection":     {"Code Injection", "Input is interpreted and executed as code / OS commands"},
+	"vuln.dir-indexing":       {"Directory Indexing", "Directory listing is exposed"},
+	"vuln.error-page":         {"Improper Error Page Handling", "Internal information is leaked through error pages"},
+	"vuln.ssrf":               {"Server-Side Request Forgery (SSRF)", "The server issues requests to arbitrary destinations on the attacker's behalf"},
+	"vuln.weak-password":      {"Weak Password Policy", "Insufficient password complexity/policy"},
+	"vuln.weak-auth":          {"Insufficient Authentication", "Authentication bypass or weakness"},
+	"vuln.weak-pw-recovery":   {"Weak Password Recovery", "Vulnerable password-reset logic"},
+	"vuln.process-validation": {"Missing Process Validation", "Weak validation of business flow/sequence (logic bypass)"},
+	"vuln.weak-session":       {"Insufficient Session Management", "Weak handling of session fixation, expiry, and reuse"},
+	"vuln.plaintext":          {"Cleartext Data Transmission", "Sensitive data transmitted without encryption"},
+	"vuln.cookie-tampering":   {"Cookie Tampering", "Cookies can be tampered with due to weak integrity/security attributes"},
+	"vuln.automation":         {"Automation Attack", "Insufficient blocking of automated requests (CAPTCHA / rate limiting)"},
+	"vuln.http-method":        {"Dangerous HTTP Method Abuse", "Dangerous methods such as PUT/DELETE/TRACE are allowed"},
+	"vuln.weak-tls":           {"Weak SSL/TLS Configuration", "Outdated protocols and weak ciphers are allowed"},
+	"vuln.sec-headers":        {"Missing Security Headers", "Security response headers such as HSTS/CSP/X-Frame-Options are missing"},
+	"vuln.open-redirect":      {"Open Redirect", "Unvalidated redirect destination lures users to external malicious sites"},
+	"vuln.xxe":                {"XML External Entity (XXE)", "Weak XML input validation enables internal-resource access and external command execution"},
+	"vuln.ldap-injection":     {"LDAP Injection", "Weak LDAP query validation enables data leakage and command execution"},
+	"vuln.ssi-injection":      {"SSI Injection", "Server-Side Includes (SSI) command injection and execution"},
+	"vuln.ssti":               {"Server-Side Template Injection (SSTI)", "Input is evaluated by the server template engine, enabling arbitrary code execution"},
+	"vuln.buffer-overflow":    {"Buffer Overflow", "Weak bounds checking causes memory corruption and control-flow manipulation"},
+	"vuln.format-string":      {"Format String", "Weak format-argument validation enables memory corruption and arbitrary access"},
+	"vuln.txn-security":       {"E-Finance Transaction Security", "Transaction-process security — authentication means, integrity, replay prevention, owner verification (manual)"},
+	"vuln.auth-credential":    {"Improper Credential Management", "Credentials can be reused, fixed, or guessed"},
+	"vuln.client-program":     {"Insufficient Client Security Program", "Endpoint protection — OS-tampering detection, anti-malware, security program, obfuscation, anti-debugging, integrity (manual)"},
+	"vuln.mobile-client":      {"Insufficient Mobile Client Security", "Mobile client protection — device storage, memory, browser, source code, background, deep links (manual)"},
+}
+
+// applyEn — vulnEn 을 VulnDef 슬라이스에 주입.
+func applyEn(vulns []VulnDef) {
+	for i := range vulns {
+		if en, ok := vulnEn[vulns[i].ID]; ok {
+			vulns[i].NameEn, vulns[i].DescEn = en[0], en[1]
+		}
 	}
 }
