@@ -1,0 +1,39 @@
+# 정찰 벤치마크 정답셋 — DVWA (Damn Vulnerable Web Application) (#23)
+#
+# 성격: 전통 폼/서버렌더 PHP 앱 (링크·폼 크롤 검증용). SPA 아님 → static 프로파일이 적합.
+# 도출 출처: DVWA 공식 소스 트리 (github.com/digininja/DVWA) — 루트 .php 페이지 + vulnerabilities/* 모듈 인덱스.
+# 엔드포인트 수: 25
+#
+# ⚠️ base 는 당신의 DVWA 기동 방식에 맞게 수정할 것 (이게 안 맞으면 하네스가 skip 함):
+#   - 예) docker `vulnerables/web-dvwa` 를 -p 8080:80 으로 띄우면 http://localhost:8080 (루트에 서빙)
+#   - 만약 /DVWA/ 같은 접두사로 서빙하면 아래 각 path 앞에 그 접두사를 붙일 것.
+app: dvwa
+base: http://localhost:8080
+endpoints:
+  # 루트 페이지 / 인증 / 설정
+  - { method: GET,  path: "/login.php" }
+  - { method: POST, path: "/login.php" }
+  - { method: GET,  path: "/logout.php" }
+  - { method: GET,  path: "/index.php" }
+  - { method: GET,  path: "/setup.php" }
+  - { method: POST, path: "/setup.php" }
+  - { method: GET,  path: "/security.php" }
+  - { method: POST, path: "/security.php" }
+  - { method: GET,  path: "/instructions.php" }
+  - { method: GET,  path: "/phpinfo.php" }
+  # 취약점 모듈 (인덱스 페이지)
+  - { method: GET,  path: "/vulnerabilities/brute/" }
+  - { method: GET,  path: "/vulnerabilities/exec/" }
+  - { method: GET,  path: "/vulnerabilities/csrf/" }
+  - { method: GET,  path: "/vulnerabilities/fi/" }
+  - { method: GET,  path: "/vulnerabilities/upload/" }
+  - { method: GET,  path: "/vulnerabilities/captcha/" }
+  - { method: GET,  path: "/vulnerabilities/sqli/" }
+  - { method: GET,  path: "/vulnerabilities/sqli_blind/" }
+  - { method: GET,  path: "/vulnerabilities/weak_id/" }
+  - { method: GET,  path: "/vulnerabilities/xss_d/" }
+  - { method: GET,  path: "/vulnerabilities/xss_r/" }
+  - { method: GET,  path: "/vulnerabilities/xss_s/" }
+  - { method: GET,  path: "/vulnerabilities/csp/" }
+  - { method: GET,  path: "/vulnerabilities/javascript/" }
+  - { method: GET,  path: "/vulnerabilities/open_redirect/" }
