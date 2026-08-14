@@ -19,18 +19,33 @@ endpoints:
 
 ## 실행
 
-```bash
-# 1) 대상 앱을 로컬에 기동 (예: Juice Shop)
-docker run --rm -p 3000:3000 bkimminich/juice-shop     # http://localhost:3000
-# (정답셋 base 가 https 면 그에 맞게. self-signed 는 하네스가 InsecureSkipVerify 로 접속 확인)
+하네스는 이 폴더의 **`*.yaml` 정답셋을 전부 순회**하며 대상별로 채점한다(#23).
+떠 있는 대상만 표를 내고, 미기동 대상은 **skip**(실패 아님).
 
-# 2) 벤치 실행 — P/R/F1·팽창률 표 출력
+```bash
+# 1) 채점할 대상 웹 애플리케이션을 로컬에 기동 (여러 개 동시에 가능, 서로 다른 포트)
+docker run --rm -p 3000:3000 bkimminich/juice-shop     # http://localhost:3000
+docker run --rm -p 8080:80   vulnerables/web-dvwa      # http://localhost:8080  (초기 setup.php 1회 필요)
+docker run --rm -p 5000:5000 erev0s/vampi              # http://localhost:5000
+
+# 2) 벤치 실행 — 떠 있는 대상 전부 P/R/F1·팽창률 표 출력
 cd backend && go test ./internal/recon/bench -run ReconBench -v
 ```
 
-- 대상이 미응답이면 테스트는 **skip** (실패 아님).
+- 각 정답셋의 `base` 가 **실제 접속되는 프로토콜·포트**인지 확인할 것(안 맞으면 그 대상은 skip).
+  self-signed https 는 하네스가 `InsecureSkipVerify` 로 접속만 확인한다.
 - `headless` 프로파일은 Chrome/Chromium 이 있을 때만 실행.
-- 다른 정답셋을 쓰려면: `BENCH_GT=/path/to/gt.yaml go test ...`
+- 특정 정답셋 **하나만**: `BENCH_GT=../../../../docs/recon-groundtruth/dvwa.yaml go test ...`
+- 정답셋 폴더 변경: `BENCH_GT_DIR=/path/to/dir go test ...`
+
+### 대상 목록 (정답셋)
+
+| 파일 | 성격 | 엔드포인트 | 출처 | baseline |
+|------|------|-----------|------|----------|
+| `juice-shop.yaml` | SPA (REST) | 31 | 앱 라우트 | 아래 표 기록됨 |
+| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 기동 후 기록 |
+| `vampi.yaml` | OpenAPI 명세 API | 13 | erev0s/VAmPI 스펙 | 기동 후 기록(#4 전 재현율 낮음 정상) |
+| `vulnlab.yaml` | 자체 회귀 | (템플릿) | (채워야 함) | 라우트 확정 후 |
 
 ## 설계 제약 (중요)
 
