@@ -68,7 +68,7 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 | vulnlab    | —         | —  |  —   | —  |  —  | —  |   —    |   —    |   —   |   —    |  —    | (미기동 skip) |
 
 ¹ juice-shop headless 는 120s 프로파일 타임아웃에 걸려 **미완료**(pages=62에서 중단).
-² dvwa 는 **비인증 크롤**(setup/login 안 함) — 302 리다이렉트로 대부분 페이지에 못 닿음 → 재현율 낮음(정상). 세션 주입 시 크게 오를 것.
+² dvwa 는 위 표가 **비인증 크롤** — 302 리다이렉트로 대부분 페이지에 못 닿음. 인증 크롤(#31) 결과는 아래 참조.
 ³ vampi 는 링크 없는 순수 API — 크롤로는 거의 못 찾음 → **스펙 인제스터(#4)** 전까지 재현율 낮음(정상).
 
 ### 관찰 (개선 방향 = #3/#4/#5 가 이 수치를 올려야 함)
@@ -82,6 +82,20 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 - **낮은 재현율(못 찾은 API)**: juice-shop `/api/Products/{id}`·`/rest/products/search`, vampi 전 항목 등.
   → #4 스펙 인제스터·#5 라이브니스가 여기서 이득. dvwa 는 세션(로그인) 주입이 별도 관건.
 - **팽창률 대부분 1.00x**: 제품 정규화가 하네스 canonical 만큼 접음(과수집은 필터 문제지 정규화 문제 아님).
+
+### 인증 크롤 (#31) — DVWA before/after
+
+`dvwa.yaml` 에 로그인 시퀀스(admin/password, CSRF `user_token`)를 넣어 **로그인 후 크롤**한 결과.
+로그인 뒤에 있던 `/vulnerabilities/*` 에 도달해 재현율이 급등한다.
+
+| dvwa static | disc | TP | FP | FN |   P    |   R    |  F1   |
+|-------------|------|----|----|----|--------|--------|-------|
+| 비인증(전)  |   2  |  1 |  1 | 24 | 50.0%  |  4.0%  |  7.4% |
+| **인증(후)** |  31  | 20 | 11 |  5 | 64.5%  | **80.0%** | **71.4%** |
+
+- 재현율 **4.0% → 80.0%**, F1 **7.4% → 71.4%**. 인증 뒤 표면이 측정 범위에 들어옴.
+- headless 는 여전히 낮음(8.0%) — DVWA 는 서버렌더라 헤드리스가 얕게 긁음. static 이 맞는 프로파일.
+- 재현: `docker` DVWA 기동 + `setup.php` DB 생성 후 `BENCH_GT=../../../../docs/recon-groundtruth/dvwa.yaml go test ./internal/recon/bench -run ReconBench -v`
 
 ## 목표 (합격선 — 개선 성공 판정 기준)
 
