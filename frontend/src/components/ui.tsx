@@ -1,5 +1,37 @@
 import type { ReactNode } from 'react'
 import type { LucideIcon } from 'lucide-react'
+import { useI18n } from '../i18n'
+
+// 상태/판정/심각도 값(백엔드 도메인값)의 영문 표시 라벨 (#18).
+// 원시값은 색상 매핑 키로 그대로 두고, en 에서 표시 라벨만 이 맵으로 치환한다.
+const STATUS_EN: Record<string, string> = {
+  // 커버리지
+  '취약': 'Vulnerable', '양호': 'Good', '미점검': 'Unchecked', '해당없음': 'N/A',
+  '미지원(도구없음)': 'Unsupported (no tool)', '미지원(수동)': 'Unsupported (manual)',
+  // finding 검토 상태
+  '신규': 'New', '검토중': 'Reviewing', '확정': 'Confirmed', '오탐': 'False positive',
+  '보류': 'On hold', '보고': 'Reported',
+  // 이행점검 판정
+  '조치완료': 'Fixed', '미조치': 'Open', '부분조치': 'Partial', '신규발생': 'New (regression)',
+  '미확인': 'Unknown',
+  // ScanRun / crawl 상태
+  '진행': 'Running', '완료': 'Done', '일시정지': 'Paused', '중단': 'Stopped',
+  // advisor
+  '제안': 'Proposed',
+  // 스킴명
+  '주요정보통신기반시설': 'Critical Infrastructure (KII)', '전자금융': 'E-Finance', '모바일': 'Mobile',
+  // 미지원 축약(커버리지 요약 범례)
+  '미지원': 'Unsupported',
+  // 심각도(영문 enum 대문자화)
+  'high': 'High', 'medium': 'Medium', 'low': 'Low', 'info': 'Info',
+}
+
+// useStatusLabel — 표시 라벨 로케일 해석. en 이고 매핑이 있으면 영문, 아니면 원문.
+// Dot/Badge 외에 상태 드롭다운 옵션 라벨 등에서도 재사용.
+export function useStatusLabel() {
+  const { lang } = useI18n()
+  return (text: string) => (lang === 'en' ? STATUS_EN[text] ?? STATUS_EN[text?.toLowerCase?.()] ?? text : text)
+}
 
 export function Card({ title, icon: Icon, right, children, className = '', pad = true }: {
   title?: ReactNode; icon?: LucideIcon; right?: ReactNode; children: ReactNode; className?: string; pad?: boolean
@@ -62,24 +94,26 @@ const STATUS: Record<string, string> = {
 }
 
 export function Badge({ text, color, dot }: { text: string; color?: string; dot?: boolean }) {
-  const c = color ?? SEVERITY[text.toLowerCase()] ?? STATUS[text] ?? 'var(--muted)'
+  const label = useStatusLabel()
+  const c = color ?? SEVERITY[text.toLowerCase()] ?? STATUS[text] ?? 'var(--muted)' // 색상은 원시값 기준
   return (
     <span
       className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium"
       style={{ color: c, backgroundColor: `color-mix(in srgb, ${c} 14%, transparent)` }}
     >
       {dot && <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />}
-      {text}
+      {label(text)}
     </span>
   )
 }
 
 // Dot — 텍스트 상태 표시(테이블용). 배지보다 가벼움.
 export function Dot({ text, color }: { text: string; color?: string }) {
-  const c = color ?? STATUS[text] ?? 'var(--muted)'
+  const label = useStatusLabel()
+  const c = color ?? STATUS[text] ?? 'var(--muted)' // 색상은 원시값 기준
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: c }}>
-      <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />{text}
+      <span className="h-1.5 w-1.5 rounded-full" style={{ background: c }} />{label(text)}
     </span>
   )
 }

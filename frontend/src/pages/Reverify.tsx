@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { RotateCcw, CheckCircle2, XCircle, HelpCircle, Inbox, GitCompareArrows, Plus, Minus, Play } from 'lucide-react'
-import { usePoll, apiPost, apiGet, type ReverifyRun, type ScanRun, type ScanDiff, type Finding } from '../api'
-import { Card, Dot, Badge, Empty } from '../components/ui'
+import { usePoll, apiPost, apiGet, useLocName, type ReverifyRun, type ScanRun, type ScanDiff, type Finding } from '../api'
+import { Card, Dot, Badge, Empty, useStatusLabel } from '../components/ui'
 import { useT } from '../i18n'
 
 // verdict 색상·정렬: 미조치/신규발생을 위로.
@@ -18,6 +18,8 @@ const REV = { '조치완료': 'var(--green)', '미조치': 'var(--red)', '부분
 
 export function Reverify() {
   const t = useT()
+  const sl = useStatusLabel()
+  const loc = useLocName()
   const { data } = usePoll<ReverifyRun[]>('/api/reverify', 4000)
   const runs = [...(data ?? [])].reverse()
 
@@ -46,9 +48,9 @@ export function Reverify() {
           }
           right={
             <div className="flex items-center gap-2 text-xs">
-              <Kpi icon={CheckCircle2} n={run.fixed} label="조치완료" color="var(--green)" />
-              <Kpi icon={XCircle} n={run.open} label="미조치" color="var(--red)" />
-              <Kpi icon={HelpCircle} n={run.unknown} label="미확인" color="var(--muted)" />
+              <Kpi icon={CheckCircle2} n={run.fixed} label={sl('조치완료')} color="var(--green)" />
+              <Kpi icon={XCircle} n={run.open} label={sl('미조치')} color="var(--red)" />
+              <Kpi icon={HelpCircle} n={run.unknown} label={sl('미확인')} color="var(--muted)" />
             </div>
           }
         >
@@ -82,7 +84,7 @@ export function Reverify() {
                   <tr key={r.finding_id} className="border-t border-[var(--border)]"
                       style={vRank(r.verdict) === 0 ? { background: 'color-mix(in srgb, var(--red) 8%, transparent)' } : undefined}>
                     <td className="py-2.5 pr-3 font-mono text-xs">{r.finding_id}</td>
-                    <td className="py-2.5 pr-3 font-medium">{r.vuln}</td>
+                    <td className="py-2.5 pr-3 font-medium">{loc(r.vuln_def, r.vuln)}</td>
                     <td className="py-2.5 pr-3 font-mono text-xs text-[var(--muted)]">{r.target}</td>
                     <td className="py-2.5 pr-3 text-xs">{r.detector}</td>
                     <td className="py-2.5 pr-3"><Dot text={r.verdict} color={vColor(r.verdict)} /></td>
@@ -101,6 +103,7 @@ export function Reverify() {
 // ReverifyControl — 이행점검 실행(FR-5.2/5.3) + 전체 이행 현황 요약.
 function ReverifyControl() {
   const t = useT()
+  const sl = useStatusLabel()
   const { data: findings } = usePoll<Finding[]>('/api/findings', 5000)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -145,7 +148,7 @@ function ReverifyControl() {
           <div className="mt-1.5 flex flex-wrap gap-3 text-[11px]">
             {(Object.keys(REV) as (keyof typeof REV)[]).map((k) => counts[k] > 0 && (
               <span key={k} className="inline-flex items-center gap-1 text-[var(--muted)]">
-                <span className="h-2 w-2 rounded-full" style={{ background: REV[k] }} />{k} <b className="text-[var(--text)]">{counts[k]}</b>
+                <span className="h-2 w-2 rounded-full" style={{ background: REV[k] }} />{sl(k)} <b className="text-[var(--text)]">{counts[k]}</b>
               </span>
             ))}
           </div>
@@ -233,6 +236,7 @@ function DiffCard() {
 
 function DiffList({ title, icon: Icon, color, items }: { title: string; icon: any; color: string; items: ScanDiff['added'] }) {
   const t = useT()
+  const loc = useLocName()
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--panel-2)] p-3">
       <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold" style={{ color }}>
@@ -244,7 +248,7 @@ function DiffList({ title, icon: Icon, color, items }: { title: string; icon: an
         <div className="space-y-1">
           {items.map((f, i) => (
             <div key={i} className="flex items-center gap-2 text-xs">
-              <span className="font-medium">{f.vuln}</span>
+              <span className="font-medium">{loc(f.vuln_def, f.vuln)}</span>
               <span className="font-mono text-[var(--muted)]">{f.method} {f.host}{f.path}</span>
               {f.param && <span className="font-mono text-[10px] text-[var(--muted)]">?{f.param}</span>}
             </div>

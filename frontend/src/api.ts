@@ -1,5 +1,6 @@
 // 백엔드 읽기전용 JSON API 타입 + fetch 훅.
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { currentLang, useI18n } from './i18n'
 
 export interface Stats {
   endpoints: number
@@ -132,6 +133,7 @@ export interface LLMDecision {
 export interface ReverifyItem {
   finding_id: string
   vuln: string
+  vuln_def?: string
   target: string
   detector: string
   verdict: string // 조치완료 | 미조치 | 부분조치 | 신규발생 | 미확인
@@ -265,7 +267,8 @@ export interface LoginSeqInfo {
 }
 
 async function getJSON<T>(path: string): Promise<T> {
-  const res = await fetch(path, { headers: { Accept: 'application/json' } })
+  // X-Lang: 화면 언어를 백엔드에 전달 → 로케일 콘텐츠 응답(advisor 등, #18)
+  const res = await fetch(path, { headers: { Accept: 'application/json', 'X-Lang': currentLang() } })
   if (!res.ok) throw new Error(`${path} → ${res.status}`)
   return res.json() as Promise<T>
 }
@@ -290,6 +293,7 @@ export function usePoll<T>(path: string, ms = 4000) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const timer = useRef<number | undefined>(undefined)
+  const { lang } = useI18n() // 언어 변경 시 즉시 재요청(X-Lang 반영)
 
   useEffect(() => {
     let alive = true
@@ -306,7 +310,37 @@ export function usePoll<T>(path: string, ms = 4000) {
     tick()
     timer.current = window.setInterval(tick, ms)
     return () => { alive = false; window.clearInterval(timer.current) }
-  }, [path, ms])
+  }, [path, ms, lang])
 
   return { data, error, loading }
+}
+
+// ── 취약점 카탈로그 로케일 (#18) ──
+export interface VulnDef {
+  id: string
+  name: string
+  desc: string
+  name_en?: string
+  desc_en?: string
+  detectors?: string[]
+  cwe?: string
+}
+
+// useLocName — finding.vuln_def(안정 ID)로 화면 취약점명을 로케일 해석하는 함수 반환.
+// en 이고 카탈로그에 영문명이 있으면 영문, 아니면 fallback(저장된 한글명).
+export function useLocName() {
+  const { data } = usePoll<VulnDef[]>('/api/vulndefs', 60000)
+  const { lang } = useI18n()
+  const map = useMemo(() => {
+    const m: Record<string, VulnDef> = {}
+    for (const v of data ?? []) m[v.id] = v
+    return m
+  }, [data])
+  return useCallback(
+    (vulnDef: string | undefined, fallback: string) => {
+      if (lang === 'en' && vulnDef && map[vulnDef]?.name_en) return map[vulnDef].name_en as string
+      return fallback
+    },
+    [map, lang],
+  )
 }

@@ -1,7 +1,7 @@
 import { useState, Fragment } from 'react'
 import { ShieldAlert, ShieldCheck, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
-import { usePoll, type Finding } from '../api'
-import { Card, Badge, Empty, statusColor, severityColor } from '../components/ui'
+import { usePoll, useLocName, type Finding } from '../api'
+import { Card, Badge, Empty, statusColor, severityColor, useStatusLabel } from '../components/ui'
 import { useT } from '../i18n'
 
 // 심각도 정렬 순위 (high 먼저) + finding id 번호.
@@ -68,6 +68,7 @@ const NEXT: Record<string, string[]> = {
 // StatusCell — 상태 표시 + 다음 상태 전이(낙관적 락, FR-1.3). 409 충돌 시 알림.
 function StatusCell({ f }: { f: Finding }) {
   const t = useT()
+  const sl = useStatusLabel()
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState(false)
   const next = NEXT[f.status] ?? []
@@ -94,7 +95,7 @@ function StatusCell({ f }: { f: Finding }) {
                 onChange={(e) => e.target.value && transition(e.target.value)}
                 className="rounded border border-[var(--border)] bg-[var(--panel-2)] px-1 py-0.5 text-[10px]">
           <option value="">→</option>
-          {next.map((s) => <option key={s} value={s}>{s}</option>)}
+          {next.map((s) => <option key={s} value={s}>{sl(s)}</option>)}
         </select>
       )}
       {conflict && (
@@ -111,6 +112,8 @@ const STATUSES = ['신규', '검토중', '확정', '오탐', '보류', '보고']
 
 export function Findings() {
   const t = useT()
+  const loc = useLocName()
+  const sl = useStatusLabel()
   const { data } = usePoll<Finding[]>('/api/findings', 4000)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [hideLLMFP, setHideLLMFP] = useState(false)
@@ -145,7 +148,7 @@ export function Findings() {
       right={
         <div className="flex items-center gap-3">
           <div className="hidden items-center gap-1.5 text-[11px] text-[var(--muted)] md:flex">
-            {t('findings.reviewStatus')} <span>신규 → 검토중 → 확정 · 오탐 · 보류 → 보고</span>
+            {t('findings.reviewStatus')} <span>{sl('신규')} → {sl('검토중')} → {sl('확정')} · {sl('오탐')} · {sl('보류')} → {sl('보고')}</span>
           </div>
           {llmFPCount > 0 && (
             <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--muted)]" title={t('findings.hideLLMFPTooltip')}>
@@ -176,7 +179,7 @@ export function Findings() {
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
                   className="rounded-md border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1 text-xs">
             <option value="">{t('findings.filter.allStatuses')}</option>
-            {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+            {STATUSES.map((s) => <option key={s} value={s}>{sl(s)}</option>)}
           </select>
           {(sevFilter || statusFilter) && (
             <button onClick={() => { setSevFilter(null); setStatusFilter('') }}
@@ -217,7 +220,7 @@ export function Findings() {
                     {hasEv && (isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />)}
                   </td>
                   <td className="py-2 pr-3 font-mono text-xs">{f.id}</td>
-                  <td className="py-2 pr-3 font-medium">{f.vuln}</td>
+                  <td className="py-2 pr-3 font-medium">{loc(f.vuln_def, f.vuln)}</td>
                   <td className="py-2 pr-3"><Badge text={f.severity} /></td>
                   <td className="py-2 pr-3">
                     <div className="font-mono text-xs">{f.host}</div>
