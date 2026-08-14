@@ -124,9 +124,10 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/detectors", jsonHandler(func() any { return detector.Catalog() }))
 	mux.HandleFunc("/api/payloads", jsonHandler(func() any { return payload.Info() }))
 	mux.HandleFunc("/api/llm-decisions", jsonHandler(func() any { return llm.Decisions() }))
-	mux.HandleFunc("/api/rule-candidates", jsonHandler(func() any { return advisor.Candidates() }))
+	mux.HandleFunc("/api/rule-candidates", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, advisor.CandidatesLang(langOf(r))) }) // X-Lang 반영(#18)
 	mux.HandleFunc("/api/rules/adopt", ruleAdoptHandler) // POST: 추천 후보를 활성 룰로 채택(rule:promote)
 	mux.HandleFunc("/api/checkitems", jsonHandler(func() any { return checklist.Current().CheckItems }))
+	mux.HandleFunc("/api/vulndefs", jsonHandler(func() any { return checklist.Current().Vulns })) // 취약점 카탈로그(name_en 포함, 화면 로케일용 #18)
 	mux.HandleFunc("/api/projects", projectsHandler)               // GET list / POST create (§5.1)
 	mux.HandleFunc("/api/activate-project", activateHandler)       // POST {id} (§5.1)
 	mux.HandleFunc("/api/project-credentials", credentialsHandler) // GET summary / POST set (encrypted, §5.1 FR-1.4)
@@ -1074,6 +1075,14 @@ func writeJSON(w http.ResponseWriter, v any) {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(v)
+}
+
+// langOf — 요청 로케일. 프론트가 보내는 X-Lang 헤더 기준, en 만 인식하고 기본은 ko (#18).
+func langOf(r *http.Request) string {
+	if r.Header.Get("X-Lang") == "en" {
+		return "en"
+	}
+	return "ko"
 }
 
 // activePID — 활성 프로젝트 id (없으면 "" = 전체).
