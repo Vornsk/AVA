@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { ScrollText, Inbox, Download, ShieldAlert } from 'lucide-react'
 import { usePoll, type AuditEntry } from '../api'
 import { Card, Badge, Empty } from '../components/ui'
+import { useT } from '../i18n'
 
 export function Audit() {
+  const t = useT()
   const { data } = usePoll<AuditEntry[]>('/api/audit', 4000)
   const all = data ?? []
   const [result, setResult] = useState<'all' | 'ok' | 'denied'>('all')
@@ -29,53 +31,53 @@ export function Audit() {
 
   return (
     <Card
-      title={`감사 로그${data ? ` (${all.length})` : ''}`}
+      title={`${t('audit.title')}${data ? ` (${all.length})` : ''}`}
       icon={ScrollText}
       right={
         <a href="/audit.csv" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
-           style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }} title="규제 제출용 증적 (UTF-8)">
-          <Download size={14} /> CSV 내보내기
+           style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }} title={t('audit.csvTitle')}>
+          <Download size={14} /> {t('audit.exportCsv')}
         </a>
       }
     >
       {all.length === 0 ? (
-        <Empty icon={Inbox}>기록된 변경이 없습니다. 프로젝트 생성·전환·스캔·룰 채택 등이 여기에 남습니다.</Empty>
+        <Empty icon={Inbox}>{t('audit.empty')}</Empty>
       ) : (
         <>
           {/* 요약 + 필터 */}
           <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-            <span className="text-[var(--muted)]">총 <b className="text-[var(--text)]">{all.length}</b>건</span>
+            <span className="text-[var(--muted)]">{t('audit.totalPre')}<b className="text-[var(--text)]">{all.length}</b>{t('audit.countSuffix')}</span>
             <span className="inline-flex items-center gap-1" style={{ color: denied ? 'var(--red)' : 'var(--muted)' }}>
-              <ShieldAlert size={13} /> 거부 <b>{denied}</b>건
+              <ShieldAlert size={13} /> {t('audit.deniedPre')}<b>{denied}</b>{t('audit.countSuffix')}
             </span>
             <span className="mx-1 text-[var(--border)]">|</span>
             <select className={sel} value={result} onChange={(e) => setResult(e.target.value as any)}>
-              <option value="all">결과: 전체</option>
-              <option value="ok">성공(ok)</option>
-              <option value="denied">거부(denied)</option>
+              <option value="all">{t('audit.resultAll')}</option>
+              <option value="ok">{t('audit.resultOk')}</option>
+              <option value="denied">{t('audit.resultDenied')}</option>
             </select>
             <select className={sel} value={action} onChange={(e) => setAction(e.target.value)}>
-              <option value="">행위: 전체</option>
+              <option value="">{t('audit.actionAll')}</option>
               {actions.map((a) => <option key={a} value={a}>{a}</option>)}
             </select>
-            <input className={`${sel} w-40`} placeholder="사용자·대상·상세 검색" value={q} onChange={(e) => setQ(e.target.value)} />
+            <input className={`${sel} w-40`} placeholder={t('audit.searchPlaceholder')} value={q} onChange={(e) => setQ(e.target.value)} />
             {(result !== 'all' || action || q) && (
-              <button className="text-[var(--muted)] underline" onClick={() => { setResult('all'); setAction(''); setQ('') }}>필터해제</button>
+              <button className="text-[var(--muted)] underline" onClick={() => { setResult('all'); setAction(''); setQ('') }}>{t('audit.clearFilter')}</button>
             )}
-            <span className="ml-auto text-[var(--muted)]">{rows.length}/{all.length} 표시</span>
+            <span className="ml-auto text-[var(--muted)]">{t('audit.shown', { shown: rows.length, total: all.length })}</span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm [font-variant-numeric:tabular-nums]">
               <thead>
                 <tr className="eyebrow text-left">
-                  <th className="pb-2 pr-3 font-semibold">Time</th>
-                  <th className="pb-2 pr-3 font-semibold">User</th>
-                  <th className="pb-2 pr-3 font-semibold">Role</th>
-                  <th className="pb-2 pr-3 font-semibold">Action</th>
-                  <th className="pb-2 pr-3 font-semibold">Target</th>
-                  <th className="pb-2 pr-3 font-semibold">Result</th>
-                  <th className="pb-2 pr-3 font-semibold">Detail</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('audit.colTime')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('audit.colUser')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('audit.colRole')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('audit.colAction')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('audit.colTarget')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('audit.colResult')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('audit.colDetail')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -94,7 +96,7 @@ export function Audit() {
                   </tr>
                 ))}
                 {rows.length === 0 && (
-                  <tr><td colSpan={7} className="py-6 text-center text-xs text-[var(--muted)]">필터에 맞는 기록이 없습니다.</td></tr>
+                  <tr><td colSpan={7} className="py-6 text-center text-xs text-[var(--muted)]">{t('audit.noMatch')}</td></tr>
                 )}
               </tbody>
             </table>

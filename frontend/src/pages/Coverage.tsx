@@ -1,6 +1,7 @@
 import { ListChecks, Download } from 'lucide-react'
 import { usePoll, type CoverageReport, type SchemeCoverage, type ItemStatus } from '../api'
 import { Card, Badge, Empty, Dot, statusColor } from '../components/ui'
+import { useT } from '../i18n'
 
 // 상태 우선순위(조치할 것부터): 취약 → 미점검 → 미지원 → 양호.
 const STATUS_RANK: Record<string, number> = {
@@ -49,24 +50,25 @@ function StatusBar({ items }: { items: ItemStatus[] }) {
 }
 
 export function Coverage() {
+  const t = useT()
   const { data } = usePoll<CoverageReport>('/api/coverage', 5000)
   const schemes = data?.schemes ?? []
 
-  if (schemes.length === 0) return <Card title="Coverage" icon={ListChecks}><Empty>점검항목표가 비어 있습니다.</Empty></Card>
+  if (schemes.length === 0) return <Card title={t('coverage.title')} icon={ListChecks}><Empty>{t('coverage.empty')}</Empty></Card>
 
   const allItems = schemes.flatMap((s) => s.items)
 
   return (
     <div className="space-y-5">
       {/* 전체 요약 */}
-      <Card title="전체 준수 태세" icon={ListChecks}
+      <Card title={t('coverage.overallTitle')} icon={ListChecks}
             right={<a href="/coverage.xlsx"
               className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
               style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
-              <Download size={14} /> 점검결과표 .xlsx
+              <Download size={14} /> {t('coverage.exportXlsx')}
             </a>}>
         <p className="mb-3 text-xs text-[var(--muted)]">
-          취약점뿐 아니라 <span className="font-medium text-[var(--text)]">전 항목의 수행 결과</span>(양호·취약·미점검·미지원)입니다. 취약·미점검(갭)을 먼저 확인하세요.
+          {t('coverage.summaryLead')}<span className="font-medium text-[var(--text)]">{t('coverage.summaryEmphasis')}</span>{t('coverage.summaryTail')}
         </p>
         <StatusBar items={allItems} />
       </Card>
@@ -76,15 +78,16 @@ export function Coverage() {
 }
 
 function SchemeBlock({ s }: { s: SchemeCoverage }) {
+  const t = useT()
   const items = [...s.items].sort((a, b) => rank(a.status) - rank(b.status)) // 취약·미점검 먼저
   return (
     <Card
       title={<span className="flex items-center gap-2">{s.scheme}
-        <span className="text-xs font-normal text-[var(--muted)]">{s.total}개 항목</span></span>}
+        <span className="text-xs font-normal text-[var(--muted)]">{t('coverage.itemCount', { count: s.total })}</span></span>}
       right={
         <div className="flex items-center gap-2 text-xs">
           <Badge text={`취약 ${s.vulnerable}`} color="var(--red)" />
-          <Badge text={`자동가능 ${s.automatable}/${s.total}`} color="var(--blue)" />
+          <Badge text={`${t('coverage.automatable')} ${s.automatable}/${s.total}`} color="var(--blue)" />
         </div>
       }
     >
@@ -95,9 +98,9 @@ function SchemeBlock({ s }: { s: SchemeCoverage }) {
       <table className="w-full text-sm">
         <thead>
           <tr className="text-left text-xs uppercase text-[var(--muted)]">
-            <th className="pb-2 pr-3">Item</th><th className="pb-2 pr-3">Vulnerability</th>
-            <th className="pb-2 pr-3">Detectors</th><th className="pb-2 pr-3">Findings</th>
-            <th className="pb-2 pr-3">Status</th>
+            <th className="pb-2 pr-3">{t('coverage.colItem')}</th><th className="pb-2 pr-3">{t('coverage.colVulnerability')}</th>
+            <th className="pb-2 pr-3">{t('coverage.colDetectors')}</th><th className="pb-2 pr-3">{t('coverage.colFindings')}</th>
+            <th className="pb-2 pr-3">{t('coverage.colStatus')}</th>
           </tr>
         </thead>
         <tbody>

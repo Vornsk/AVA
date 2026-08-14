@@ -1,6 +1,7 @@
 import { FileSpreadsheet, Download, Inbox, ListChecks, FileSearch } from 'lucide-react'
 import { usePoll } from '../api'
 import { Card, Empty, Badge, severityColor } from '../components/ui'
+import { useT } from '../i18n'
 
 interface ReportRow {
   no: number; target: string; main_url: string; vuln: string; path: string
@@ -25,6 +26,7 @@ function SevBadge({ s }: { s: string }) {
 }
 
 export function Report() {
+  const t = useT()
   const { data } = usePoll<ReportData>('/api/report', 5000)
   const { data: ev } = usePoll<EvidenceData>('/api/evidence', 5000)
   const rows = data?.rows ?? []
@@ -43,28 +45,27 @@ export function Report() {
   return (
     <div className="space-y-5">
       {/* 1) 산출물 허브 + 요약 */}
-      <Card title="산출물" icon={FileSpreadsheet}
+      <Card title={t('report.hub.title')} icon={FileSpreadsheet}
             right={
               <div className="flex items-center gap-2">
                 <a href="/report.xlsx" className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold"
-                   style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }} title="도출리스트 + 증적 시트">
-                  <Download size={14} /> 도출리스트 .xlsx
+                   style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }} title={t('report.hub.xlsxFindings.tooltip')}>
+                  <Download size={14} /> {t('report.hub.xlsxFindings.btn')}
                 </a>
                 <a href="/coverage.xlsx" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
-                   title="선택 점검항목표 전체의 수행결과(양호/취약/미점검)">
-                  <ListChecks size={14} /> 점검결과표 .xlsx
+                   title={t('report.hub.xlsxCoverage.tooltip')}>
+                  <ListChecks size={14} /> {t('report.hub.xlsxCoverage.btn')}
                 </a>
               </div>
             }>
         <p className="mb-3 text-xs text-[var(--muted)]">
-          <b className="text-[var(--text)]">도출리스트</b>(취약점 목록·증적) + <b className="text-[var(--text)]">점검결과표</b>(전 항목 수행결과) 두 산출물을 제출합니다.
-          도출리스트 xlsx에는 <b className="text-[var(--text)]">증적 시트</b>(재현요청·증명응답)가 함께 들어 있습니다.
+          <b className="text-[var(--text)]">{t('report.hub.desc.b1')}</b>{t('report.hub.desc.s1')}<b className="text-[var(--text)]">{t('report.hub.desc.b2')}</b>{t('report.hub.desc.s2')}<b className="text-[var(--text)]">{t('report.hub.desc.b3')}</b>{t('report.hub.desc.s3')}
         </p>
         {rows.length === 0 ? (
-          <span className="text-xs text-[var(--muted)]">도출된 취약점 없음</span>
+          <span className="text-xs text-[var(--muted)]">{t('report.hub.emptyFindings')}</span>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-[var(--muted)]">총 <b className="text-[var(--text)]">{rows.length}</b>건 · 증적 <b className="text-[var(--text)]">{evRows.length}</b>건 ·</span>
+            <span className="text-xs text-[var(--muted)]">{t('report.hub.summary.pre')}<b className="text-[var(--text)]">{rows.length}</b>{t('report.hub.summary.mid')}<b className="text-[var(--text)]">{evRows.length}</b>{t('report.hub.summary.post')}</span>
             {groups.map((g) => (
               <span key={g.vuln} className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] px-2 py-0.5 text-[11px]">
                 <span className="h-2 w-2 rounded-full" style={{ background: severityColor(['high','medium','low','info'][g.sev] ?? 'info') }} />
@@ -76,9 +77,9 @@ export function Report() {
       </Card>
 
       {/* 2) 도출리스트 — 유형별 그룹 + 심각도 */}
-      <Card title={`도출리스트 (${rows.length}건)`} icon={FileSpreadsheet}>
+      <Card title={t('report.export.title', { count: rows.length })} icon={FileSpreadsheet}>
         {rows.length === 0 ? (
-          <Empty icon={Inbox}>도출할 finding 이 없습니다. 스캔을 실행하면 여기에 표시됩니다.</Empty>
+          <Empty icon={Inbox}>{t('report.export.empty')}</Empty>
         ) : (
           <div className="space-y-4">
             {groups.map((g) => (
@@ -86,18 +87,18 @@ export function Report() {
                 <div className="mb-1.5 flex items-center gap-2">
                   <SevBadge s={['high','medium','low','info'][g.sev] ?? 'info'} />
                   <span className="text-sm font-semibold">{g.vuln}</span>
-                  <span className="text-xs text-[var(--muted)]">{g.rows.length}건</span>
+                  <span className="text-xs text-[var(--muted)]">{t('report.export.group.count', { count: g.rows.length })}</span>
                 </div>
                 <div className="overflow-x-auto rounded-lg border border-[var(--border)]">
                   <table className="w-full text-xs [font-variant-numeric:tabular-nums]">
                     <thead>
                       <tr className="eyebrow text-left">
                         <th className="whitespace-nowrap px-2 py-1.5 font-semibold">NO</th>
-                        <th className="px-2 py-1.5 font-semibold">대상</th>
-                        <th className="px-2 py-1.5 font-semibold">발견 URL</th>
-                        <th className="px-2 py-1.5 font-semibold">파라미터</th>
-                        <th className="px-2 py-1.5 font-semibold">설명</th>
-                        <th className="px-2 py-1.5 font-semibold">비고</th>
+                        <th className="px-2 py-1.5 font-semibold">{t('report.export.col.target')}</th>
+                        <th className="px-2 py-1.5 font-semibold">{t('report.export.col.foundUrl')}</th>
+                        <th className="px-2 py-1.5 font-semibold">{t('report.export.col.param')}</th>
+                        <th className="px-2 py-1.5 font-semibold">{t('report.export.col.desc')}</th>
+                        <th className="px-2 py-1.5 font-semibold">{t('report.export.col.remark')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -121,12 +122,12 @@ export function Report() {
       </Card>
 
       {/* 3) 증적 (FR-4.2) 미리보기 */}
-      <Card title={`증적 (${evRows.length}건)`} icon={FileSearch}>
+      <Card title={t('report.evidence.title', { count: evRows.length })} icon={FileSearch}>
         <p className="mb-3 text-xs text-[var(--muted)]">
-          각 발견을 뒷받침하는 <b className="text-[var(--text)]">재현 요청</b>과 <b className="text-[var(--text)]">증명 응답</b>(민감정보 마스킹)입니다. 다운로드 없이 여기서 검토하세요.
+          {t('report.evidence.desc.pre')}<b className="text-[var(--text)]">{t('report.evidence.desc.b1')}</b>{t('report.evidence.desc.mid')}<b className="text-[var(--text)]">{t('report.evidence.desc.b2')}</b>{t('report.evidence.desc.post')}
         </p>
         {evRows.length === 0 ? (
-          <Empty icon={Inbox}>증적(재현요청·응답)이 있는 finding 이 없습니다.</Empty>
+          <Empty icon={Inbox}>{t('report.evidence.empty')}</Empty>
         ) : (
           <div className="space-y-2">
             {evRows.map((e) => (
@@ -139,11 +140,11 @@ export function Report() {
                 </summary>
                 <div className="mt-2 space-y-2">
                   <div>
-                    <div className="eyebrow mb-1">재현 요청</div>
+                    <div className="eyebrow mb-1">{t('report.evidence.reqLabel')}</div>
                     <pre className="overflow-x-auto rounded bg-[var(--panel-2)] p-2 font-mono text-[11px] leading-relaxed">{e.request || '—'}</pre>
                   </div>
                   <div>
-                    <div className="eyebrow mb-1">증명 응답 (마스킹)</div>
+                    <div className="eyebrow mb-1">{t('report.evidence.respLabel')}</div>
                     <pre className="max-h-60 overflow-auto rounded bg-[var(--panel-2)] p-2 font-mono text-[11px] leading-relaxed">{e.response || '—'}</pre>
                   </div>
                 </div>
