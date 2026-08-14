@@ -1,0 +1,48 @@
+# 정찰 벤치마크 정답셋 — OWASP Juice Shop (#22)
+#
+# 매칭 규칙: 하네스 자체 canonical(bench.Canon) 로 접힌다.
+#   가변 세그먼트(숫자/uuid/hex/date, 그리고 아래 {id} 플레이스홀더)는 "{}" 로 접혀
+#   구체 경로(/rest/products/42)와 매칭된다. 정적 세그먼트는 대소문자까지 그대로 비교.
+#   (path 에 {} 가 있어 YAML flow 충돌을 피하려 값을 따옴표로 감싼다.)
+#
+# ⚠️ 이 정답셋은 대표 엔드포인트 큐레이션이다. 실제 기동 버전에 맞춰 검증·확장할 것.
+#   (Juice Shop 은 버전에 따라 라우트가 조금씩 다르다. baseline 기록 시 사용한 버전을 남길 것.)
+app: juice-shop
+base: http://localhost:3000
+endpoints:
+  # 상품
+  - { method: GET,  path: "/rest/products/search" }
+  - { method: GET,  path: "/api/Products" }
+  - { method: GET,  path: "/api/Products/{id}" }
+  - { method: GET,  path: "/rest/products/{id}/reviews" }
+  - { method: PUT,  path: "/rest/products/{id}/reviews" }
+  # 사용자 / 인증
+  - { method: POST, path: "/rest/user/login" }
+  - { method: GET,  path: "/rest/user/whoami" }
+  - { method: POST, path: "/api/Users" }
+  - { method: GET,  path: "/api/Users/{id}" }
+  - { method: POST, path: "/rest/user/reset-password" }
+  - { method: GET,  path: "/rest/user/security-question" }
+  # 장바구니 / 주문
+  - { method: GET,  path: "/rest/basket/{id}" }
+  - { method: POST, path: "/api/BasketItems" }
+  - { method: PUT,  path: "/api/BasketItems/{id}" }
+  - { method: GET,  path: "/rest/order-history" }
+  - { method: GET,  path: "/rest/wallet/balance" }
+  # 피드백 / 컴플레인
+  - { method: GET,  path: "/api/Feedbacks" }
+  - { method: POST, path: "/api/Feedbacks" }
+  - { method: GET,  path: "/api/Complaints" }
+  - { method: POST, path: "/api/Complaints" }
+  # 관리 / 메타
+  - { method: GET,  path: "/api/Challenges" }
+  - { method: GET,  path: "/rest/admin/application-version" }
+  - { method: GET,  path: "/rest/admin/application-configuration" }
+  - { method: GET,  path: "/rest/languages" }
+  - { method: GET,  path: "/api/SecurityQuestions" }
+  - { method: POST, path: "/api/SecurityAnswers" }
+  - { method: GET,  path: "/api/Cards" }
+  - { method: GET,  path: "/api/Addresss" }
+  - { method: GET,  path: "/api/Deliverys" }
+  - { method: GET,  path: "/rest/captcha" }
+  - { method: GET,  path: "/metrics" }

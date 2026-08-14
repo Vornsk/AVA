@@ -90,6 +90,14 @@ var (
 // Default — 기본(전역) 트리.
 func Default() *Tree { return def }
 
+// Reset — 전역 트리를 빈 상태로 초기화. 벤치 하네스의 프로파일별 격리 측정용(#22).
+// (운영 경로에서는 사용하지 않는다 — 테스트/툴링 전용.)
+func Reset() {
+	def.mu.Lock()
+	defer def.mu.Unlock()
+	def.roots = map[string]*node{}
+}
+
 // ── 전역 위임 함수 (하위호환, :8080 공유 프록시) ──
 func Record(scheme, host, method, rawPath string, params []Param, auth bool, verdict string) {
 	def.Record(scheme, host, method, rawPath, params, auth, verdict)
