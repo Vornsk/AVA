@@ -5,10 +5,10 @@
 # 엔드포인트 수: 25
 #
 # ⚠️ base 는 당신의 DVWA 기동 방식에 맞게 수정할 것 (이게 안 맞으면 하네스가 skip 함):
-#   - 예) docker `vulnerables/web-dvwa` 를 -p 8080:80 으로 띄우면 http://localhost:8080 (루트에 서빙)
+#   - 예) docker `vulnerables/web-dvwa` 를 -p 8081:80 으로 띄우면 http://localhost:8081 (루트에 서빙)
 #   - 만약 /DVWA/ 같은 접두사로 서빙하면 아래 각 path 앞에 그 접두사를 붙일 것.
 app: dvwa
-base: http://localhost:8080
+base: http://localhost:8081
 endpoints:
   # 루트 페이지 / 인증 / 설정
   - { method: GET,  path: "/login.php" }
