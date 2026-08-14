@@ -56,9 +56,13 @@ export function Report() {
                    title={t('report.hub.findingsEnTooltip')}>
                   <Download size={14} /> {t('report.hub.findingsEnBtn')}
                 </a>
-                <a href="/coverage.xlsx" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
+                <a href="/coverage.xlsx?lang=ko" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
                    title={t('report.hub.xlsxCoverage.tooltip')}>
                   <ListChecks size={14} /> {t('report.hub.xlsxCoverage.btn')}
+                </a>
+                <a href="/coverage.xlsx?lang=en" className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-semibold"
+                   title={t('report.hub.coverageEnTooltip')}>
+                  <ListChecks size={14} /> {t('report.hub.coverageEnBtn')}
                 </a>
               </div>
             }>

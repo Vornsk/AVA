@@ -449,6 +449,8 @@ export const ko = {
   'report.hub.xlsxCoverage.btn': '점검결과표 .xlsx',
   'report.hub.findingsEnBtn': '영문 리포트 .xlsx',
   'report.hub.findingsEnTooltip': '영어로 도출리스트+증적 내보내기 (#18)',
+  'report.hub.coverageEnBtn': '영문 점검결과표 .xlsx',
+  'report.hub.coverageEnTooltip': '영어로 점검결과표 내보내기 (#18)',
   'report.hub.desc.b1': '도출리스트',
   'report.hub.desc.s1': '(취약점 목록·증적) + ',
   'report.hub.desc.b2': '점검결과표',

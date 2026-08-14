@@ -450,6 +450,8 @@ export const en: Record<keyof typeof ko, string> = {
   'report.hub.xlsxCoverage.btn': 'Assessment results table .xlsx',
   'report.hub.findingsEnBtn': 'English report .xlsx',
   'report.hub.findingsEnTooltip': 'Export findings + evidence in English (#18)',
+  'report.hub.coverageEnBtn': 'English results table .xlsx',
+  'report.hub.coverageEnTooltip': 'Export the assessment results table in English (#18)',
   'report.hub.desc.b1': 'Findings export',
   'report.hub.desc.s1': ' (vulnerability list · evidence) + ',
   'report.hub.desc.b2': 'Assessment results table',

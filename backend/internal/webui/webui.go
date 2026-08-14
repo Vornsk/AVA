@@ -1149,9 +1149,15 @@ func auditCSV(w http.ResponseWriter, r *http.Request) {
 
 // coverageDownload — 점검결과표 xlsx 다운로드 (§5.4, FR-4.3). 스킴별 시트 + 요약.
 func coverageDownload(w http.ResponseWriter, r *http.Request) {
+	// ?lang=en 이면 영문 점검결과표, 그 외(기본)는 한국어 (#18).
+	lang := "ko"
+	fname := "coverage.xlsx"
+	if r.URL.Query().Get("lang") == "en" {
+		lang, fname = "en", "coverage_en.xlsx"
+	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", `attachment; filename="coverage.xlsx"`)
-	if _, err := report.WriteCoverageExcelTo(w); err != nil {
+	w.Header().Set("Content-Disposition", `attachment; filename="`+fname+`"`)
+	if _, err := report.WriteCoverageExcelToLang(w, lang); err != nil {
 		http.Error(w, "excel 생성 실패: "+err.Error(), http.StatusInternalServerError)
 	}
 }
