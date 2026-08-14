@@ -43,8 +43,8 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 | 파일 | 성격 | 엔드포인트 | 출처 | baseline |
 |------|------|-----------|------|----------|
 | `juice-shop.yaml` | SPA (REST) | 31 | 앱 라우트 | 아래 표 기록됨 |
-| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 기동 후 기록 |
-| `vampi.yaml` | OpenAPI 명세 API | 13 | erev0s/VAmPI 스펙 | 기동 후 기록(#4 전 재현율 낮음 정상) |
+| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) |
+| `vampi.yaml` | OpenAPI 명세 API | 13 | erev0s/VAmPI 스펙 | 아래 표 기록됨(#4 전 재현율 낮음 정상) |
 | `vulnlab.yaml` | 자체 회귀 | (템플릿) | (채워야 함) | 라우트 확정 후 |
 
 ## 설계 제약 (중요)
@@ -55,25 +55,33 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 - 제품 정규화 품질은 **트리 팽창률**(제품이 구분한 노드 수 ÷ 하네스 canonical 수, ≥1)로만 관찰한다.
 - 정찰은 전역 트리(`endpoints.Default()`)에 기록하므로 프로파일마다 `endpoints.Reset()` 으로 격리한다.
 
-## Baseline (2026-08-14, docker `bkimminich/juice-shop` latest, GT 31개)
+## Baseline (2026-08-14, docker 최신 이미지 — juice-shop / vulnerables/web-dvwa / erev0s/vampi)
 
-| profile  | GT | disc | TP | FP  | FN |   P    |   R    |  F1   | FPrate | infl | pages | time |
-|----------|----|------|----|-----|----|--------|--------|-------|--------|------|-------|------|
-| static   | 31 |  84  | 13 |  71 | 18 | 15.5%  | 41.9%  | 22.6% | 84.5%  | 1.00x |  3   | 1.5s |
-| headless | 31 | 231  |  5 | 226 | 26 |  2.2%  | 16.1%  |  3.8% | 97.8%  | 1.20x |  61  | 120s* |
+| app        | profile   | GT | disc | TP | FP  | FN |   P    |   R    |  F1   | FPrate | infl  | pages |
+|------------|-----------|----|------|----|-----|----|--------|--------|-------|--------|-------|-------|
+| juice-shop | static    | 31 |  84  | 13 |  71 | 18 | 15.5%  | 41.9%  | 22.6% | 84.5%  | 1.00x |  3    |
+| juice-shop | headless¹ | 31 | 231  |  5 | 226 | 26 |  2.2%  | 16.1%  |  3.8% | 97.8%  | 1.20x |  62   |
+| dvwa²      | static    | 25 |   2  |  1 |   1 | 24 | 50.0%  |  4.0%  |  7.4% | 50.0%  | 1.00x |  2    |
+| dvwa²      | headless  | 25 |   6  |  2 |   4 | 23 | 33.3%  |  8.0%  | 12.9% | 66.7%  | 1.00x |  2    |
+| vampi³     | static    | 13 |   0  |  0 |   0 | 13 |  0.0%  |  0.0%  |  0.0% |   —    |  —    |  1    |
+| vampi³     | headless  | 13 |   2  |  1 |   1 | 12 | 50.0%  |  7.7%  | 13.3% | 50.0%  | 1.00x |  1    |
+| vulnlab    | —         | —  |  —   | —  |  —  | —  |   —    |   —    |   —   |   —    |  —    | (미기동 skip) |
 
-`*` headless 는 120s 프로파일 타임아웃에 걸려 **미완료**(pages=61에서 중단).
+¹ juice-shop headless 는 120s 프로파일 타임아웃에 걸려 **미완료**(pages=62에서 중단).
+² dvwa 는 **비인증 크롤**(setup/login 안 함) — 302 리다이렉트로 대부분 페이지에 못 닿음 → 재현율 낮음(정상). 세션 주입 시 크게 오를 것.
+³ vampi 는 링크 없는 순수 API — 크롤로는 거의 못 찾음 → **스펙 인제스터(#4)** 전까지 재현율 낮음(정상).
 
 ### 관찰 (개선 방향 = #3/#4/#5 가 이 수치를 올려야 함)
 
-- **static > headless**: static 이 API 를 더 많이(R 41.9%) 더 정확히(F1 22.6%) 찾음.
-  headless 는 JS 렌더된 기여자/외부 링크(`/Aashish683`, `/OWASP`, `/about` 등)를
+- **웹 애플리케이션 유형별 강·약점이 드러남**: SPA(juice-shop)는 그나마 재현율 41.9%, 전통 폼(dvwa)은
+  인증 벽에 막혀 4~8%, 순수 API(vampi)는 링크가 없어 0~7.7%. → 정찰이 **API·인증 뒤 표면**에 약함.
+- **juice-shop static > headless**: headless 는 JS 렌더된 기여자/외부 링크(`/Aashish683`, `/OWASP` 등)를
   엔드포인트로 오수집해 FP 226 → 정밀도 붕괴(2.2%). SPA 라우트·정적자산 필터 부재가 원인.
-- **낮은 정밀도(오탐율 84.5%)**: SPA 클라이언트 라우트(`/address/create`, `/2fa/enter`)와
-  정적자산을 엔드포인트로 계상. → #3 정규화/필터가 여기서 이득.
-- **낮은 재현율(못 찾은 API)**: `/api/Products/{id}`, `/rest/products/search`, `/rest/languages`,
-  `POST /api/BasketItems` 등 다수 누락. → #4 스펙 인제스터·#5 라이브니스가 여기서 이득.
-- **팽창률 static 1.00x**: 제품 정규화가 하네스 canonical 만큼 접음(과수집은 필터 문제지 정규화 문제 아님).
+- **낮은 정밀도(juice-shop 오탐율 84.5%)**: SPA 클라이언트 라우트·정적자산을 엔드포인트로 계상.
+  → #3 정규화/필터가 여기서 이득.
+- **낮은 재현율(못 찾은 API)**: juice-shop `/api/Products/{id}`·`/rest/products/search`, vampi 전 항목 등.
+  → #4 스펙 인제스터·#5 라이브니스가 여기서 이득. dvwa 는 세션(로그인) 주입이 별도 관건.
+- **팽창률 대부분 1.00x**: 제품 정규화가 하네스 canonical 만큼 접음(과수집은 필터 문제지 정규화 문제 아님).
 
 ## 목표 (합격선 — 개선 성공 판정 기준)
 
