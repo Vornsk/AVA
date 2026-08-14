@@ -189,7 +189,7 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
   const inp = 'rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1.5 text-xs'
 
   return (
-    <Card title={`Endpoint Tree${count ? ` (${count})` : ''}`} icon={Network}>
+    <Card title={`${tr('recon.tree.title')}${count ? ` (${count})` : ''}`} icon={Network}>
       {/* 필터 바 */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1">
@@ -313,15 +313,15 @@ export function Recon() {
       {/* 우측: 파이프라인·스코프·인증 */}
       <div className="space-y-5">
         {/* 판단 파이프라인 (FR-2.2) */}
-        <Card title="Judgment Pipeline" icon={Filter}>
+        <Card title={t('recon.pipe.title')} icon={Filter}>
           <div className="mb-3 flex items-center gap-2 text-xs">
-            <Stage label="Scope" sub="hard" />
+            <Stage label={t('recon.pipe.scope')} sub="hard" />
             <Arrow />
-            <Stage label="Rule" sub={`${rules?.length ?? 0} rules`} />
+            <Stage label={t('recon.pipe.rule')} sub={`${rules?.length ?? 0} rules`} />
             <Arrow />
             <Stage label="LLM" sub={stats?.llm_provider ?? '—'} />
             <Arrow />
-            <Stage label="Forward" sub="capture" />
+            <Stage label={t('recon.pipe.forward')} sub="capture" />
           </div>
           <div className="space-y-1">
             {(rules ?? []).map((r, i) => (
@@ -336,7 +336,7 @@ export function Recon() {
         </Card>
 
         {/* 스코프 (FR-2.1) */}
-        <Card title="Scope (whitelist)" icon={Globe}>
+        <Card title={t('recon.scope.title')} icon={Globe}>
           <div className="flex flex-wrap gap-1.5">
             {(stats?.scope ?? []).map((s) => (
               <span key={s} className="rounded-md border border-[var(--border)] px-2 py-0.5 font-mono text-xs">{s}</span>
@@ -345,10 +345,10 @@ export function Recon() {
         </Card>
 
         {/* 인증·신원 (FR-2.5 / FR-3.6) */}
-        <Card title="Auth & Identities" icon={KeyRound}>
+        <Card title={t('recon.authid.title')} icon={KeyRound}>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--muted)]">Session injection</span>
-            <Dot text={auth?.enabled ? 'Enabled' : 'Off'} color={auth?.enabled ? 'var(--green)' : 'var(--muted)'} />
+            <span className="text-[var(--muted)]">{t('recon.authid.sessionInjection')}</span>
+            <Dot text={auth?.enabled ? t('common.enabled') : t('common.off')} color={auth?.enabled ? 'var(--green)' : 'var(--muted)'} />
           </div>
           {auth && (auth.cookies?.length || auth.headers?.length) ? (
             <div className="mt-2 flex flex-wrap gap-1.5">
@@ -417,7 +417,7 @@ function LoginSeqCard() {
 
   return (
     <Card title={t('recon.loginseq.title')} icon={KeyRound}
-          right={<Dot text={info?.enabled ? 'Enabled' : 'Off'} color={info?.enabled ? 'var(--green)' : 'var(--muted)'} />}>
+          right={<Dot text={info?.enabled ? t('common.enabled') : t('common.off')} color={info?.enabled ? 'var(--green)' : 'var(--muted)'} />}>
       <p className="mb-2 text-[11px] text-[var(--muted)]">
         {t('recon.loginseq.desc1')}<b className="text-[var(--text)]">{t('recon.loginseq.expiryMark')}</b>{t('recon.loginseq.desc2')}
       </p>
