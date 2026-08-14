@@ -2,14 +2,16 @@ import { useState } from 'react'
 import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
+import { useT } from '../i18n'
 
 // CopyLine — 복사 가능한 명령/코드 한 줄.
 function CopyLine({ text }: { text: string }) {
+  const t = useT()
   const [copied, setCopied] = useState(false)
   return (
     <div className="flex items-center gap-2 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1.5">
       <code className="flex-1 overflow-x-auto whitespace-nowrap font-mono text-[11px]">{text}</code>
-      <button type="button" aria-label="복사"
+      <button type="button" aria-label={t('recon.copy')}
               onClick={() => { navigator.clipboard?.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200) }}
               className="shrink-0 text-[var(--muted)] hover:text-[var(--text)]">
         {copied ? <Check size={13} className="text-[var(--green)]" /> : <Copy size={13} />}
@@ -21,6 +23,7 @@ function CopyLine({ text }: { text: string }) {
 // ProxyTool — 정찰 페이지 프록시 도구(이슈 #9): 공용 :8080 상태·캡처 제어·설정 안내·트래픽 유도.
 // 신규 백엔드 없이 기존 API만 사용 (상태 GET /api/proxy, 토글 POST /api/proxy/capture — #5).
 function ProxyTool({ stats }: { stats: Stats | null }) {
+  const t = useT()
   const { data: proxy } = usePoll<ProxyStatus>('/api/proxy', 4000)
   const { data: me } = usePoll<Me>('/api/me', 30000)
   const canControl = !!me?.can?.includes('proxy:control')
@@ -38,14 +41,14 @@ function ProxyTool({ stats }: { stats: Stats | null }) {
   const capturing = proxy?.capturing ?? false
 
   return (
-    <Card title="프록시 도구" icon={Server}
-          right={<Dot text={capturing ? '캡처 중' : '캡처 정지'} color={capturing ? 'var(--green)' : 'var(--muted)'} />}>
+    <Card title={t('recon.proxy.title')} icon={Server}
+          right={<Dot text={capturing ? t('recon.proxy.capturingOn') : t('recon.proxy.capturingOff')} color={capturing ? 'var(--green)' : 'var(--muted)'} />}>
       {/* 상태 */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="리슨" value={listen} mono />
-        <Stat label="누적 캡처" value={String(proxy?.captured_requests ?? 0)} />
-        <Stat label="엔드포인트" value={`${proxy?.endpoints ?? 0} / ${proxy?.hosts ?? 0}host`} />
-        <Stat label="스코프" value={`${proxy?.scope_hosts ?? 0}host`} />
+        <Stat label={t('recon.proxy.listen')} value={listen} mono />
+        <Stat label={t('recon.proxy.capturedTotal')} value={String(proxy?.captured_requests ?? 0)} />
+        <Stat label={t('recon.proxy.endpoints')} value={`${proxy?.endpoints ?? 0} / ${proxy?.hosts ?? 0}host`} />
+        <Stat label={t('recon.proxy.scope')} value={`${proxy?.scope_hosts ?? 0}host`} />
       </div>
 
       {/* 캡처 제어 */}
@@ -53,24 +56,24 @@ function ProxyTool({ stats }: { stats: Stats | null }) {
         <button type="button" onClick={toggle} disabled={!canControl || busy || !proxy}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: capturing ? 'transparent' : 'var(--accent)', color: capturing ? 'var(--text)' : 'var(--accent-fg)', border: capturing ? '1px solid var(--border)' : 'none' }}>
-          <Power size={13} /> {busy ? '적용 중…' : capturing ? '캡처 끄기' : '캡처 켜기'}
+          <Power size={13} /> {busy ? t('recon.proxy.applying') : capturing ? t('recon.proxy.captureOff') : t('recon.proxy.captureOn')}
         </button>
-        {!canControl && <span className="text-[11px] text-[var(--muted)]">캡처 제어는 리더 권한(proxy:control)이 필요합니다</span>}
-        {err && <span className="text-[11px]" style={{ color: 'var(--red)' }}>실패: {err}</span>}
+        {!canControl && <span className="text-[11px] text-[var(--muted)]">{t('recon.proxy.needLeader')}</span>}
+        {err && <span className="text-[11px]" style={{ color: 'var(--red)' }}>{t('recon.proxy.failPrefix')}: {err}</span>}
       </div>
       {!capturing && (
-        <p className="mt-1.5 text-[11px] text-[var(--amber)]">캡처가 꺼져 있어 트래픽을 흘려도 Endpoint Tree가 채워지지 않습니다.</p>
+        <p className="mt-1.5 text-[11px] text-[var(--amber)]">{t('recon.proxy.captureOffWarn')}</p>
       )}
 
       {/* 설정 안내 */}
       <div className="mt-3 border-t border-[var(--border)] pt-2.5">
         <div className="mb-1.5 flex items-center justify-between text-xs">
-          <span className="text-[var(--muted)]">CA 신뢰 상태</span>
-          <Dot text={stats?.ca_trusted ? '신뢰됨' : '미신뢰'} color={stats?.ca_trusted ? 'var(--green)' : 'var(--amber)'} />
+          <span className="text-[var(--muted)]">{t('recon.proxy.caStatus')}</span>
+          <Dot text={stats?.ca_trusted ? t('recon.proxy.trusted') : t('recon.proxy.untrusted')} color={stats?.ca_trusted ? 'var(--green)' : 'var(--amber)'} />
         </div>
         {!stats?.ca_trusted && (
           <div className="space-y-1">
-            <p className="text-[11px] text-[var(--muted)]">HTTPS 가로채기를 하려면 CA를 OS 신뢰저장소에 설치하세요(서버에서 1회, 관리자 권한):</p>
+            <p className="text-[11px] text-[var(--muted)]">{t('recon.proxy.caInstall')}</p>
             <CopyLine text="proxy-poc.exe -cert-install" />
           </div>
         )}
@@ -78,12 +81,11 @@ function ProxyTool({ stats }: { stats: Stats | null }) {
 
       {/* 트래픽 유도 */}
       <div className="mt-3 border-t border-[var(--border)] pt-2.5">
-        <div className="eyebrow mb-1.5">트래픽 유도</div>
+        <div className="eyebrow mb-1.5">{t('recon.proxy.driveTraffic')}</div>
         <p className="mb-1.5 text-[11px] text-[var(--muted)]">
-          브라우저 프록시를 <code className="font-mono">{listen}</code>로 설정하거나, 아래처럼 스코프 내 URL을
-          프록시로 흘리면 Endpoint Tree가 채워집니다.
+          {t('recon.proxy.driveDesc1')}<code className="font-mono">{listen}</code>{t('recon.proxy.driveDesc2')}
         </p>
-        <CopyLine text={`curl.exe -sk -x http://${listen} "<스코프 내 URL>"`} />
+        <CopyLine text={`curl.exe -sk -x http://${listen} "${t('recon.proxy.inScopeUrl')}"`} />
       </div>
     </Card>
   )
@@ -107,6 +109,7 @@ function fmtTime(s?: string) {
 
 // CrawlExplore — 자동 공격면 탐색(AppScan Explore 대응). 시작 URL에서 링크·폼을 따라 자동 크롤.
 function CrawlExplore() {
+  const t = useT()
   const [seed, setSeed] = useState('')
   const [busy, setBusy] = useState(false)
   const [headless, setHeadless] = useState(false)
@@ -120,37 +123,37 @@ function CrawlExplore() {
     if (!seed.trim()) return
     setBusy(true)
     try { await apiPost('/api/crawl', { seed: seed.trim(), mode: headless ? 'headless' : 'static' }) }
-    catch (e) { alert('크롤 시작 실패: ' + e) } finally { setBusy(false) }
+    catch (e) { alert(t('recon.crawl.startFail') + ': ' + e) } finally { setBusy(false) }
   }
 
   return (
-    <Card title="자동 크롤 (Explore)" icon={Radar}
-          right={<span className="hidden text-[11px] text-[var(--muted)] md:inline">링크·폼·JS를 따라 스코프 내를 자동 탐색</span>}>
+    <Card title={t('recon.crawl.title')} icon={Radar}
+          right={<span className="hidden text-[11px] text-[var(--muted)] md:inline">{t('recon.crawl.subtitle')}</span>}>
       <div className="flex gap-2">
         <input value={seed} onChange={(e) => setSeed(e.target.value)}
                onKeyDown={(e) => e.key === 'Enter' && start()}
-               placeholder="시작 URL — 예: http://127.0.0.1:4280/ (스코프 내)"
+               placeholder={t('recon.crawl.seedPlaceholder')}
                className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1.5 font-mono text-xs" />
         <button onClick={start} disabled={busy || running}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
-          <Play size={13} /> {busy ? '시작 중…' : running ? '진행 중…' : '크롤 시작'}
+          <Play size={13} /> {busy ? t('recon.crawl.starting') : running ? t('recon.crawl.running') : t('recon.crawl.start')}
         </button>
       </div>
       <label className={`mt-2 flex items-center gap-1.5 text-xs ${hlOK ? 'cursor-pointer text-[var(--muted)]' : 'text-[var(--muted)] opacity-50'}`}
-             title={hlOK ? 'Chrome로 JS를 실행해 SPA까지 완전 크롤(느림). 렌더된 DOM+XHR/fetch까지 수집' : '이 서버에 Chrome/Chromium이 없어 사용 불가'}>
+             title={hlOK ? t('recon.crawl.hlTitleOn') : t('recon.crawl.hlTitleOff')}>
         <input type="checkbox" checked={headless && hlOK} disabled={!hlOK} onChange={(e) => setHeadless(e.target.checked)} />
-        헤드리스(JS 실행) 크롤 {hlOK ? <span style={{ color: 'var(--green)' }}>· 사용 가능</span> : <span>· Chrome 없음</span>}
+        {t('recon.crawl.headless')} {hlOK ? <span style={{ color: 'var(--green)' }}>{t('recon.crawl.available')}</span> : <span>{t('recon.crawl.noChrome')}</span>}
       </label>
       {latest && (
         <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs">
           <Dot text={latest.status} color={latest.status === '진행' ? 'var(--amber)' : latest.status === '완료' ? 'var(--green)' : 'var(--muted)'} />
           {latest.mode === 'headless' && <Badge text="headless" color="var(--blue)" />}
-          <span className="text-[var(--muted)]"><b className="text-[var(--text)]">{latest.pages}</b> 페이지</span>
-          <span className="text-[var(--muted)]">발견 <b className="text-[var(--text)]">{latest.found}</b></span>
+          <span className="text-[var(--muted)]"><b className="text-[var(--text)]">{latest.pages}</b> {t('recon.crawl.pages')}</span>
+          <span className="text-[var(--muted)]">{t('recon.crawl.found')} <b className="text-[var(--text)]">{latest.found}</b></span>
           {latest.js > 0 && <span className="text-[var(--muted)]">JS <b className="text-[var(--text)]">{latest.js}</b></span>}
-          <span className="text-[var(--muted)]">대기 {latest.queued}</span>
-          {latest.errors > 0 && <span style={{ color: 'var(--amber)' }}>오류 {latest.errors}</span>}
+          <span className="text-[var(--muted)]">{t('recon.crawl.queued')} {latest.queued}</span>
+          {latest.errors > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.errors')} {latest.errors}</span>}
           <span className="font-mono text-[10px] text-[var(--muted)]">{latest.seed}</span>
         </div>
       )}
@@ -160,6 +163,7 @@ function CrawlExplore() {
 
 // EndpointTree — 캡처된 공격면 조회 (이슈 #7): 검색·메서드·인증·판정 필터 + 행 클릭 상세 드릴다운.
 function EndpointTree({ targets }: { targets: Target[] | null }) {
+  const tr = useT() // 콜백 파라미터 t(Target)와의 섀도잉 회피
   const [q, setQ] = useState('')
   const [method, setMethod] = useState('')
   const [authOnly, setAuthOnly] = useState(false)
@@ -190,27 +194,27 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1">
           <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted)]" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="호스트·경로 검색"
+          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder={tr('recon.tree.searchPlaceholder')}
                  className="w-full rounded-lg border border-[var(--border)] bg-[var(--panel-2)] py-1.5 pl-8 pr-3 font-mono text-xs" />
         </div>
-        <select value={method} onChange={(e) => setMethod(e.target.value)} className={inp} aria-label="메서드 필터">
-          <option value="">모든 메서드</option>
+        <select value={method} onChange={(e) => setMethod(e.target.value)} className={inp} aria-label={tr('recon.tree.methodFilter')}>
+          <option value="">{tr('recon.tree.allMethods')}</option>
           {methods.map((m) => <option key={m} value={m}>{m}</option>)}
         </select>
         <button onClick={() => setAuthOnly((v) => !v)}
                 className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${authOnly ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
-          <KeyRound size={12} /> 인증
+          <KeyRound size={12} /> {tr('recon.tree.auth')}
         </button>
         <button onClick={() => setVerdictOnly((v) => !v)}
                 className={`rounded-lg border px-2 py-1.5 text-xs ${verdictOnly ? 'border-[var(--red)] text-[var(--red)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
-          판정
+          {tr('recon.tree.verdict')}
         </button>
       </div>
 
       {!targets || all.length === 0 ? (
-        <Empty icon={Network}>아직 캡처된 엔드포인트가 없습니다. 프록시(:8080) 경유로 트래픽을 흘리면 채워집니다.</Empty>
+        <Empty icon={Network}>{tr('recon.tree.emptyNone')}</Empty>
       ) : filtered.length === 0 ? (
-        <Empty icon={Search}>필터에 맞는 엔드포인트가 없습니다.</Empty>
+        <Empty icon={Search}>{tr('recon.tree.emptyFilter')}</Empty>
       ) : (
         <div className="space-y-4">
           {Object.entries(byHost).map(([host, eps]) => (
@@ -244,22 +248,22 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                       {isOpen && (
                         <div className="border-t border-[var(--border)] bg-[var(--panel-2)] px-3 py-2.5 pl-8 text-xs">
                           <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1 text-[var(--muted)]">
-                            <span>히트 <b className="text-[var(--text)]">{t.count ?? 0}</b></span>
-                            <span className="inline-flex items-center gap-1"><Clock size={11} /> 최초 <b className="text-[var(--text)]">{fmtTime(t.first_seen)}</b></span>
-                            <span className="inline-flex items-center gap-1"><Clock size={11} /> 최근 <b className="text-[var(--text)]">{fmtTime(t.last_seen)}</b></span>
-                            <span>인증 <b className="text-[var(--text)]">{t.auth_required ? '필요' : '—'}</b></span>
+                            <span>{tr('recon.tree.hits')} <b className="text-[var(--text)]">{t.count ?? 0}</b></span>
+                            <span className="inline-flex items-center gap-1"><Clock size={11} /> {tr('recon.tree.first')} <b className="text-[var(--text)]">{fmtTime(t.first_seen)}</b></span>
+                            <span className="inline-flex items-center gap-1"><Clock size={11} /> {tr('recon.tree.last')} <b className="text-[var(--text)]">{fmtTime(t.last_seen)}</b></span>
+                            <span>{tr('recon.tree.authLabel')} <b className="text-[var(--text)]">{t.auth_required ? tr('recon.tree.needed') : '—'}</b></span>
                           </div>
-                          {t.verdict && <div className="mb-2 text-[var(--muted)]">판정: <span className="text-[var(--text)]">{t.verdict}</span></div>}
+                          {t.verdict && <div className="mb-2 text-[var(--muted)]">{tr('recon.tree.verdictLabel')}: <span className="text-[var(--text)]">{t.verdict}</span></div>}
                           {t.params && t.params.length > 0 ? (
                             <div className="overflow-x-auto">
                               <table className="w-full border-collapse text-[11px]">
                                 <thead>
                                   <tr className="text-left text-[var(--muted)]">
-                                    <th className="py-1 pr-3 font-medium">위치</th>
-                                    <th className="py-1 pr-3 font-medium">이름</th>
-                                    <th className="py-1 pr-3 font-medium">타입</th>
-                                    <th className="py-1 pr-3 font-medium">필수</th>
-                                    <th className="py-1 font-medium">샘플</th>
+                                    <th className="py-1 pr-3 font-medium">{tr('recon.tree.colIn')}</th>
+                                    <th className="py-1 pr-3 font-medium">{tr('recon.tree.colName')}</th>
+                                    <th className="py-1 pr-3 font-medium">{tr('recon.tree.colType')}</th>
+                                    <th className="py-1 pr-3 font-medium">{tr('recon.tree.required')}</th>
+                                    <th className="py-1 font-medium">{tr('recon.tree.colSample')}</th>
                                   </tr>
                                 </thead>
                                 <tbody className="font-mono">
@@ -268,14 +272,14 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                                       <td className="py-1 pr-3 text-[var(--muted)]">{p.in}</td>
                                       <td className="py-1 pr-3">{p.name}</td>
                                       <td className="py-1 pr-3 text-[var(--muted)]">{p.type ?? '—'}</td>
-                                      <td className="py-1 pr-3">{p.required ? <span className="text-[var(--red)]">필수</span> : '—'}</td>
+                                      <td className="py-1 pr-3">{p.required ? <span className="text-[var(--red)]">{tr('recon.tree.required')}</span> : '—'}</td>
                                       <td className="py-1 text-[var(--muted)]">{p.sample ?? '—'}</td>
                                     </tr>
                                   ))}
                                 </tbody>
                               </table>
                             </div>
-                          ) : <div className="text-[var(--muted)]">파라미터 없음</div>}
+                          ) : <div className="text-[var(--muted)]">{tr('recon.tree.noParams')}</div>}
                         </div>
                       )}
                     </div>
@@ -291,6 +295,7 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
 }
 
 export function Recon() {
+  const t = useT()
   const { data: targets } = usePoll<Target[]>('/api/endpoints', 4000)
   const { data: rules } = usePoll<Rule[]>('/api/rules', 8000)
   const { data: stats } = usePoll<Stats>('/api/stats', 5000)
@@ -326,7 +331,7 @@ export function Recon() {
                 <span className="font-mono truncate flex-1">{r.path_pattern || '*'}</span>
               </div>
             ))}
-            {(!rules || rules.length === 0) && <Empty>기본 룰셋 없음</Empty>}
+            {(!rules || rules.length === 0) && <Empty>{t('recon.pipe.noRules')}</Empty>}
           </div>
         </Card>
 
@@ -352,7 +357,7 @@ export function Recon() {
             </div>
           ) : null}
           <div className="mt-3 border-t border-[var(--border)] pt-2.5">
-            <div className="eyebrow mb-1.5 flex items-center gap-1.5"><ShieldCheck size={12} /> 진단 신원</div>
+            <div className="eyebrow mb-1.5 flex items-center gap-1.5"><ShieldCheck size={12} /> {t('recon.auth.identities')}</div>
             {auth?.identities?.length ? (
               <div className="space-y-1">
                 {auth.identities.map((id) => (
@@ -362,7 +367,7 @@ export function Recon() {
                   </div>
                 ))}
               </div>
-            ) : <div className="text-xs text-[var(--muted)]">등록된 신원 없음 (anon만)</div>}
+            ) : <div className="text-xs text-[var(--muted)]">{t('recon.auth.noIdentities')}</div>}
           </div>
         </Card>
 
@@ -374,6 +379,7 @@ export function Recon() {
 
 // LoginSeqCard — 세션 지속성(FR-2.5): 만료 시 자동 재로그인 절차 설정. 값은 마스킹, 저장은 리더 전용.
 function LoginSeqCard() {
+  const t = useT()
   const { data: info } = usePoll<LoginSeqInfo>('/api/login-seq', 10000)
   const [open, setOpen] = useState(false)
   const [url, setUrl] = useState('')
@@ -403,41 +409,41 @@ function LoginSeqCard() {
         url, method: 'POST', logged_out: loggedOut,
         token_url: tokenURL, token_field: tokenField, token_param: tokenField, fields,
       })
-      setMsg('저장됨 — 세션 만료 시 자동 재로그인됩니다.'); setOpen(false)
+      setMsg(t('recon.loginseq.saved')); setOpen(false)
     } catch (e) { setErr(String(e)) } finally { setBusy(false) }
   }
 
   const inp = 'w-full rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1 text-xs'
 
   return (
-    <Card title="로그인 시퀀스 (세션 지속성)" icon={KeyRound}
+    <Card title={t('recon.loginseq.title')} icon={KeyRound}
           right={<Dot text={info?.enabled ? 'Enabled' : 'Off'} color={info?.enabled ? 'var(--green)' : 'var(--muted)'} />}>
       <p className="mb-2 text-[11px] text-[var(--muted)]">
-        긴 스캔 중 세션이 만료되면 이 절차로 자동 재로그인합니다. <b className="text-[var(--text)]">만료 표식(정규식)</b>이 있어야 활성화됩니다.
+        {t('recon.loginseq.desc1')}<b className="text-[var(--text)]">{t('recon.loginseq.expiryMark')}</b>{t('recon.loginseq.desc2')}
       </p>
       {!open ? (
         <div className="space-y-1.5 text-xs">
           {info?.url ? (
             <>
               <Row2 k="URL" v={info.url} />
-              <Row2 k="만료 표식" v={info.logged_out || '—'} />
-              <Row2 k="필드" v={info.fields.join(', ') || '—'} />
-              {info.token_field && <Row2 k="CSRF 토큰" v={info.token_field} />}
+              <Row2 k={t('recon.loginseq.expiryMarkShort')} v={info.logged_out || '—'} />
+              <Row2 k={t('recon.loginseq.fields')} v={info.fields.join(', ') || '—'} />
+              {info.token_field && <Row2 k={t('recon.loginseq.csrf')} v={info.token_field} />}
             </>
-          ) : <div className="text-[var(--muted)]">설정되지 않음</div>}
+          ) : <div className="text-[var(--muted)]">{t('recon.loginseq.notSet')}</div>}
           <button onClick={edit} className="mt-1 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold">
-            {info?.url ? '수정' : '설정'}
+            {info?.url ? t('common.edit') : t('recon.loginseq.setup')}
           </button>
           {msg && <div className="text-[11px]" style={{ color: 'var(--green)' }}>{msg}</div>}
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="block"><span className="eyebrow">로그인 URL</span>
+          <label className="block"><span className="eyebrow">{t('recon.loginseq.loginUrl')}</span>
             <input className={inp} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://target/login.php" /></label>
-          <label className="block"><span className="eyebrow">만료 표식 (정규식)</span>
+          <label className="block"><span className="eyebrow">{t('recon.loginseq.expiryMarkRegex')}</span>
             <input className={inp} value={loggedOut} onChange={(e) => setLoggedOut(e.target.value)} placeholder="(?i)login\.php|please log in" /></label>
           <div>
-            <span className="eyebrow">폼 필드 (값은 저장 시에만 전송)</span>
+            <span className="eyebrow">{t('recon.loginseq.formFields')}</span>
             {rows.map((r, i) => (
               <div key={i} className="mt-1 flex gap-1">
                 <input className={inp + ' w-1/3'} value={r.k} placeholder="name"
@@ -447,23 +453,23 @@ function LoginSeqCard() {
                 <button className="px-1 text-[var(--muted)]" onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
               </div>
             ))}
-            <button className="mt-1 text-[11px] text-[var(--muted)] underline" onClick={() => setRows([...rows, { k: '', v: '' }])}>+ 필드 추가</button>
+            <button className="mt-1 text-[11px] text-[var(--muted)] underline" onClick={() => setRows([...rows, { k: '', v: '' }])}>{t('recon.loginseq.addField')}</button>
           </div>
           <details className="text-xs">
-            <summary className="cursor-pointer text-[var(--muted)]">CSRF 토큰 (선택)</summary>
-            <label className="mt-1 block"><span className="eyebrow">토큰 취득 URL</span>
+            <summary className="cursor-pointer text-[var(--muted)]">{t('recon.loginseq.csrfOptional')}</summary>
+            <label className="mt-1 block"><span className="eyebrow">{t('recon.loginseq.tokenUrl')}</span>
               <input className={inp} value={tokenURL} onChange={(e) => setTokenURL(e.target.value)} placeholder="http://target/login.php" /></label>
-            <label className="mt-1 block"><span className="eyebrow">토큰 input name</span>
+            <label className="mt-1 block"><span className="eyebrow">{t('recon.loginseq.tokenInput')}</span>
               <input className={inp} value={tokenField} onChange={(e) => setTokenField(e.target.value)} placeholder="user_token" /></label>
           </details>
           <div className="flex items-center gap-2">
             <button onClick={save} disabled={busy || !url || !loggedOut}
                     className="rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
-                    style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>{busy ? '저장 중…' : '저장'}</button>
-            <button onClick={() => setOpen(false)} className="text-xs text-[var(--muted)]">취소</button>
+                    style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>{busy ? t('common.saving') : t('common.save')}</button>
+            <button onClick={() => setOpen(false)} className="text-xs text-[var(--muted)]">{t('common.cancel')}</button>
           </div>
-          {err && <div className="text-[11px]" style={{ color: 'var(--red)' }}>저장 실패: {err}</div>}
-          <p className="text-[10px] text-[var(--muted)]">저장은 리더 전용. 비밀번호는 응답에 표시되지 않으며 인메모리 주입기에만 반영됩니다.</p>
+          {err && <div className="text-[11px]" style={{ color: 'var(--red)' }}>{t('recon.loginseq.saveFail')}: {err}</div>}
+          <p className="text-[10px] text-[var(--muted)]">{t('recon.loginseq.note')}</p>
         </div>
       )}
     </Card>
