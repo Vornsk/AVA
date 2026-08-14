@@ -1,0 +1,17 @@
+# 정찰 벤치마크 정답셋 — vulnlab (자체 앱) (#23)  ★★ 템플릿 — 실제 라우트로 교체 요망 ★★
+#
+# 성격: 자체 vulnlab, 릴리스 회귀 고정용.
+# 도출 출처: (채워야 함) 자체 라우트 정의/소스/스펙 경로를 여기에 명시할 것.
+# 엔드포인트 수: (채워야 함)
+#
+# 이 파일은 다른 팀원이 vulnlab 의 실제 라우트를 아는 사람이 채워야 합니다.
+# 아래 base/endpoints 는 예시 placeholder 이며, base 가 미기동 포트라 하네스는 지금 이 대상을 skip 합니다.
+# (LoadGroundTruth 가 endpoints 빈 값을 거부하므로 최소 1개 예시를 남겨둡니다.)
+#
+# 작성 규칙(#22/#23):
+#   - base 는 실제 접속되는 프로토콜/포트로 (안 맞으면 skip).
+#   - path 에 {id} 등 플레이스홀더가 있으면 값을 따옴표로 감쌀 것: path: "/x/{id}"
+app: vulnlab
+base: http://localhost:9999   # TODO: 실제 vulnlab 기동 주소로 교체
+endpoints:
+  - { method: GET, path: "/" }   # TODO: 실제 라우트 목록으로 교체

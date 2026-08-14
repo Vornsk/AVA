@@ -1,0 +1,27 @@
+# 정찰 벤치마크 정답셋 — VAmPI (Vulnerable API) (#23)
+#
+# 성격: OpenAPI 명세 기반 REST API (Flask). 스펙 인제스터(#4)·API 정찰 검증용.
+# 도출 출처: VAmPI 공식 소스/스펙 (github.com/erev0s/VAmPI, openapi_specs).
+# 엔드포인트 수: 13
+#
+# ⚠️ 기대치: 지금은 크롤(static/headless)만 있어 링크 없는 API 는 거의 못 찾는다 → 재현율 낮음이 정상.
+#   이 낮은 baseline 이 스펙 인제스터(#4) 도입 효과의 기준점이 된다.
+# ⚠️ base 는 기동 포트에 맞게 수정 (VAmPI 기본 Flask 포트 5000).
+app: vampi
+base: http://localhost:5000
+endpoints:
+  - { method: GET,    path: "/" }
+  - { method: GET,    path: "/createdb" }
+  # 사용자
+  - { method: GET,    path: "/users/v1" }
+  - { method: GET,    path: "/users/v1/_debug" }
+  - { method: POST,   path: "/users/v1/register" }
+  - { method: POST,   path: "/users/v1/login" }
+  - { method: GET,    path: "/users/v1/{username}" }
+  - { method: DELETE, path: "/users/v1/{username}" }
+  - { method: PUT,    path: "/users/v1/{username}/email" }
+  - { method: PUT,    path: "/users/v1/{username}/password" }
+  # 도서
+  - { method: GET,    path: "/books/v1" }
+  - { method: POST,   path: "/books/v1" }
+  - { method: GET,    path: "/books/v1/{book_title}" }
