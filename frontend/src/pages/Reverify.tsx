@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { RotateCcw, CheckCircle2, XCircle, HelpCircle, Inbox, GitCompareArrows, Plus, Minus, Play } from 'lucide-react'
 import { usePoll, apiPost, apiGet, type ReverifyRun, type ScanRun, type ScanDiff, type Finding } from '../api'
 import { Card, Dot, Badge, Empty } from '../components/ui'
+import { useT } from '../i18n'
 
 // verdict 색상·정렬: 미조치/신규발생을 위로.
 const VERDICT_COLOR: Record<string, string> = {
@@ -16,6 +17,7 @@ const vRank = (v: string) => VERDICT_RANK[v] ?? 9
 const REV = { '조치완료': 'var(--green)', '미조치': 'var(--red)', '부분조치': 'var(--amber)', '신규발생': 'var(--red)', '미점검': 'var(--muted)' } as const
 
 export function Reverify() {
+  const t = useT()
   const { data } = usePoll<ReverifyRun[]>('/api/reverify', 4000)
   const runs = [...(data ?? [])].reverse()
 
@@ -25,9 +27,9 @@ export function Reverify() {
       <DiffCard />
 
       {runs.length === 0 ? (
-        <Card title="이행점검" icon={RotateCcw}>
+        <Card title={t('reverify.section')} icon={RotateCcw}>
           <Empty icon={Inbox}>
-            아직 이행점검 실행이 없습니다. 취약 항목을 다시 요청해 조치 여부를 재점검하면 여기에 표시됩니다.
+            {t('reverify.empty')}
           </Empty>
         </Card>
       ) : runs.map((run) => (
@@ -53,7 +55,7 @@ export function Reverify() {
           {/* 조치율 바 */}
           <div className="mb-3">
             <div className="mb-1 flex justify-between text-xs text-[var(--muted)]">
-              <span>조치율</span>
+              <span>{t('reverify.remediationRate')}</span>
               <span>{run.total ? Math.round((run.fixed / run.total) * 100) : 0}% ({run.fixed}/{run.total})</span>
             </div>
             <div className="flex h-2 w-full overflow-hidden rounded-full bg-[var(--panel-2)]">
@@ -67,12 +69,12 @@ export function Reverify() {
             <table className="w-full text-sm [font-variant-numeric:tabular-nums]">
               <thead>
                 <tr className="eyebrow text-left">
-                  <th className="pb-2 pr-3 font-semibold">Finding</th>
-                  <th className="pb-2 pr-3 font-semibold">Vulnerability</th>
-                  <th className="pb-2 pr-3 font-semibold">Target</th>
-                  <th className="pb-2 pr-3 font-semibold">Detector</th>
-                  <th className="pb-2 pr-3 font-semibold">Verdict</th>
-                  <th className="pb-2 pr-3 font-semibold">Detail</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('reverify.col.finding')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('reverify.col.vulnerability')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('reverify.col.target')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('reverify.col.detector')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('reverify.col.verdict')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('reverify.col.detail')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -98,6 +100,7 @@ export function Reverify() {
 
 // ReverifyControl — 이행점검 실행(FR-5.2/5.3) + 전체 이행 현황 요약.
 function ReverifyControl() {
+  const t = useT()
   const { data: findings } = usePoll<Finding[]>('/api/findings', 5000)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
@@ -113,27 +116,27 @@ function ReverifyControl() {
     setBusy(true); setMsg('')
     try {
       const r = await apiPost<ReverifyRun>('/api/reverify', {})
-      setMsg(`${r.id} 완료 · 조치 ${r.fixed} / 미조치 ${r.open} / 미확인 ${r.unknown}`)
-    } catch (e) { setMsg('실행 실패: ' + e) } finally { setBusy(false) }
+      setMsg(t('reverify.runResult', { id: r.id, fixed: r.fixed, open: r.open, unknown: r.unknown }))
+    } catch (e) { setMsg(t('reverify.runFail') + ': ' + e) } finally { setBusy(false) }
   }
 
   return (
-    <Card title="이행점검 실행" icon={RotateCcw}
-          right={<span className="text-[11px] text-[var(--muted)]">재점검 대상 <b className="text-[var(--text)]">{total}</b>건 <span className="opacity-70">(오탐 제외)</span></span>}>
+    <Card title={t('reverify.runTitle')} icon={RotateCcw}
+          right={<span className="text-[11px] text-[var(--muted)]">{t('reverify.targetsPre')}<b className="text-[var(--text)]">{total}</b>{t('reverify.targetsPost')}<span className="opacity-70">{t('reverify.exclFp')}</span></span>}>
       <div className="flex flex-wrap items-center gap-3">
         <button onClick={run} disabled={busy || total === 0}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
-          <Play size={13} /> {busy ? '재점검 중…' : '취약 항목 재점검'}
+          <Play size={13} /> {busy ? t('reverify.running') : t('reverify.runBtn')}
         </button>
-        <span className="text-[11px] text-[var(--muted)]">이전 취약 finding을 다시 replay·재평가해 조치 여부를 판정합니다.</span>
+        <span className="text-[11px] text-[var(--muted)]">{t('reverify.desc')}</span>
         {msg && <span className="text-[11px]" style={{ color: 'var(--green)' }}>{msg}</span>}
-        {total === 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>재점검할 finding이 없습니다</span>}
+        {total === 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('reverify.noTargets')}</span>}
       </div>
 
       {total > 0 && (
         <div className="mt-3">
-          <div className="mb-1.5 text-xs text-[var(--muted)]">전체 이행 현황 (finding {total}건)</div>
+          <div className="mb-1.5 text-xs text-[var(--muted)]">{t('reverify.overallStatus', { total })}</div>
           <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-[var(--panel-2)]">
             {(Object.keys(REV) as (keyof typeof REV)[]).map((k) => counts[k] > 0 && (
               <div key={k} style={{ width: `${(counts[k] / total) * 100}%`, background: REV[k] }} title={`${k} ${counts[k]}`} />
@@ -165,6 +168,7 @@ function pct(n: number, total: number) { return total ? `${(n / total) * 100}%` 
 
 // DiffCard — 두 ScanRun 간 공격면 diff (FR-5.4): 신규/소멸 finding.
 function DiffCard() {
+  const t = useT()
   const { data: runs } = usePoll<ScanRun[]>('/api/scanruns', 5000)
   const ids = (runs ?? []).map((r) => r.id)
   const [from, setFrom] = useState('')
@@ -190,36 +194,36 @@ function DiffCard() {
 
   return (
     <Card
-      title="스캔 간 변화 (공격면 diff)"
+      title={t('reverify.diff.title')}
       icon={GitCompareArrows}
       right={
         <div className="flex items-center gap-2 text-xs">
           <select className={sel} value={from} onChange={(e) => setFrom(e.target.value)}>
-            <option value="">from…</option>
+            <option value="">{t('reverify.diff.fromOpt')}</option>
             {ids.map((id) => <option key={id} value={id}>{id}</option>)}
           </select>
           <span className="text-[var(--muted)]">→</span>
           <select className={sel} value={to} onChange={(e) => setTo(e.target.value)}>
-            <option value="">to…</option>
+            <option value="">{t('reverify.diff.toOpt')}</option>
             {ids.map((id) => <option key={id} value={id}>{id}</option>)}
           </select>
         </div>
       }
     >
       {ids.length < 2 ? (
-        <Empty icon={GitCompareArrows}>비교하려면 진단 실행이 2개 이상 필요합니다.</Empty>
+        <Empty icon={GitCompareArrows}>{t('reverify.diff.needTwo')}</Empty>
       ) : !diff ? (
-        <div className="py-4 text-center text-sm text-[var(--muted)]">from/to를 선택하세요.</div>
+        <div className="py-4 text-center text-sm text-[var(--muted)]">{t('reverify.diff.selectFromTo')}</div>
       ) : (
         <div>
           <div className="mb-3 flex items-center gap-2 text-xs">
-            <Badge text={`신규 +${diff.added.length}`} color="var(--red)" />
-            <Badge text={`소멸 -${diff.removed.length}`} color="var(--green)" />
-            <Badge text={`공통 ${diff.common}`} color="var(--muted)" />
+            <Badge text={t('reverify.diff.newBadge', { n: diff.added.length })} color="var(--red)" />
+            <Badge text={t('reverify.diff.goneBadge', { n: diff.removed.length })} color="var(--green)" />
+            <Badge text={t('reverify.diff.commonBadge', { n: diff.common })} color="var(--muted)" />
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            <DiffList title="신규 (added)" icon={Plus} color="var(--red)" items={diff.added} />
-            <DiffList title="소멸 (removed)" icon={Minus} color="var(--green)" items={diff.removed} />
+            <DiffList title={t('reverify.diff.added')} icon={Plus} color="var(--red)" items={diff.added} />
+            <DiffList title={t('reverify.diff.removed')} icon={Minus} color="var(--green)" items={diff.removed} />
           </div>
         </div>
       )}
@@ -228,13 +232,14 @@ function DiffCard() {
 }
 
 function DiffList({ title, icon: Icon, color, items }: { title: string; icon: any; color: string; items: ScanDiff['added'] }) {
+  const t = useT()
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--panel-2)] p-3">
       <div className="mb-2 flex items-center gap-1.5 text-xs font-semibold" style={{ color }}>
         <Icon size={13} /> {title} ({items.length})
       </div>
       {items.length === 0 ? (
-        <div className="text-xs text-[var(--muted)]">없음</div>
+        <div className="text-xs text-[var(--muted)]">{t('common.none')}</div>
       ) : (
         <div className="space-y-1">
           {items.map((f, i) => (
