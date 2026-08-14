@@ -66,6 +66,15 @@ func Rows() []Row {
 // RowsFor — 특정 프로젝트의 도출리스트 (§5.1 FR-1.1, REST 리소스용). 화면용 = 한국어.
 func RowsFor(pid string) []Row { return rowsForLang(pid, "ko") }
 
+// RowsLang — 활성 프로젝트 도출리스트 로케일별 (화면 X-Lang, #18).
+func RowsLang(lang string) []Row {
+	pid := ""
+	if p, ok := project.Active(); ok {
+		pid = p.ID
+	}
+	return rowsForLang(pid, lang)
+}
+
 // rowsForLang — 로케일별 도출리스트. lang=="en" 이면 취약점명·설명을 영문으로 해석(#18).
 func rowsForLang(pid, lang string) []Row {
 	items := finding.ByProject(pid)
@@ -142,10 +151,10 @@ type EvidenceRow struct {
 }
 
 // EvidenceRows — 활성 프로젝트 증적 행 (화면용 = 한국어).
-func EvidenceRows() []EvidenceRow { return evidenceRowsLang("ko") }
+func EvidenceRows() []EvidenceRow { return EvidenceRowsLang("ko") }
 
-// evidenceRowsLang — 로케일별 증적 행. 취약점명만 로케일 해석(#18).
-func evidenceRowsLang(lang string) []EvidenceRow {
+// EvidenceRowsLang — 로케일별 증적 행. 취약점명만 로케일 해석(#18).
+func EvidenceRowsLang(lang string) []EvidenceRow {
 	pid := ""
 	if p, ok := project.Active(); ok {
 		pid = p.ID
@@ -177,12 +186,27 @@ func describe(f finding.Finding, lang string) string {
 	return locVuln(f, lang)
 }
 
-// remark — 비고. 검토상태·이행점검·LLM 판정을 요약. 접두 라벨만 로케일화(상태값은 백엔드 도메인값 유지, #18).
+// statusEn — 비고에 들어가는 검토/이행 상태값의 영문 표시 (#18).
+var statusEn = map[string]string{
+	"신규": "New", "검토중": "Reviewing", "확정": "Confirmed", "오탐": "False positive", "보류": "On hold", "보고": "Reported",
+	"조치완료": "Fixed", "미조치": "Open", "부분조치": "Partial", "신규발생": "New (regression)", "미확인": "Unknown", "미점검": "Unchecked",
+}
+
+func locStatus(v, lang string) string {
+	if lang == "en" {
+		if en, ok := statusEn[v]; ok {
+			return en
+		}
+	}
+	return v
+}
+
+// remark — 비고. 검토상태·이행점검·LLM 판정을 요약. 접두 라벨과 상태값을 로케일화(#18).
 func remark(f finding.Finding, lang string) string {
 	l := remarkLabels(lang)
-	parts := []string{l.review + f.Status}
+	parts := []string{l.review + locStatus(f.Status, lang)}
 	if f.ReverifyStatus != "" {
-		parts = append(parts, l.reverify+f.ReverifyStatus)
+		parts = append(parts, l.reverify+locStatus(f.ReverifyStatus, lang))
 	}
 	if f.LLMVerdict != "" {
 		parts = append(parts, "LLM:"+f.LLMVerdict)
@@ -275,7 +299,7 @@ func buildEvidenceSheet(f *excelize.File, headerStyle int, lang string) {
 		_ = f.SetCellValue(esheet, cell, h)
 		_ = f.SetCellStyle(esheet, cell, cell, headerStyle)
 	}
-	for r, ev := range evidenceRowsLang(lang) {
+	for r, ev := range EvidenceRowsLang(lang) {
 		vals := []any{ev.No, ev.Vuln, ev.Severity, ev.URL, ev.Param, ev.Request, ev.RespCode, ev.Response}
 		for c, v := range vals {
 			cell, _ := excelize.CoordinatesToCellName(c+1, r+2)

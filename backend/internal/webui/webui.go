@@ -213,12 +213,12 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/logout", logoutHandler) // POST
 	mux.HandleFunc("/api/reverify", reverifyHandler)
 	mux.HandleFunc("/api/scan-diff", scanDiff)
-	mux.HandleFunc("/api/report", jsonHandler(func() any {
-		return map[string]any{"headers": report.Headers, "rows": report.Rows()}
-	}))
-	mux.HandleFunc("/api/evidence", jsonHandler(func() any {
-		return map[string]any{"headers": report.EvidenceHeaders, "rows": report.EvidenceRows()}
-	}))
+	mux.HandleFunc("/api/report", func(w http.ResponseWriter, r *http.Request) { // X-Lang: 화면 취약점명·설명 로케일(#18)
+		writeJSON(w, map[string]any{"headers": report.Headers, "rows": report.RowsLang(langOf(r))})
+	})
+	mux.HandleFunc("/api/evidence", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"headers": report.EvidenceHeaders, "rows": report.EvidenceRowsLang(langOf(r))})
+	})
 	mux.HandleFunc("/report.xlsx", reportDownload)
 	mux.HandleFunc("/coverage.xlsx", coverageDownload)
 	mux.HandleFunc("/api/auth", jsonHandler(authSummary))
