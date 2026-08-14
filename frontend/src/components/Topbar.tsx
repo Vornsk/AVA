@@ -27,9 +27,9 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
         {stats && (
           <>
             <Pill icon={stats.ca_trusted ? ShieldCheck : ShieldOff}
-                  text={stats.ca_trusted ? 'CA Trusted' : 'CA Untrusted'}
+                  text={stats.ca_trusted ? t('topbar.caTrusted') : t('topbar.caUntrusted')}
                   color={stats.ca_trusted ? 'var(--green)' : 'var(--red)'} />
-            {stats.safe_mode && <Pill icon={Lock} text="Safe-mode" color="var(--amber)" />}
+            {stats.safe_mode && <Pill icon={Lock} text={t('topbar.safeMode')} color="var(--amber)" />}
           </>
         )}
 
@@ -62,7 +62,7 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1.5 font-medium transition-opacity hover:opacity-80"
                 title={t('topbar.themeToggle')}>
           {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
-          {theme === 'dark' ? 'Dark' : 'Light'}
+          {theme === 'dark' ? t('topbar.dark') : t('topbar.light')}
         </button>
       </div>
     </header>
