@@ -2,8 +2,10 @@ import { Radar, Layers, FolderGit2, Laptop, ShieldCheck, ShieldOff, ArrowRight, 
 import { usePoll, type Stats, type ScanRun, type Project } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
 import type { Page } from '../components/Sidebar'
+import { useT } from '../i18n'
 
 export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
+  const t = useT()
   const { data: stats } = usePoll<Stats>('/api/stats', 4000)
   const { data: runs } = usePoll<ScanRun[]>('/api/scanruns', 4000)
   const { data: proj } = usePoll<Project>('/api/active-project', 8000)
@@ -29,7 +31,7 @@ export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
                   </span>
                 </div>
                 <p className="mt-1 font-mono text-xs text-[var(--muted)]">
-                  {proj?.main_url || 'MITM proxy'} · {(stats?.schemes ?? []).join(' / ') || '전체 스킴'}
+                  {proj?.main_url || 'MITM proxy'} · {(stats?.schemes ?? []).join(' / ') || t('overview.allSchemes')}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -58,7 +60,7 @@ export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
           )}
         >
           {!runs || runs.length === 0 ? (
-            <Empty icon={Inbox}>아직 실행된 스캔이 없습니다.</Empty>
+            <Empty icon={Inbox}>{t('overview.noScans')}</Empty>
           ) : (
             <table className="w-full text-sm [font-variant-numeric:tabular-nums]">
               <thead>
