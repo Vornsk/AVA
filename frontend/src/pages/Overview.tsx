@@ -2,8 +2,10 @@ import { Radar, Layers, FolderGit2, Laptop, ShieldCheck, ShieldOff, ArrowRight, 
 import { usePoll, type Stats, type ScanRun, type Project } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
 import type { Page } from '../components/Sidebar'
+import { useT } from '../i18n'
 
 export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
+  const t = useT()
   const { data: stats } = usePoll<Stats>('/api/stats', 4000)
   const { data: runs } = usePoll<ScanRun[]>('/api/scanruns', 4000)
   const { data: proj } = usePoll<Project>('/api/active-project', 8000)
@@ -25,11 +27,11 @@ export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
                   {proj && <span className="rounded-md border border-[var(--border)] px-1.5 py-0.5 font-mono text-[10px] text-[var(--muted)]">{proj.id}</span>}
                   <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium"
                         style={{ color: 'var(--green)', background: 'color-mix(in srgb, var(--green) 15%, transparent)' }}>
-                    <Circle size={7} fill="currentColor" /> Live Assessment
+                    <Circle size={7} fill="currentColor" /> {t('overview.live')}
                   </span>
                 </div>
                 <p className="mt-1 font-mono text-xs text-[var(--muted)]">
-                  {proj?.main_url || 'MITM proxy'} · {(stats?.schemes ?? []).join(' / ') || '전체 스킴'}
+                  {proj?.main_url || 'MITM proxy'} · {(stats?.schemes ?? []).join(' / ') || t('overview.allSchemes')}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -41,31 +43,31 @@ export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
             </div>
           </div>
           <div className="grid grid-cols-2 divide-x divide-[var(--border)] border-t border-[var(--border)] sm:grid-cols-4">
-            <Meta label="Scope" value={`${stats?.hosts ?? '—'} hosts`} />
-            <Meta label="Attack surface" value={`${stats?.endpoints ?? '—'} eps`} />
-            <Meta label="Findings" value={String(stats?.findings ?? '—')} color={stats?.findings ? 'var(--red)' : undefined} />
-            <Meta label="Risk profile" value={<span style={{ color: riskC }}>{stats?.risk_profile ?? '—'}</span>} />
+            <Meta label={t('overview.meta.scope')} value={`${stats?.hosts ?? '—'} hosts`} />
+            <Meta label={t('overview.meta.attackSurface')} value={`${stats?.endpoints ?? '—'} eps`} />
+            <Meta label={t('overview.meta.findings')} value={String(stats?.findings ?? '—')} color={stats?.findings ? 'var(--red)' : undefined} />
+            <Meta label={t('overview.meta.riskProfile')} value={<span style={{ color: riskC }}>{stats?.risk_profile ?? '—'}</span>} />
           </div>
         </div>
 
         <Card
-          title="Recent Scan Runs" icon={Radar}
+          title={t('overview.recentRuns')} icon={Radar}
           right={onNav && (
             <button onClick={() => onNav('scan')}
                     className="inline-flex items-center gap-1 text-xs font-medium text-[var(--accent)] hover:opacity-80">
-              View all <ArrowRight size={13} />
+              {t('overview.viewAll')} <ArrowRight size={13} />
             </button>
           )}
         >
           {!runs || runs.length === 0 ? (
-            <Empty icon={Inbox}>아직 실행된 스캔이 없습니다.</Empty>
+            <Empty icon={Inbox}>{t('overview.noScans')}</Empty>
           ) : (
             <table className="w-full text-sm [font-variant-numeric:tabular-nums]">
               <thead>
                 <tr className="eyebrow text-left">
-                  <th className="pb-2 font-semibold">Run</th><th className="pb-2 font-semibold">Detectors</th>
-                  <th className="pb-2 font-semibold">Status</th><th className="pb-2 font-semibold">Progress</th>
-                  <th className="pb-2 font-semibold">Findings</th>
+                  <th className="pb-2 font-semibold">{t('overview.col.run')}</th><th className="pb-2 font-semibold">{t('overview.col.detectors')}</th>
+                  <th className="pb-2 font-semibold">{t('overview.col.status')}</th><th className="pb-2 font-semibold">{t('overview.col.progress')}</th>
+                  <th className="pb-2 font-semibold">{t('overview.col.findings')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -85,28 +87,28 @@ export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
       </div>
 
       <div className="space-y-5">
-        <Card title="Configuration Topology" icon={Layers}>
+        <Card title={t('overview.topology')} icon={Layers}>
           <div className="space-y-1">
-            <TopoRow icon={Layers} name="Shared" sub={`check-item table · ${stats?.schemes?.length ?? 0} schemes`} status="Loaded" />
-            <TopoRow icon={FolderGit2} name="Project" sub={`scope & rules · ${stats?.rules ?? 0} rules`} status="Loaded" />
-            <TopoRow icon={Laptop} name="Local" sub={`this PC · LLM ${stats?.llm_provider ?? '—'}`} status="Verified" />
+            <TopoRow icon={Layers} name={t('overview.topo.shared')} sub={t('overview.topo.sharedSub', { n: stats?.schemes?.length ?? 0 })} status={t('overview.topo.loaded')} />
+            <TopoRow icon={FolderGit2} name={t('overview.topo.project')} sub={t('overview.topo.projectSub', { n: stats?.rules ?? 0 })} status={t('overview.topo.loaded')} />
+            <TopoRow icon={Laptop} name={t('overview.topo.local')} sub={t('overview.topo.localSub', { provider: stats?.llm_provider ?? '—' })} status={t('overview.topo.verified')} />
           </div>
         </Card>
 
-        <Card title="CA Certificate" icon={stats?.ca_trusted ? ShieldCheck : ShieldOff}>
-          <CertRow label="Web / OS trust store" ok={!!stats?.ca_trusted} okText="Trusted" offText="Untrusted" />
+        <Card title={t('overview.caCert')} icon={stats?.ca_trusted ? ShieldCheck : ShieldOff}>
+          <CertRow label={t('overview.cert.trustStore')} ok={!!stats?.ca_trusted} okText={t('overview.cert.trusted')} offText={t('overview.cert.untrusted')} />
           <div className="mt-3 flex items-center justify-between border-t border-[var(--border)] pt-3 text-xs text-[var(--muted)]">
-            <span>Mobile (emulator)</span><span>Not configured</span>
+            <span>{t('overview.cert.mobile')}</span><span>{t('overview.cert.notConfigured')}</span>
           </div>
         </Card>
 
-        <Card title="Guardrails" icon={ShieldCheck}>
+        <Card title={t('overview.guardrails')} icon={ShieldCheck}>
           <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--muted)]">Safe mode</span>
+            <span className="text-[var(--muted)]">{t('overview.gr.safeMode')}</span>
             <Badge text={stats?.safe_mode ? 'On' : 'Off'} color={stats?.safe_mode ? 'var(--amber)' : 'var(--muted)'} dot />
           </div>
           <div className="mt-2.5 flex items-center justify-between text-sm">
-            <span className="text-[var(--muted)]">Detectors available</span>
+            <span className="text-[var(--muted)]">{t('overview.gr.detectorsAvailable')}</span>
             <span className="font-semibold [font-variant-numeric:tabular-nums]">{stats?.detectors ?? '—'}</span>
           </div>
         </Card>

@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { LogIn } from 'lucide-react'
 import { AvaMark } from '../components/AvaMark'
+import { useT } from '../i18n'
 
 export function Login({ onSuccess }: { onSuccess: () => void }) {
+  const t = useT()
   const [username, setU] = useState('leader')
   const [password, setP] = useState('')
   const [err, setErr] = useState('')
@@ -16,10 +18,10 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password }),
       })
-      if (!res.ok) { setErr('아이디 또는 비밀번호가 올바르지 않습니다.'); return }
+      if (!res.ok) { setErr(t('login.errInvalid')); return }
       onSuccess()
     } catch {
-      setErr('서버에 연결할 수 없습니다.')
+      setErr(t('login.errServer'))
     } finally { setBusy(false) }
   }
 
@@ -43,11 +45,11 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
               className="rounded-xl border border-[var(--border)] bg-[var(--panel)] p-5 shadow-[var(--shadow)]">
           <div className="space-y-3">
             <label className="block">
-              <span className="eyebrow">사용자</span>
+              <span className="eyebrow">{t('login.user')}</span>
               <input className={inp} value={username} onChange={(e) => setU(e.target.value)} autoFocus />
             </label>
             <label className="block">
-              <span className="eyebrow">비밀번호</span>
+              <span className="eyebrow">{t('login.password')}</span>
               <input className={inp} type="password" value={password} onChange={(e) => setP(e.target.value)} placeholder="••••••••" />
             </label>
           </div>
@@ -55,12 +57,12 @@ export function Login({ onSuccess }: { onSuccess: () => void }) {
           <button type="submit" disabled={busy}
                   className="mt-4 flex w-full items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50"
                   style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
-            <LogIn size={15} /> {busy ? '로그인 중…' : '로그인'}
+            <LogIn size={15} /> {busy ? t('login.submitting') : t('login.submit')}
           </button>
         </form>
 
         <p className="mt-4 text-center text-[11px] text-[var(--muted)]">
-          데모 계정 — leader / leader123 · analyst / analyst123 <br />(운영 배포 시 반드시 변경)
+          {t('login.demoHint')}<br />{t('login.demoNote')}
         </p>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react'
 import { ShieldAlert, ShieldCheck, AlertTriangle, ChevronRight, ChevronDown } from 'lucide-react'
 import { usePoll, type Finding } from '../api'
 import { Card, Badge, Empty, statusColor, severityColor } from '../components/ui'
+import { useT } from '../i18n'
 
 // 심각도 정렬 순위 (high 먼저) + finding id 번호.
 const SEV_RANK: Record<string, number> = { high: 0, medium: 1, low: 2, info: 3 }
@@ -10,10 +11,11 @@ const idNum = (id: string) => parseInt(id.replace(/\D/g, ''), 10) || 0
 
 // LLMVerdict — LLM 오탐 트리아지 판정 배지 + 근거 (FR-3.3).
 function LLMVerdict({ f }: { f: Finding }) {
+  const t = useT()
   const map: Record<string, { label: string; color: string }> = {
-    real: { label: '실제 취약(LLM)', color: 'var(--red)' },
-    false_positive: { label: '오탐 판정(LLM)', color: 'var(--muted)' },
-    uncertain: { label: '판단 보류(LLM)', color: 'var(--amber)' },
+    real: { label: t('findings.llm.real'), color: 'var(--red)' },
+    false_positive: { label: t('findings.llm.fp'), color: 'var(--muted)' },
+    uncertain: { label: t('findings.llm.uncertain'), color: 'var(--amber)' },
   }
   const v = map[f.llm_verdict ?? ''] ?? { label: `LLM: ${f.llm_verdict}`, color: 'var(--muted)' }
   return (
@@ -27,6 +29,7 @@ function LLMVerdict({ f }: { f: Finding }) {
 
 // EvidenceRow — 증적(FR-4.2): 재현 요청·증명 응답. 값은 서버에서 마스킹됨.
 function EvidenceRow({ f }: { f: Finding }) {
+  const t = useT()
   return (
     <tr className="border-t border-[var(--border)] bg-[var(--panel-2)]/40">
       <td colSpan={9} className="px-3 py-3">
@@ -35,14 +38,14 @@ function EvidenceRow({ f }: { f: Finding }) {
           {f.evidence && <div className="text-[var(--muted)]">{f.evidence}</div>}
           {f.request && (
             <div>
-              <div className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)]">재현 요청</div>
+              <div className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)]">{t('findings.evidence.reproRequest')}</div>
               <pre className="overflow-x-auto rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-1 font-mono text-[11px]">{f.request}</pre>
             </div>
           )}
           {(f.response || f.resp_code) && (
             <div>
               <div className="mb-0.5 text-[10px] uppercase tracking-wide text-[var(--muted)]">
-                증명 응답{f.resp_code ? ` · HTTP ${f.resp_code}` : ''} <span className="normal-case">(민감값 마스킹됨)</span>
+                {t('findings.evidence.proofResponse')}{f.resp_code ? ` · HTTP ${f.resp_code}` : ''} <span className="normal-case">{t('findings.evidence.masked')}</span>
               </div>
               <pre className="overflow-x-auto whitespace-pre-wrap break-all rounded border border-[var(--border)] bg-[var(--panel)] px-2 py-1 font-mono text-[11px]">{f.response}</pre>
             </div>
@@ -64,6 +67,7 @@ const NEXT: Record<string, string[]> = {
 
 // StatusCell — 상태 표시 + 다음 상태 전이(낙관적 락, FR-1.3). 409 충돌 시 알림.
 function StatusCell({ f }: { f: Finding }) {
+  const t = useT()
   const [busy, setBusy] = useState(false)
   const [conflict, setConflict] = useState(false)
   const next = NEXT[f.status] ?? []
@@ -94,8 +98,8 @@ function StatusCell({ f }: { f: Finding }) {
         </select>
       )}
       {conflict && (
-        <span className="inline-flex items-center gap-0.5 text-[10px]" style={{ color: 'var(--amber)' }} title="다른 사용자가 먼저 수정했습니다 — 최신으로 갱신됩니다">
-          <AlertTriangle size={11} /> 충돌
+        <span className="inline-flex items-center gap-0.5 text-[10px]" style={{ color: 'var(--amber)' }} title={t('findings.status.conflictTooltip')}>
+          <AlertTriangle size={11} /> {t('findings.status.conflict')}
         </span>
       )}
     </div>
@@ -106,6 +110,7 @@ const SEVERITIES = ['high', 'medium', 'low', 'info'] as const
 const STATUSES = ['신규', '검토중', '확정', '오탐', '보류', '보고']
 
 export function Findings() {
+  const t = useT()
   const { data } = usePoll<Finding[]>('/api/findings', 4000)
   const [open, setOpen] = useState<Set<string>>(new Set())
   const [hideLLMFP, setHideLLMFP] = useState(false)
@@ -128,30 +133,30 @@ export function Findings() {
     setOpen((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
   async function clearAll() {
-    if (!confirm('도출 항목을 전체 삭제합니다. 되돌릴 수 없습니다. 계속할까요?')) return
+    if (!confirm(t('findings.confirmClear'))) return
     const res = await fetch('/api/findings/clear', { method: 'POST' })
-    if (res.status === 403) alert('권한 없음: 도출 항목 초기화는 리더만 가능합니다.')
+    if (res.status === 403) alert(t('findings.clearForbidden'))
   }
 
   return (
     <Card
-      title={`취약점 목록${data ? ` (${data.length})` : ''}`}
+      title={`${t('findings.title')}${data ? ` (${data.length})` : ''}`}
       icon={ShieldAlert}
       right={
         <div className="flex items-center gap-3">
           <div className="hidden items-center gap-1.5 text-[11px] text-[var(--muted)] md:flex">
-            검토 상태: <span>신규 → 검토중 → 확정 · 오탐 · 보류 → 보고</span>
+            {t('findings.reviewStatus')} <span>신규 → 검토중 → 확정 · 오탐 · 보류 → 보고</span>
           </div>
           {llmFPCount > 0 && (
-            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--muted)]" title="LLM이 오탐으로 표시한 항목을 보기에서 숨김(데이터는 유지)">
+            <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-[var(--muted)]" title={t('findings.hideLLMFPTooltip')}>
               <input type="checkbox" checked={hideLLMFP} onChange={(e) => setHideLLMFP(e.target.checked)} />
-              LLM 오탐 숨기기 ({llmFPCount})
+              {t('findings.hideLLMFP', { count: llmFPCount })}
             </label>
           )}
           {data && data.length > 0 && (
             <button onClick={clearAll}
               className="rounded border border-[var(--border)] px-2 py-1 text-[11px] text-[var(--muted)] transition-colors hover:border-[var(--red)] hover:text-[var(--red)]">
-              전체 초기화
+              {t('findings.clearAll')}
             </button>
           )}
         </div>
@@ -170,20 +175,20 @@ export function Findings() {
           ) : null)}
           <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
                   className="rounded-md border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1 text-xs">
-            <option value="">전체 상태</option>
+            <option value="">{t('findings.filter.allStatuses')}</option>
             {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
           {(sevFilter || statusFilter) && (
             <button onClick={() => { setSevFilter(null); setStatusFilter('') }}
-                    className="text-[11px] text-[var(--muted)] hover:text-[var(--text)]">필터 해제</button>
+                    className="text-[11px] text-[var(--muted)] hover:text-[var(--text)]">{t('findings.filter.clear')}</button>
           )}
-          <span className="ml-auto text-[11px] text-[var(--muted)]">{shown.length} / {all.length} 표시</span>
+          <span className="ml-auto text-[11px] text-[var(--muted)]">{t('findings.shown', { shown: shown.length, total: all.length })}</span>
         </div>
       )}
       {all.length === 0 ? (
-        <Empty icon={ShieldCheck}>아직 도출된 finding 이 없습니다. 스캔을 실행하면 여기에 표시됩니다.</Empty>
+        <Empty icon={ShieldCheck}>{t('findings.empty.noFindings')}</Empty>
       ) : shown.length === 0 ? (
-        <Empty icon={ShieldCheck}>필터 조건에 맞는 항목이 없습니다.</Empty>
+        <Empty icon={ShieldCheck}>{t('findings.empty.noMatch')}</Empty>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -191,13 +196,13 @@ export function Findings() {
               <tr className="text-left text-xs uppercase text-[var(--muted)]">
                 <th className="pb-2 pr-1"></th>
                 <th className="pb-2 pr-3">ID</th>
-                <th className="pb-2 pr-3">Vulnerability</th>
-                <th className="pb-2 pr-3">Severity</th>
-                <th className="pb-2 pr-3">Target</th>
-                <th className="pb-2 pr-3">Param</th>
-                <th className="pb-2 pr-3">Detector</th>
-                <th className="pb-2 pr-3">Check items</th>
-                <th className="pb-2 pr-3">Status</th>
+                <th className="pb-2 pr-3">{t('findings.col.vulnerability')}</th>
+                <th className="pb-2 pr-3">{t('findings.col.severity')}</th>
+                <th className="pb-2 pr-3">{t('findings.col.target')}</th>
+                <th className="pb-2 pr-3">{t('findings.col.param')}</th>
+                <th className="pb-2 pr-3">{t('findings.col.detector')}</th>
+                <th className="pb-2 pr-3">{t('findings.col.checkItems')}</th>
+                <th className="pb-2 pr-3">{t('findings.col.status')}</th>
               </tr>
             </thead>
             <tbody>

@@ -13,22 +13,25 @@ import { Reverify } from './pages/Reverify'
 import { Advisor } from './pages/Advisor'
 import { Audit } from './pages/Audit'
 import { Users } from './pages/Users'
+import { useT, type MsgKey } from './i18n'
 
-const META: Record<Page, { title: string; subtitle: string; el: (p: { onNav: (p: Page) => void }) => JSX.Element }> = {
-  overview: { title: 'Project Workspace', subtitle: '진단 대상과 현황 요약', el: Overview },
-  projects: { title: 'Projects', subtitle: '프로젝트 생성·전환 및 접근 관리', el: Projects },
-  recon: { title: '대상 파악', subtitle: '엔드포인트·요청 판단·스코프·인증 현황', el: Recon },
-  scan: { title: '자동화 진단', subtitle: '진단 실행·탐지기·가드레일·페이로드', el: Scan },
-  findings: { title: '취약점 목록', subtitle: '도출된 취약점과 검토 상태 관리', el: Findings },
-  coverage: { title: '점검 커버리지', subtitle: '점검항목 대비 진단 결과 — 양호·취약·미점검', el: Coverage },
-  report: { title: '도출리스트', subtitle: '표준 엑셀 양식(11개 컬럼)으로 내보내기', el: Report },
-  reverify: { title: '이행점검', subtitle: '조치 여부 재점검 및 스캔 간 변화 비교', el: Reverify },
-  advisor: { title: 'Rule Advisor', subtitle: 'LLM 판단 기록과 룰 추천', el: Advisor },
-  audit: { title: '감사 로그', subtitle: '모든 변경 이력 — 누가·언제·무엇을', el: Audit },
-  users: { title: '사용자 관리', subtitle: '계정 목록 및 생성 — 리더 전용', el: Users },
+// 헤더 문구는 i18n 키로 보관하고 렌더 시 t() 로 해석한다.
+const META: Record<Page, { title: MsgKey; subtitle: MsgKey; el: (p: { onNav: (p: Page) => void }) => JSX.Element }> = {
+  overview: { title: 'page.overview.title', subtitle: 'page.overview.subtitle', el: Overview },
+  projects: { title: 'page.projects.title', subtitle: 'page.projects.subtitle', el: Projects },
+  recon: { title: 'page.recon.title', subtitle: 'page.recon.subtitle', el: Recon },
+  scan: { title: 'page.scan.title', subtitle: 'page.scan.subtitle', el: Scan },
+  findings: { title: 'page.findings.title', subtitle: 'page.findings.subtitle', el: Findings },
+  coverage: { title: 'page.coverage.title', subtitle: 'page.coverage.subtitle', el: Coverage },
+  report: { title: 'page.report.title', subtitle: 'page.report.subtitle', el: Report },
+  reverify: { title: 'page.reverify.title', subtitle: 'page.reverify.subtitle', el: Reverify },
+  advisor: { title: 'page.advisor.title', subtitle: 'page.advisor.subtitle', el: Advisor },
+  audit: { title: 'page.audit.title', subtitle: 'page.audit.subtitle', el: Audit },
+  users: { title: 'page.users.title', subtitle: 'page.users.subtitle', el: Users },
 }
 
 export default function App() {
+  const t = useT()
   const [page, setPage] = useState<Page>('overview')
   const [authed, setAuthed] = useState<boolean | null>(null)
 
@@ -45,7 +48,7 @@ export default function App() {
     <div className="flex h-full">
       <Sidebar page={page} onNav={setPage} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar title={m.title} subtitle={m.subtitle} />
+        <Topbar title={t(m.title)} subtitle={t(m.subtitle)} />
         <main className="flex-1 overflow-auto p-6">
           <Body onNav={setPage} />
         </main>

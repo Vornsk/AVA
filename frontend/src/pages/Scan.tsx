@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Radar, Cpu, ShieldCheck, FlaskConical, Wrench, Inbox, Play, Pause, PlayCircle, Square } from 'lucide-react'
 import { usePoll, apiPost, type ScanRun, type DetectorInfo, type Stats, type Target } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
+import { useT } from '../i18n'
 
 interface Payloads { version: string; xss: string[]; sensitive_patterns: string[] }
 
@@ -13,6 +14,7 @@ const scanColor = (s: string) => SCAN_STATUS[s] ?? 'var(--muted)'
 
 // ScanControl — 탐지기 선택 + 스캔 시작 (AppScan Test 대응, 진단 정책).
 function ScanControl({ targetCount, dets }: { targetCount: number; dets: DetectorInfo[] }) {
+  const t = useT()
   const [llm, setLlm] = useState(false)
   const [destructive, setDestructive] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -31,29 +33,29 @@ function ScanControl({ targetCount, dets }: { targetCount: number; dets: Detecto
   async function start() {
     setBusy(true)
     try { await apiPost('/api/scan', { detectors: [...sel], allow_destructive: destructive, llm_review: llm }) }
-    catch (e) { alert('스캔 시작 실패: ' + e) } finally { setBusy(false) }
+    catch (e) { alert(t('scan.startFail') + ': ' + e) } finally { setBusy(false) }
   }
 
   const nSel = sel.size
 
   return (
-    <Card title="스캔 시작" icon={Radar}
-          right={<span className="text-[11px] text-[var(--muted)]">공격면 <b className="text-[var(--text)]">{targetCount}</b>개 대상</span>}>
+    <Card title={t('scan.start.title')} icon={Radar}
+          right={<span className="text-[11px] text-[var(--muted)]">{t('scan.start.surfacePre')}<b className="text-[var(--text)]">{targetCount}</b>{t('scan.start.surfacePost')}</span>}>
       {/* 탐지기 선택 */}
       <div className="mb-3">
         <div className="mb-1.5 flex items-center gap-2 text-xs">
-          <span className="text-[var(--muted)]">탐지기 <b className="text-[var(--text)]">{nSel}</b>/{dets.length} 선택</span>
-          <button onClick={allOn} className="text-[var(--muted)] underline">전체선택</button>
-          <button onClick={allOff} className="text-[var(--muted)] underline">전체해제</button>
+          <span className="text-[var(--muted)]">{t('scan.start.detectorsPre')} <b className="text-[var(--text)]">{nSel}</b>/{dets.length} {t('scan.start.selected')}</span>
+          <button onClick={allOn} className="text-[var(--muted)] underline">{t('scan.start.selectAll')}</button>
+          <button onClick={allOff} className="text-[var(--muted)] underline">{t('scan.start.deselectAll')}</button>
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
           {dets.map((d) => (
             <label key={d.id} className="flex cursor-pointer items-center gap-1.5 text-xs"
-                   title={d.tool && d.available === false ? '외부 도구 미설치 — 선택해도 건너뜀' : d.name}>
+                   title={d.tool && d.available === false ? t('scan.start.toolMissingTitle') : d.name}>
               <input type="checkbox" checked={sel.has(d.id)} onChange={() => toggle(d.id)} />
               <span className="font-mono">{d.id}</span>
               {d.destructive && <Badge text="D" color="var(--red)" />}
-              {d.tool && d.available === false && <span className="text-[10px]" style={{ color: 'var(--amber)' }}>미설치</span>}
+              {d.tool && d.available === false && <span className="text-[10px]" style={{ color: 'var(--amber)' }}>{t('scan.start.missing')}</span>}
             </label>
           ))}
         </div>
@@ -63,48 +65,50 @@ function ScanControl({ targetCount, dets }: { targetCount: number; dets: Detecto
         <button onClick={start} disabled={busy || targetCount === 0 || nSel === 0}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
-          <Play size={13} /> {busy ? '시작 중…' : `선택 ${nSel}개로 스캔`}
+          <Play size={13} /> {busy ? t('scan.start.starting') : t('scan.start.scanWithN', { n: nSel })}
         </button>
-        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]" title="각 finding을 LLM이 오탐 검토(주석). 판정은 상태를 안 바꿈(HITL)">
-          <input type="checkbox" checked={llm} onChange={(e) => setLlm(e.target.checked)} /> LLM 오탐 검토
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]" title={t('scan.start.llmTitle')}>
+          <input type="checkbox" checked={llm} onChange={(e) => setLlm(e.target.checked)} /> {t('scan.start.llmReview')}
         </label>
-        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]" title="파괴적 탐지기(file-upload 등) 포함 — 대상에 파일 생성 등 부작용 가능">
-          <input type="checkbox" checked={destructive} onChange={(e) => setDestructive(e.target.checked)} /> 파괴적 포함
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]" title={t('scan.start.destructiveTitle')}>
+          <input type="checkbox" checked={destructive} onChange={(e) => setDestructive(e.target.checked)} /> {t('scan.start.destructive')}
         </label>
-        {targetCount === 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>먼저 정찰에서 크롤하거나 프록시로 트래픽을 흘리세요</span>}
-        {nSel === 0 && targetCount > 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>탐지기를 1개 이상 선택하세요</span>}
+        {targetCount === 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.start.noTargets')}</span>}
+        {nSel === 0 && targetCount > 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.start.noDetectors')}</span>}
       </div>
     </Card>
   )
 }
 
-// scanCtl — 실행 중 스캔 제어 (일시정지/재개/취소).
-async function scanCtl(id: string, op: 'pause' | 'resume' | 'cancel') {
+// scanCtl — 실행 중 스캔 제어 (일시정지/재개/취소). 실패 메시지는 호출부에서 번역해 전달.
+async function scanCtl(id: string, op: 'pause' | 'resume' | 'cancel', failMsg: string) {
   try { await apiPost(`/api/scanruns/${id}/${op}`, {}) }
-  catch (e) { alert('제어 실패: ' + e) }
+  catch (e) { alert(failMsg + ': ' + e) }
 }
 
 function RunControls({ r }: { r: ScanRun }) {
+  const t = useT()
   const [busy, setBusy] = useState(false)
-  const act = async (op: 'pause' | 'resume' | 'cancel') => { setBusy(true); await scanCtl(r.id, op); setBusy(false) }
+  const act = async (op: 'pause' | 'resume' | 'cancel') => { setBusy(true); await scanCtl(r.id, op, t('scan.ctlFail')); setBusy(false) }
   const btn = 'inline-flex items-center gap-1 rounded-md border border-[var(--border)] px-1.5 py-0.5 text-[11px] disabled:opacity-50'
   if (r.status === '완료' || r.status === '중단') return <span className="text-[var(--muted)]">—</span>
   return (
     <div className="flex items-center gap-1">
       {r.status === '진행' && (
-        <button className={btn} disabled={busy} onClick={() => act('pause')} title="일시정지"><Pause size={11} /> 정지</button>
+        <button className={btn} disabled={busy} onClick={() => act('pause')} title={t('scan.run.pauseTitle')}><Pause size={11} /> {t('scan.run.pause')}</button>
       )}
       {r.status === '일시정지' && (
-        <button className={btn} disabled={busy} onClick={() => act('resume')} title="재개" style={{ color: 'var(--green)' }}><PlayCircle size={11} /> 재개</button>
+        <button className={btn} disabled={busy} onClick={() => act('resume')} title={t('scan.run.resume')} style={{ color: 'var(--green)' }}><PlayCircle size={11} /> {t('scan.run.resume')}</button>
       )}
-      <button className={btn} disabled={busy} onClick={() => { if (confirm(`${r.id} 스캔을 취소할까요?`)) act('cancel') }} title="취소" style={{ color: 'var(--red)' }}>
-        <Square size={11} /> 취소
+      <button className={btn} disabled={busy} onClick={() => { if (confirm(t('scan.run.cancelConfirm', { id: r.id }))) act('cancel') }} title={t('common.cancel')} style={{ color: 'var(--red)' }}>
+        <Square size={11} /> {t('common.cancel')}
       </button>
     </div>
   )
 }
 
 export function Scan() {
+  const tr = useT() // 외부도구 map 의 t(tool) 파라미터와 섀도잉 회피
   const { data: runs } = usePoll<ScanRun[]>('/api/scanruns', 2000)
   const { data: dets } = usePoll<DetectorInfo[]>('/api/detectors', 8000)
   const { data: stats } = usePoll<Stats>('/api/stats', 5000)
@@ -117,18 +121,18 @@ export function Scan() {
     <div className="space-y-5">
       <ScanControl targetCount={targets?.length ?? 0} dets={dets ?? []} />
       {/* Scan Runs (FR-3.8) */}
-      <Card title={`Scan Runs${runs ? ` (${runs.length})` : ''}`} icon={Radar}>
+      <Card title={`${tr('scan.runs.title')}${runs ? ` (${runs.length})` : ''}`} icon={Radar}>
         {!runs || runs.length === 0 ? (
-          <Empty icon={Inbox}>아직 실행된 스캔이 없습니다.</Empty>
+          <Empty icon={Inbox}>{tr('overview.noScans')}</Empty>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm [font-variant-numeric:tabular-nums]">
               <thead>
                 <tr className="eyebrow text-left">
-                  <th className="pb-2 font-semibold">ID</th><th className="pb-2 font-semibold">Status</th>
-                  <th className="pb-2 font-semibold">Detectors</th><th className="pb-2 font-semibold">Skipped</th>
-                  <th className="pb-2 font-semibold">Progress</th><th className="pb-2 font-semibold">Findings</th>
-                  <th className="pb-2 font-semibold">Safe</th><th className="pb-2 font-semibold">제어</th>
+                  <th className="pb-2 font-semibold">ID</th><th className="pb-2 font-semibold">{tr('scan.col.status')}</th>
+                  <th className="pb-2 font-semibold">{tr('scan.col.detectors')}</th><th className="pb-2 font-semibold">{tr('scan.col.skipped')}</th>
+                  <th className="pb-2 font-semibold">{tr('scan.col.progress')}</th><th className="pb-2 font-semibold">{tr('scan.col.findings')}</th>
+                  <th className="pb-2 font-semibold">{tr('scan.col.safe')}</th><th className="pb-2 font-semibold">{tr('scan.col.control')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -159,7 +163,7 @@ export function Scan() {
 
       <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
         {/* Detector Catalog (FR-3.1 / FR-3.4) */}
-        <Card title={`Detectors${dets ? ` (${dets.length})` : ''}`} icon={Cpu}>
+        <Card title={`${tr('scan.detectors.title')}${dets ? ` (${dets.length})` : ''}`} icon={Cpu}>
           <div className="overflow-hidden rounded-lg border border-[var(--border)]">
             {(dets ?? []).map((d) => (
               <div key={d.id} className="flex items-center gap-3 border-t border-[var(--border)] first:border-t-0 px-3 py-2.5">
@@ -172,46 +176,46 @@ export function Scan() {
                   <div className="text-xs text-[var(--muted)]">{d.name}</div>
                 </div>
                 {d.tool ? (
-                  <Dot text={d.available ? `ready${d.version ? ' ' + d.version : ''}` : 'missing'}
+                  <Dot text={d.available ? `${tr('scan.det.ready')}${d.version ? ' ' + d.version : ''}` : tr('scan.det.missing')}
                        color={d.available ? 'var(--green)' : 'var(--red)'} />
-                ) : <Dot text="built-in" color="var(--green)" />}
+                ) : <Dot text={tr('scan.det.builtin')} color="var(--green)" />}
               </div>
             ))}
-            {(!dets || dets.length === 0) && <Empty>탐지기 없음</Empty>}
+            {(!dets || dets.length === 0) && <Empty>{tr('scan.noDetectors')}</Empty>}
           </div>
         </Card>
 
         {/* 우측: 가드레일 + 페이로드 + 도구 */}
         <div className="space-y-5">
-          <Card title="가드레일" icon={ShieldCheck}>
-            <Row k="Safe mode" v={<Badge text={stats?.safe_mode ? 'On' : 'Off'} color={stats?.safe_mode ? 'var(--amber)' : 'var(--muted)'} dot />} />
-            <Row k="Destructive" v={<span className="text-xs text-[var(--muted)]">opt-in only</span>} />
-            <Row k="Rate limit" v={<span className="text-xs text-[var(--muted)]">{stats?.safe_mode ? '500ms' : '150ms'}/req</span>} />
-            <Row k="Kill switch" v={<span className="text-xs text-[var(--green)]">available</span>} />
+          <Card title={tr('scan.guardrails')} icon={ShieldCheck}>
+            <Row k={tr('scan.gr.safeMode')} v={<Badge text={stats?.safe_mode ? 'On' : 'Off'} color={stats?.safe_mode ? 'var(--amber)' : 'var(--muted)'} dot />} />
+            <Row k={tr('scan.gr.destructive')} v={<span className="text-xs text-[var(--muted)]">{tr('scan.gr.destructiveVal')}</span>} />
+            <Row k={tr('scan.gr.rateLimit')} v={<span className="text-xs text-[var(--muted)]">{stats?.safe_mode ? '500ms' : '150ms'}/req</span>} />
+            <Row k={tr('scan.gr.killSwitch')} v={<span className="text-xs text-[var(--green)]">{tr('scan.gr.available')}</span>} />
           </Card>
 
-          <Card title="페이로드" icon={FlaskConical}>
+          <Card title={tr('scan.payloads')} icon={FlaskConical}>
             <div className="mb-2 flex items-center justify-between text-xs">
-              <span className="text-[var(--muted)]">version</span>
+              <span className="text-[var(--muted)]">{tr('scan.pl.version')}</span>
               <span className="font-mono">{pl?.version ?? '—'}</span>
             </div>
             <div className="eyebrow mb-1">XSS ({pl?.xss?.length ?? 0})</div>
             <div className="mb-2 space-y-0.5">
               {(pl?.xss ?? []).map((x, i) => <div key={i} className="truncate font-mono text-[11px] text-[var(--muted)]">{x}</div>)}
             </div>
-            <div className="eyebrow mb-1">한국형 민감패턴 ({pl?.sensitive_patterns?.length ?? 0})</div>
+            <div className="eyebrow mb-1">{tr('scan.sensitivePatterns')} ({pl?.sensitive_patterns?.length ?? 0})</div>
             <div className="flex flex-wrap gap-1">
               {(pl?.sensitive_patterns ?? []).map((p) => <Badge key={p} text={p} color="var(--blue)" />)}
             </div>
           </Card>
 
-          <Card title="외부 도구" icon={Wrench}>
-            {tools.length === 0 ? <Empty>도구 기반 탐지기 없음</Empty> : (
+          <Card title={tr('scan.externalTools')} icon={Wrench}>
+            {tools.length === 0 ? <Empty>{tr('scan.noToolDetectors')}</Empty> : (
               <div className="space-y-2">
                 {tools.map((t) => (
                   <div key={t.id} className="flex items-center justify-between text-sm">
                     <span className="font-mono text-xs">{t.tool}</span>
-                    <Dot text={t.available ? (t.version || 'ready') : 'not found'} color={t.available ? 'var(--green)' : 'var(--red)'} />
+                    <Dot text={t.available ? (t.version || tr('scan.det.ready')) : tr('scan.det.missing')} color={t.available ? 'var(--green)' : 'var(--red)'} />
                   </div>
                 ))}
               </div>

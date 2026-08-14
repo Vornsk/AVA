@@ -1,10 +1,12 @@
 import { useState } from 'react'
-import { Moon, Sun, ShieldCheck, ShieldOff, Lock, UserCog, User as UserIcon, LogOut } from 'lucide-react'
+import { Moon, Sun, ShieldCheck, ShieldOff, Lock, UserCog, User as UserIcon, LogOut, Languages } from 'lucide-react'
 import { currentTheme, toggleTheme, type Theme } from '../theme'
 import { usePoll, type Stats, type Me } from '../api'
+import { useI18n } from '../i18n'
 
 export function Topbar({ title, subtitle }: { title: string; subtitle?: string }) {
   const [theme, setTheme] = useState<Theme>(currentTheme())
+  const { lang, setLang, t } = useI18n()
   const { data: stats } = usePoll<Stats>('/api/stats', 5000)
   const { data: me } = usePoll<Me>('/api/me', 5000)
 
@@ -25,9 +27,9 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
         {stats && (
           <>
             <Pill icon={stats.ca_trusted ? ShieldCheck : ShieldOff}
-                  text={stats.ca_trusted ? 'CA Trusted' : 'CA Untrusted'}
+                  text={stats.ca_trusted ? t('topbar.caTrusted') : t('topbar.caUntrusted')}
                   color={stats.ca_trusted ? 'var(--green)' : 'var(--red)'} />
-            {stats.safe_mode && <Pill icon={Lock} text="Safe-mode" color="var(--amber)" />}
+            {stats.safe_mode && <Pill icon={Lock} text={t('topbar.safeMode')} color="var(--amber)" />}
           </>
         )}
 
@@ -43,17 +45,24 @@ export function Topbar({ title, subtitle }: { title: string; subtitle?: string }
           </span>
         )}
         {!me?.auth_disabled && (
-          <button onClick={logout} title="로그아웃"
+          <button onClick={logout} title={t('topbar.logout')}
                   className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2.5 py-1.5 font-medium hover:opacity-80">
             <LogOut size={14} />
           </button>
         )}
 
+        <button onClick={() => setLang(lang === 'ko' ? 'en' : 'ko')}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1.5 font-medium transition-opacity hover:opacity-80"
+                title={t('topbar.langToggle')}>
+          <Languages size={14} />
+          {lang === 'ko' ? '한국어' : 'EN'}
+        </button>
+
         <button onClick={() => setTheme(toggleTheme())}
                 className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1.5 font-medium transition-opacity hover:opacity-80"
-                title="테마 전환">
+                title={t('topbar.themeToggle')}>
           {theme === 'dark' ? <Moon size={14} /> : <Sun size={14} />}
-          {theme === 'dark' ? 'Dark' : 'Light'}
+          {theme === 'dark' ? t('topbar.dark') : t('topbar.light')}
         </button>
       </div>
     </header>

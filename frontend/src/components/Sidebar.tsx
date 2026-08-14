@@ -1,33 +1,36 @@
 import { LayoutDashboard, FolderKanban, Network, Radar, ShieldAlert, ListChecks, FileSpreadsheet, RotateCcw, BrainCircuit, ScrollText, Users, type LucideIcon } from 'lucide-react'
 import { AvaMark } from './AvaMark'
+import { useT, type MsgKey } from '../i18n'
 
 export type Page = 'overview' | 'projects' | 'recon' | 'scan' | 'findings' | 'coverage' | 'report' | 'reverify' | 'advisor' | 'audit' | 'users'
 
-const GROUPS: { group: string; items: { id: Page; label: string; icon: LucideIcon }[] }[] = [
-  { group: '작업공간', items: [
-    { id: 'overview', label: '개요', icon: LayoutDashboard },
-    { id: 'projects', label: '프로젝트', icon: FolderKanban },
+// 라벨은 i18n 키로 보관하고 렌더 시 t() 로 해석한다.
+const GROUPS: { group: MsgKey; items: { id: Page; label: MsgKey; icon: LucideIcon }[] }[] = [
+  { group: 'group.workspace', items: [
+    { id: 'overview', label: 'nav.overview', icon: LayoutDashboard },
+    { id: 'projects', label: 'nav.projects', icon: FolderKanban },
   ]},
-  { group: '진단', items: [
-    { id: 'recon', label: '정찰', icon: Network },
-    { id: 'scan', label: '스캔', icon: Radar },
+  { group: 'group.diagnosis', items: [
+    { id: 'recon', label: 'nav.recon', icon: Network },
+    { id: 'scan', label: 'nav.scan', icon: Radar },
   ]},
-  { group: '결과', items: [
-    { id: 'findings', label: '취약점', icon: ShieldAlert },
-    { id: 'coverage', label: '커버리지', icon: ListChecks },
-    { id: 'report', label: '리포트', icon: FileSpreadsheet },
-    { id: 'reverify', label: '이행점검', icon: RotateCcw },
+  { group: 'group.results', items: [
+    { id: 'findings', label: 'nav.findings', icon: ShieldAlert },
+    { id: 'coverage', label: 'nav.coverage', icon: ListChecks },
+    { id: 'report', label: 'nav.report', icon: FileSpreadsheet },
+    { id: 'reverify', label: 'nav.reverify', icon: RotateCcw },
   ]},
-  { group: '인텔리전스', items: [
-    { id: 'advisor', label: '룰 제안', icon: BrainCircuit },
-    { id: 'audit', label: '감사', icon: ScrollText },
+  { group: 'group.intelligence', items: [
+    { id: 'advisor', label: 'nav.advisor', icon: BrainCircuit },
+    { id: 'audit', label: 'nav.audit', icon: ScrollText },
   ]},
-  { group: '관리', items: [
-    { id: 'users', label: '사용자', icon: Users },
+  { group: 'group.admin', items: [
+    { id: 'users', label: 'nav.users', icon: Users },
   ]},
 ]
 
 export function Sidebar({ page, onNav }: { page: Page; onNav: (p: Page) => void }) {
+  const t = useT()
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--panel)]">
       <div className="flex items-center gap-2.5 px-5 py-[18px] border-b border-[var(--border)]">
@@ -44,7 +47,7 @@ export function Sidebar({ page, onNav }: { page: Page; onNav: (p: Page) => void 
       <nav className="flex-1 overflow-y-auto px-3 py-3">
         {GROUPS.map((g) => (
           <div key={g.group} className="mb-3">
-            <div className="eyebrow px-2 pb-1.5">{g.group}</div>
+            <div className="eyebrow px-2 pb-1.5">{t(g.group)}</div>
             {g.items.map((n) => {
               const active = page === n.id
               const Icon = n.icon
@@ -59,7 +62,7 @@ export function Sidebar({ page, onNav }: { page: Page; onNav: (p: Page) => void 
                 >
                   {active && <span className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full" style={{ background: 'var(--accent)' }} />}
                   <Icon size={17} strokeWidth={2} style={{ color: active ? 'var(--accent)' : 'currentColor' }} />
-                  <span className="flex-1 text-left">{n.label}</span>
+                  <span className="flex-1 text-left">{t(n.label)}</span>
                 </button>
               )
             })}
@@ -70,7 +73,7 @@ export function Sidebar({ page, onNav }: { page: Page; onNav: (p: Page) => void 
       <div className="flex items-center justify-between px-4 py-3.5 border-t border-[var(--border)]">
         <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted)]">
           <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--green)' }} />
-          읽기전용
+          {t('sidebar.readonly')}
         </span>
         <span className="text-[11px] text-[var(--muted)]">PoC</span>
       </div>
