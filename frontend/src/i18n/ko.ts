@@ -172,6 +172,10 @@ export const ko = {
   'recon.tree.authLabel': '인증',
   'recon.tree.needed': '필요',
   'recon.tree.verdictLabel': '판정',
+  'recon.tree.showUnverified': '미검증',
+  'recon.tree.unverifiedHint': '라이브니스 프로브(soft-404)를 통과하지 못한 엔드포인트를 표시합니다. 기본 숨김.',
+  'recon.tree.sources': '출처',
+  'recon.tree.unverifiedCount': '미검증',
   'recon.tree.noParams': '파라미터 없음',
 
   // 정찰 — 파이프라인·인증

@@ -162,25 +162,46 @@ function CrawlExplore() {
 }
 
 // EndpointTree — 캡처된 공격면 조회 (이슈 #7): 검색·메서드·인증·판정 필터 + 행 클릭 상세 드릴다운.
+// SOURCE_META — 출처 신뢰도 등급별 라벨·색 (#28). 위에서부터 신뢰도 높음.
+const SOURCE_META: Record<string, { label: string; color: string }> = {
+  'spec': { label: 'spec', color: 'var(--green)' },
+  'traffic': { label: 'traffic', color: 'var(--accent)' },
+  'headless-xhr': { label: 'xhr', color: 'var(--blue)' },
+  'discover': { label: 'discover', color: '#a78bfa' },
+  'crawl-link': { label: 'crawl', color: 'var(--muted)' },
+  'static-regex': { label: 'regex', color: 'var(--muted)' },
+}
+// sourceMeta — 빈 문자열(레거시 프록시 캡처)은 traffic 으로 본다 (#26 등급 규칙과 정합).
+function sourceMeta(src?: string) {
+  return SOURCE_META[src || 'traffic'] ?? SOURCE_META['traffic']
+}
+
 function EndpointTree({ targets }: { targets: Target[] | null }) {
   const tr = useT() // 콜백 파라미터 t(Target)와의 섀도잉 회피
   const [q, setQ] = useState('')
   const [method, setMethod] = useState('')
   const [authOnly, setAuthOnly] = useState(false)
   const [verdictOnly, setVerdictOnly] = useState(false)
+  const [showUnverified, setShowUnverified] = useState(false) // 기본 verified 만 (#28)
   const [open, setOpen] = useState<string | null>(null)
 
   const all = targets ?? []
   const methods = Array.from(new Set(all.flatMap((t) => t.methods ?? []))).sort()
-  const hasFilter = !!(q || method || authOnly || verdictOnly)
+  const unverifiedCount = all.filter((t) => t.unverified).length
+  const hasFilter = !!(q || method || authOnly || verdictOnly || showUnverified)
 
   const filtered = all.filter((t) => {
+    if (!showUnverified && t.unverified) return false // 라이브니스 미통과 기본 숨김 (#28)
     if (q && !`${t.host}${t.path}`.toLowerCase().includes(q.toLowerCase())) return false
     if (method && !(t.methods ?? []).includes(method)) return false
     if (authOnly && !t.auth_required) return false
     if (verdictOnly && !t.verdict) return false
     return true
   })
+
+  // 출처 분포 — verified 만 대상(표시 기준과 일치). #28 요약 지표.
+  const dist: Record<string, number> = {}
+  for (const t of all) if (!t.unverified) dist[t.source || 'traffic'] = (dist[t.source || 'traffic'] ?? 0) + 1
 
   const byHost: Record<string, Target[]> = {}
   for (const t of filtered) (byHost[t.host] ??= []).push(t)
@@ -209,7 +230,27 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                 className={`rounded-lg border px-2 py-1.5 text-xs ${verdictOnly ? 'border-[var(--red)] text-[var(--red)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
           {tr('recon.tree.verdict')}
         </button>
+        {unverifiedCount > 0 && (
+          <button onClick={() => setShowUnverified((v) => !v)}
+                  title={tr('recon.tree.unverifiedHint')}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${showUnverified ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
+            <ShieldCheck size={12} /> {tr('recon.tree.showUnverified')} ({unverifiedCount})
+          </button>
+        )}
       </div>
+
+      {/* 출처 분포 — verified 기준 (#28) */}
+      {Object.keys(dist).length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--muted)]">
+          <span>{tr('recon.tree.sources')}:</span>
+          {Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([src, n]) => {
+            const m = sourceMeta(src)
+            return <span key={src} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
+                         style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 12%, transparent)` }}>{m.label} {n}</span>
+          })}
+          {unverifiedCount > 0 && <span className="text-[var(--muted)]">· {tr('recon.tree.unverifiedCount')} {unverifiedCount}</span>}
+        </div>
+      )}
 
       {!targets || all.length === 0 ? (
         <Empty icon={Network}>{tr('recon.tree.emptyNone')}</Empty>
@@ -236,6 +277,14 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                                 style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>{m}</span>
                         ))}
                         <span className="font-mono text-sm">{t.path}</span>
+                        {(() => { const m = sourceMeta(t.source); return (
+                          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)` }}>{m.label}</span>
+                        ) })()}
+                        {t.unverified && (
+                          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--amber)]"
+                                style={{ background: 'color-mix(in srgb, var(--amber) 14%, transparent)' }}>unverified</span>
+                        )}
                         {t.auth_required && <KeyRound size={12} className="text-[var(--amber)]" />}
                         {t.verdict && <Badge text={t.verdict} color="var(--red)" />}
                         {t.params && t.params.length > 0 && (
@@ -296,7 +345,7 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
 
 export function Recon() {
   const t = useT()
-  const { data: targets } = usePoll<Target[]>('/api/endpoints', 4000)
+  const { data: targets } = usePoll<Target[]>('/api/endpoints?include_unverified=true', 4000)
   const { data: rules } = usePoll<Rule[]>('/api/rules', 8000)
   const { data: stats } = usePoll<Stats>('/api/stats', 5000)
   const { data: auth } = usePoll<AuthSummary>('/api/auth', 8000)
