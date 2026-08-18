@@ -153,6 +153,16 @@ export const ko = {
   'recon.crawl.queued': '대기',
   'recon.crawl.errors': '오류',
 
+  // 정찰 — 워크플로 단계 (#28)
+  'recon.steps.scope.title': '스코프',
+  'recon.steps.scope.desc': '진단 허용 대상 호스트',
+  'recon.steps.traffic.title': '트래픽 수집',
+  'recon.steps.traffic.desc': '프록시(:8080) 또는 자동 크롤',
+  'recon.steps.endpoints.title': '엔드포인트',
+  'recon.steps.endpoints.desc': '발견된 공격면 검토',
+  'recon.steps.scan.title': '스캔',
+  'recon.steps.scan.desc': '취약점 진단 실행',
+
   // 정찰 — Endpoint Tree
   'recon.tree.methodFilter': '메서드 필터',
   'recon.tree.searchPlaceholder': '호스트·경로 검색',

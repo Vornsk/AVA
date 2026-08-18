@@ -154,6 +154,16 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.crawl.queued': 'Queued',
   'recon.crawl.errors': 'Errors',
 
+  // Recon — 워크플로 단계 (#28)
+  'recon.steps.scope.title': 'Scope',
+  'recon.steps.scope.desc': 'Hosts allowed for assessment',
+  'recon.steps.traffic.title': 'Collect traffic',
+  'recon.steps.traffic.desc': 'Via proxy (:8080) or auto-crawl',
+  'recon.steps.endpoints.title': 'Endpoints',
+  'recon.steps.endpoints.desc': 'Review the discovered attack surface',
+  'recon.steps.scan.title': 'Scan',
+  'recon.steps.scan.desc': 'Run vulnerability detection',
+
   // Recon — Endpoint Tree
   'recon.tree.methodFilter': 'Method filter',
   'recon.tree.searchPlaceholder': 'Search host / path',

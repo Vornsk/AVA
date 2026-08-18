@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power } from 'lucide-react'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
 import { useT } from '../i18n'
@@ -343,6 +343,45 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
   )
 }
 
+// ReconSteps — 정찰 워크플로 안내 (#28 UX). 처음 사용자가 "무엇을 먼저 하는지" 를 4단계로 본다.
+// 각 단계는 현재 상태를 반영한다(스코프 N · 엔드포인트 N) — 지금 어디쯤인지 감이 잡힌다.
+function ReconSteps({ stats, targets }: { stats: Stats | null; targets: Target[] | null }) {
+  const t = useT()
+  const scopeN = stats?.scope?.length ?? 0
+  const epN = targets?.length ?? 0
+  const steps = [
+    { icon: Globe, key: 'scope', done: scopeN > 0, meta: `${scopeN} host` },
+    { icon: Radar, key: 'traffic', done: epN > 0, meta: '' },
+    { icon: Crosshair, key: 'endpoints', done: epN > 0, meta: epN > 0 ? `${epN} eps` : '' },
+    { icon: ScanLine, key: 'scan', done: (stats?.scanruns ?? 0) > 0, meta: '' },
+  ]
+  return (
+    <Card pad={false} className="overflow-hidden">
+      <div className="flex flex-col divide-y divide-[var(--border)] sm:flex-row sm:divide-x sm:divide-y-0">
+        {steps.map((st, i) => {
+          const Icon = st.icon
+          return (
+            <div key={st.key} className="flex flex-1 items-center gap-3 px-4 py-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                   style={{ color: st.done ? 'var(--green)' : 'var(--muted)',
+                            background: st.done ? 'color-mix(in srgb, var(--green) 16%, transparent)' : 'var(--panel-2)' }}>
+                {st.done ? <Check size={15} /> : i + 1}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Icon size={13} className="text-[var(--muted)]" /> {t(`recon.steps.${st.key}.title`)}
+                  {st.meta && <span className="text-[11px] text-[var(--muted)]">· {st.meta}</span>}
+                </div>
+                <div className="truncate text-[11px] text-[var(--muted)]">{t(`recon.steps.${st.key}.desc`)}</div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
 export function Recon() {
   const t = useT()
   const { data: targets } = usePoll<Target[]>('/api/endpoints?include_unverified=true', 4000)
@@ -351,18 +390,22 @@ export function Recon() {
   const { data: auth } = usePoll<AuthSummary>('/api/auth', 8000)
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
-      {/* 엔드포인트 트리 (FR-2.4) */}
+    <div className="space-y-5">
+      {/* 워크플로 안내 (#28) — 전체 너비 */}
+      <ReconSteps stats={stats} targets={targets} />
+
+      <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+      {/* 좌측: 액션 — 트래픽 수집·엔드포인트 (FR-2.4) */}
       <div className="space-y-5">
         <ProxyTool stats={stats} />
         <CrawlExplore />
         <EndpointTree targets={targets} />
       </div>
 
-      {/* 우측: 파이프라인·스코프·인증 */}
+      {/* 우측: 참고 — 파이프라인·스코프·인증 (#28: 기본 접힘, 필요 시 펼침) */}
       <div className="space-y-5">
         {/* 판단 파이프라인 (FR-2.2) */}
-        <Card title={t('recon.pipe.title')} icon={Filter}>
+        <Card title={t('recon.pipe.title')} icon={Filter} collapsible defaultOpen muted>
           <div className="mb-3 flex items-center gap-2 text-xs">
             <Stage label={t('recon.pipe.scope')} sub="hard" />
             <Arrow />
@@ -385,7 +428,7 @@ export function Recon() {
         </Card>
 
         {/* 스코프 (FR-2.1) */}
-        <Card title={t('recon.scope.title')} icon={Globe}>
+        <Card title={t('recon.scope.title')} icon={Globe} collapsible defaultOpen={false} muted>
           <div className="flex flex-wrap gap-1.5">
             {(stats?.scope ?? []).map((s) => (
               <span key={s} className="rounded-md border border-[var(--border)] px-2 py-0.5 font-mono text-xs">{s}</span>
@@ -394,7 +437,7 @@ export function Recon() {
         </Card>
 
         {/* 인증·신원 (FR-2.5 / FR-3.6) */}
-        <Card title={t('recon.authid.title')} icon={KeyRound}>
+        <Card title={t('recon.authid.title')} icon={KeyRound} collapsible defaultOpen={false} muted>
           <div className="flex items-center justify-between text-sm">
             <span className="text-[var(--muted)]">{t('recon.authid.sessionInjection')}</span>
             <Dot text={auth?.enabled ? t('common.enabled') : t('common.off')} color={auth?.enabled ? 'var(--green)' : 'var(--muted)'} />
@@ -421,6 +464,7 @@ export function Recon() {
         </Card>
 
         <LoginSeqCard />
+      </div>
       </div>
     </div>
   )

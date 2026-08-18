@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import type { LucideIcon } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { ChevronDown, type LucideIcon } from 'lucide-react'
 import { useI18n } from '../i18n'
 
 // 상태/판정/심각도 값(백엔드 도메인값)의 영문 표시 라벨 (#18).
@@ -33,21 +33,27 @@ export function useStatusLabel() {
   return (text: string) => (lang === 'en' ? STATUS_EN[text] ?? STATUS_EN[text?.toLowerCase?.()] ?? text : text)
 }
 
-export function Card({ title, icon: Icon, right, children, className = '', pad = true }: {
+export function Card({ title, icon: Icon, right, children, className = '', pad = true, collapsible = false, defaultOpen = true, muted = false }: {
   title?: ReactNode; icon?: LucideIcon; right?: ReactNode; children: ReactNode; className?: string; pad?: boolean
+  collapsible?: boolean; defaultOpen?: boolean; muted?: boolean // #28 정보 위계 — 참고 카드는 접기 가능
 }) {
+  const [open, setOpen] = useState(defaultOpen)
+  const header = (title || right) && (
+    <div className={`flex items-center justify-between px-5 py-3.5 ${(!collapsible || open) ? 'border-b border-[var(--border)]' : ''}`}>
+      <h3 className={`flex items-center gap-2 text-sm font-semibold ${muted ? 'text-[var(--muted)]' : ''}`}>
+        {collapsible && <ChevronDown size={14} className={`text-[var(--muted)] transition-transform ${open ? '' : '-rotate-90'}`} />}
+        {Icon && <Icon size={15} strokeWidth={2} style={{ color: muted ? 'var(--muted)' : 'var(--accent)' }} />}
+        {title}
+      </h3>
+      {right}
+    </div>
+  )
   return (
     <div className={`rounded-xl border bg-[var(--panel)] border-[var(--border)] shadow-[var(--shadow)] ${className}`}>
-      {(title || right) && (
-        <div className="flex items-center justify-between px-5 py-3.5 border-b border-[var(--border)]">
-          <h3 className="flex items-center gap-2 text-sm font-semibold">
-            {Icon && <Icon size={15} strokeWidth={2} style={{ color: 'var(--accent)' }} />}
-            {title}
-          </h3>
-          {right}
-        </div>
-      )}
-      <div className={pad ? 'p-5' : ''}>{children}</div>
+      {collapsible && header ? (
+        <button type="button" onClick={() => setOpen((v) => !v)} className="w-full text-left hover:bg-[var(--panel-2)] rounded-t-xl">{header}</button>
+      ) : header}
+      {(!collapsible || open) && <div className={pad ? 'p-5' : ''}>{children}</div>}
     </div>
   )
 }
