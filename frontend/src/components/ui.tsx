@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { ChevronDown, type LucideIcon } from 'lucide-react'
+import { ChevronDown, HelpCircle, type LucideIcon } from 'lucide-react'
 import { useI18n } from '../i18n'
 
 // 상태/판정/심각도 값(백엔드 도메인값)의 영문 표시 라벨 (#18).
@@ -55,6 +55,33 @@ export function Card({ title, icon: Icon, right, children, className = '', pad =
       ) : header}
       {(!collapsible || open) && <div className={pad ? 'p-5' : ''}>{children}</div>}
     </div>
+  )
+}
+
+// Tooltip — 요소에 hover/포커스 시 설명을 띄운다 (#28 용어 도움말).
+export function Tooltip({ label, children, className = '' }: { label: string; children: ReactNode; className?: string }) {
+  const [show, setShow] = useState(false)
+  return (
+    <span className={`relative inline-flex ${className}`} tabIndex={0}
+          onMouseEnter={() => setShow(true)} onMouseLeave={() => setShow(false)}
+          onFocus={() => setShow(true)} onBlur={() => setShow(false)}>
+      {children}
+      {show && (
+        <span role="tooltip"
+              className="pointer-events-none absolute bottom-full left-1/2 z-30 mb-1.5 w-max max-w-[240px] -translate-x-1/2 whitespace-normal rounded-md border border-[var(--border)] bg-[var(--panel)] px-2.5 py-1.5 text-left text-[11px] font-normal leading-snug text-[var(--text)] shadow-[var(--shadow)]">
+          {label}
+        </span>
+      )}
+    </span>
+  )
+}
+
+// InfoTip — ? 아이콘 하나로 도움말을 붙인다.
+export function InfoTip({ label }: { label: string }) {
+  return (
+    <Tooltip label={label} className="align-middle">
+      <HelpCircle size={12} className="cursor-help text-[var(--muted)] hover:text-[var(--text)]" />
+    </Tooltip>
   )
 }
 

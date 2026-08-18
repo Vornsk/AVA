@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me } from '../api'
-import { Card, Badge, Dot, Empty } from '../components/ui'
+import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
 
 // CopyLine — 복사 가능한 명령/코드 한 줄.
@@ -163,13 +163,13 @@ function CrawlExplore() {
 
 // EndpointTree — 캡처된 공격면 조회 (이슈 #7): 검색·메서드·인증·판정 필터 + 행 클릭 상세 드릴다운.
 // SOURCE_META — 출처 신뢰도 등급별 라벨·색 (#28). 위에서부터 신뢰도 높음.
-const SOURCE_META: Record<string, { label: string; color: string }> = {
-  'spec': { label: 'spec', color: 'var(--green)' },
-  'traffic': { label: 'traffic', color: 'var(--accent)' },
-  'headless-xhr': { label: 'xhr', color: 'var(--blue)' },
-  'discover': { label: 'discover', color: '#a78bfa' },
-  'crawl-link': { label: 'crawl', color: 'var(--muted)' },
-  'static-regex': { label: 'regex', color: 'var(--muted)' },
+const SOURCE_META: Record<string, { label: string; color: string; key: string }> = {
+  'spec': { label: 'spec', color: 'var(--green)', key: 'spec' },
+  'traffic': { label: 'traffic', color: 'var(--accent)', key: 'traffic' },
+  'headless-xhr': { label: 'xhr', color: 'var(--blue)', key: 'xhr' },
+  'discover': { label: 'discover', color: '#a78bfa', key: 'discover' },
+  'crawl-link': { label: 'crawl', color: 'var(--muted)', key: 'crawl' },
+  'static-regex': { label: 'regex', color: 'var(--muted)', key: 'regex' },
 }
 // sourceMeta — 빈 문자열(레거시 프록시 캡처)은 traffic 으로 본다 (#26 등급 규칙과 정합).
 // methodColor — HTTP 메서드 색. 읽기(GET/HEAD)는 차분하게, 쓰기·삭제는 경고색으로 (#28 가독성).
@@ -250,13 +250,15 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
       {/* 출처 분포 — verified 기준 (#28) */}
       {Object.keys(dist).length > 0 && (
         <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--muted)]">
-          <span>{tr('recon.tree.sources')}:</span>
+          <span className="inline-flex items-center gap-1">{tr('recon.tree.sources')}: <InfoTip label={tr('recon.source.help')} /></span>
           {Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([src, n]) => {
             const m = sourceMeta(src)
-            return <span key={src} className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
-                         style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 12%, transparent)` }}>{m.label} {n}</span>
+            return <Tooltip key={src} label={tr(`recon.source.${m.key}`)}>
+                     <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
+                           style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 12%, transparent)` }}>{m.label} {n}</span>
+                   </Tooltip>
           })}
-          {unverifiedCount > 0 && <span className="text-[var(--muted)]">· {tr('recon.tree.unverifiedCount')} {unverifiedCount}</span>}
+          {unverifiedCount > 0 && <Tooltip label={tr('recon.tree.unverifiedHint')}><span className="text-[var(--muted)]">· {tr('recon.tree.unverifiedCount')} {unverifiedCount}</span></Tooltip>}
         </div>
       )}
 
@@ -291,12 +293,16 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                         <span className="flex min-w-0 flex-1 items-center gap-2">
                           <span className="truncate font-mono text-sm">{t.path}</span>
                           {(() => { const m = sourceMeta(t.source); return (
-                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
-                                  style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)` }}>{m.label}</span>
+                            <Tooltip label={tr(`recon.source.${m.key}`)}>
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                    style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)` }}>{m.label}</span>
+                            </Tooltip>
                           ) })()}
                           {t.unverified && (
-                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--amber)]"
-                                  style={{ background: 'color-mix(in srgb, var(--amber) 14%, transparent)' }}>unverified</span>
+                            <Tooltip label={tr('recon.tree.unverifiedHint')}>
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--amber)]"
+                                    style={{ background: 'color-mix(in srgb, var(--amber) 14%, transparent)' }}>unverified</span>
+                            </Tooltip>
                           )}
                         </span>
                         {/* 메타 — 우측 정렬로 모음 */}
@@ -420,13 +426,13 @@ export function Recon() {
         {/* 판단 파이프라인 (FR-2.2) */}
         <Card title={t('recon.pipe.title')} icon={Filter} collapsible defaultOpen muted>
           <div className="mb-3 flex items-center gap-2 text-xs">
-            <Stage label={t('recon.pipe.scope')} sub="hard" />
+            <Stage label={t('recon.pipe.scope')} sub="hard" tip={t('recon.pipe.scopeTip')} />
             <Arrow />
-            <Stage label={t('recon.pipe.rule')} sub={`${rules?.length ?? 0} rules`} />
+            <Stage label={t('recon.pipe.rule')} sub={`${rules?.length ?? 0} rules`} tip={t('recon.pipe.ruleTip')} />
             <Arrow />
-            <Stage label="LLM" sub={stats?.llm_provider ?? '—'} />
+            <Stage label="LLM" sub={stats?.llm_provider ?? '—'} tip={t('recon.pipe.llmTip')} />
             <Arrow />
-            <Stage label={t('recon.pipe.forward')} sub="capture" />
+            <Stage label={t('recon.pipe.forward')} sub="capture" tip={t('recon.pipe.forwardTip')} />
           </div>
           <div className="space-y-1">
             {(rules ?? []).map((r, i) => (
@@ -591,12 +597,13 @@ function Row2({ k, v }: { k: string; v: string }) {
   )
 }
 
-function Stage({ label, sub }: { label: string; sub: string }) {
-  return (
+function Stage({ label, sub, tip }: { label: string; sub: string; tip?: string }) {
+  const body = (
     <div className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1.5 text-center">
       <div className="text-[11px] font-semibold">{label}</div>
       <div className="text-[9px] text-[var(--muted)]">{sub}</div>
     </div>
   )
+  return tip ? <Tooltip label={tip} className="flex-1">{body}</Tooltip> : body
 }
 function Arrow() { return <span className="text-[var(--muted)]">→</span> }

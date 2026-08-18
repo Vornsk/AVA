@@ -188,6 +188,19 @@ export const ko = {
   'recon.tree.unverifiedCount': '미검증',
   'recon.tree.noParams': '파라미터 없음',
 
+  // Recon — 용어 도움말 (#28 D)
+  'recon.source.help': '각 엔드포인트를 어디서 발견했는지. 신뢰도 순: spec > traffic > xhr > discover > crawl > regex.',
+  'recon.source.spec': '명세(OpenAPI/Swagger 등)에서 발견 — 가장 신뢰도 높음, 검증 면제',
+  'recon.source.traffic': '실제 프록시 트래픽에서 캡처 — 사용자가 브라우징한 것',
+  'recon.source.xhr': '헤드리스 브라우저가 실행한 XHR/fetch — 앱이 스스로 호출',
+  'recon.source.discover': 'wordlist 능동 탐색으로 발견 — 실재 확인 완료',
+  'recon.source.crawl': '크롤러가 링크를 따라가 발견',
+  'recon.source.regex': 'JS/HTML 정규식 추출 — 실재하지 않을 수 있어 검증 대상',
+  'recon.pipe.scopeTip': '스코프(화이트리스트) 밖 요청은 하드 차단 — 대상 외부로 아무것도 내보내지 않는다',
+  'recon.pipe.ruleTip': '결정론적 룰로 요청을 허용/차단 (로그아웃·삭제·결제 등)',
+  'recon.pipe.llmTip': '룰로 안 걸리는 애매한 요청만 LLM 이 판단',
+  'recon.pipe.forwardTip': '통과된 요청을 대상에 전달하고 공격면으로 캡처',
+
   // 정찰 — 파이프라인·인증
   'recon.pipe.title': '판단 파이프라인',
   'recon.pipe.scope': '스코프',
