@@ -23,6 +23,7 @@ import (
 
 	"proxypoc/internal/auth"
 	"proxypoc/internal/endpoints"
+	"proxypoc/internal/recon/ingest"
 	"proxypoc/internal/scope"
 )
 
@@ -30,7 +31,7 @@ import (
 type Options struct {
 	MaxPages int    // 가져올 최대 페이지 (기본 200)
 	MaxDepth int    // 시작 URL로부터 최대 깊이 (기본 5)
-	Mode     string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인)
+	Mode     string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
@@ -41,7 +42,7 @@ type Result struct {
 	Pages   int    `json:"pages"`  // 가져온 페이지 수
 	Found   int    `json:"found"`  // 발견한 고유 엔드포인트 수
 	JS      int    `json:"js"`     // 분석한 JS 번들 수 (SPA 정적 추출)
-	Mode    string `json:"mode"`   // static | headless
+	Mode    string `json:"mode"`   // static | headless | ingest
 	Queued  int    `json:"queued"` // 남은 큐
 	Errors  int    `json:"errors"`
 	Started string `json:"started"`
@@ -80,9 +81,12 @@ func Start(seed string, opts Options) Result {
 	jobs[id] = j
 	order = append(order, id)
 	mu.Unlock()
-	if opts.Mode == "headless" {
+	switch opts.Mode {
+	case "headless":
 		go j.runHeadless(seed, opts)
-	} else {
+	case "ingest":
+		go j.runIngest(seed)
+	default:
 		go j.run(seed, opts)
 	}
 	return j.snapshot()
@@ -137,6 +141,23 @@ func (j *job) setStatus(s string) {
 type item struct {
 	u     string
 	depth int
+}
+
+// runIngest — 명세 인제스트만 수행한다 (이슈 #25, profile=ingest).
+// 링크 크롤을 돌리지 않으므로 "명세만으로 얼마나 찾는가"가 그대로 측정된다.
+func (j *job) runIngest(seed string) {
+	client := &http.Client{Timeout: 15 * time.Second}
+	rep := ingest.Run(j.ctx, seed, client)
+	j.mu.Lock()
+	j.res.Pages = rep.Requests
+	j.res.Found = rep.Recorded
+	j.res.Errors = rep.Errors
+	j.mu.Unlock()
+	if j.ctx.Err() != nil {
+		j.setStatus("중단")
+		return
+	}
+	j.setStatus("완료")
 }
 
 func (j *job) run(seed string, opts Options) {
