@@ -162,6 +162,7 @@ func (j *job) runHeadless(seed string, opts Options) {
 		j.mu.Unlock()
 		time.Sleep(120 * time.Millisecond)
 	}
+	j.verifyOnce(opts, &http.Client{Timeout: 15 * time.Second}) // 실재 검증 (#26)
 	j.setStatus("완료")
 }
 

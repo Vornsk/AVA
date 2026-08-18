@@ -32,21 +32,21 @@ import (
 const (
 	rateLimit   = 120 * time.Millisecond // 크롤러·인제스터와 동일 (FR-3.2)
 	maxBody     = 1 << 20
-	maxProbes   = 500  // 한 번의 검증에서 보낼 최대 요청 수
-	sizeTolPct  = 2    // 본문 길이가 baseline 대비 이 % 이내면 같은 모양으로 본다
-	baselineCnt = 2    // baseline 확보용 무작위 경로 수
+	maxProbes   = 500 // 한 번의 검증에서 보낼 최대 요청 수
+	sizeTolPct  = 2   // 본문 길이가 baseline 대비 이 % 이내면 같은 모양으로 본다
+	baselineCnt = 2   // baseline 확보용 무작위 경로 수
 )
 
 // Report — 검증 1회 결과.
 type Report struct {
-	Candidates int      `json:"candidates"` // 프로브 대상(crawl-link·static-regex) 수
-	Probed     int      `json:"probed"`     // 실제로 보낸 요청 수
-	Demoted    int      `json:"demoted"`    // unverified 로 강등한 수
-	Skipped    int      `json:"skipped"`    // 면제 등급이라 건너뛴 수
-	Errors     int      `json:"errors"`
-	Baseline   string   `json:"baseline"`   // 잡아낸 soft-404 시그니처 ("" = 없음)
+	Candidates  int      `json:"candidates"` // 프로브 대상(crawl-link·static-regex) 수
+	Probed      int      `json:"probed"`     // 실제로 보낸 요청 수
+	Demoted     int      `json:"demoted"`    // unverified 로 강등한 수
+	Skipped     int      `json:"skipped"`    // 면제 등급이라 건너뛴 수
+	Errors      int      `json:"errors"`
+	Baseline    string   `json:"baseline"` // 잡아낸 soft-404 시그니처 ("" = 없음)
 	DemotedList []string `json:"demoted_list,omitempty"`
-	Duration   string   `json:"duration"`
+	Duration    string   `json:"duration"`
 }
 
 // sig — 응답의 "모양". soft-404 비교에 쓴다.
@@ -111,7 +111,7 @@ func Run(ctx context.Context, tree *endpoints.Tree, client *http.Client) Report 
 		if !ok {
 			continue // 요청 실패는 강등 근거가 못 된다
 		}
-		if alive(got, baselines[c.host]) {
+		if alive(c.path, got, baselines[c.host]) {
 			continue
 		}
 		tree.MarkUnverified(c.host, c.path)
@@ -128,7 +128,14 @@ func Run(ctx context.Context, tree *endpoints.Tree, client *http.Client) Report 
 }
 
 // alive — 응답이 "실재한다"를 뜻하는가.
-func alive(got, base sig) bool {
+//
+// path 는 루트 예외 판정에만 쓴다. SPA 의 셸 HTML 은 곧 "/" 의 진짜 내용이라
+// baseline 과 같은 모양으로 보이는데, 서버가 응답한 이상 루트는 실재한다.
+// 여기서 걸러내면 크롤 시작점이 통째로 사라진다.
+func alive(path string, got, base sig) bool {
+	if path == "" || path == "/" {
+		return true
+	}
 	switch {
 	case got.status == 404 || got.status == 410:
 		return false

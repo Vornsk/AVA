@@ -24,6 +24,7 @@ import (
 	"proxypoc/internal/auth"
 	"proxypoc/internal/endpoints"
 	"proxypoc/internal/recon/ingest"
+	"proxypoc/internal/recon/liveness"
 	"proxypoc/internal/scope"
 )
 
@@ -33,19 +34,21 @@ type Options struct {
 	MaxDepth int    // 시작 URL로부터 최대 깊이 (기본 5)
 	Mode     string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
 	NoIngest bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
+	NoVerify bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
 type Result struct {
 	ID      string `json:"id"`
 	Seed    string `json:"seed"`
-	Status  string `json:"status"` // 진행 | 완료 | 중단
-	Pages   int    `json:"pages"`  // 가져온 페이지 수
-	Found   int    `json:"found"`  // 발견한 고유 엔드포인트 수
-	JS      int    `json:"js"`     // 분석한 JS 번들 수 (SPA 정적 추출)
-	Spec    int    `json:"spec"`   // 명세 인제스트로 등록한 엔드포인트 수 (#25)
-	Mode    string `json:"mode"`   // static | headless | ingest
-	Queued  int    `json:"queued"` // 남은 큐
+	Status  string `json:"status"`  // 진행 | 완료 | 중단
+	Pages   int    `json:"pages"`   // 가져온 페이지 수
+	Found   int    `json:"found"`   // 발견한 고유 엔드포인트 수
+	JS      int    `json:"js"`      // 분석한 JS 번들 수 (SPA 정적 추출)
+	Spec    int    `json:"spec"`    // 명세 인제스트로 등록한 엔드포인트 수 (#25)
+	Demoted int    `json:"demoted"` // 라이브니스 검증에서 강등한 엔드포인트 수 (#26)
+	Mode    string `json:"mode"`    // static | headless | ingest
+	Queued  int    `json:"queued"`  // 남은 큐
 	Errors  int    `json:"errors"`
 	Started string `json:"started"`
 }
@@ -159,6 +162,19 @@ func (j *job) ingestOnce(seed string, opts Options, client *http.Client) {
 	// 즉시 소진해 크롤이 첫 페이지에서 멈췄다.
 	j.res.Spec = rep.Recorded
 	j.res.Found += rep.Recorded
+	j.res.Errors += rep.Errors
+	j.mu.Unlock()
+}
+
+// verifyOnce — 크롤 종료 시 실재 여부를 검증한다 (이슈 #26).
+// 정규식 추출물·링크 추종 결과만 프로브하고, 실재가 확인되지 않으면 강등한다(삭제 아님).
+func (j *job) verifyOnce(opts Options, client *http.Client) {
+	if opts.NoVerify || j.ctx.Err() != nil {
+		return
+	}
+	rep := liveness.Run(j.ctx, endpoints.Default(), client)
+	j.mu.Lock()
+	j.res.Demoted = rep.Demoted
 	j.res.Errors += rep.Errors
 	j.mu.Unlock()
 }
@@ -285,6 +301,7 @@ func (j *job) run(seed string, opts Options) {
 		j.mu.Unlock()
 		time.Sleep(120 * time.Millisecond) // rate limit (FR-3.2)
 	}
+	j.verifyOnce(opts, client) // 실재하지 않는 추출물 강등 (#26)
 	j.setStatus("완료")
 }
 
