@@ -7,6 +7,86 @@
 
 ---
 
+## §0. 갱신 블록 (2026-08-18) — **먼저 읽을 것**
+
+이 문서의 본문은 **2026-08-10, 브랜치 `claude/repo-codebase-audit-qy91vo`(PR #2) 시점의 스냅샷**이다.
+그 뒤로 백엔드가 계속 바뀌었으므로 **본문의 수치·줄번호는 그대로 믿으면 안 된다.**
+아래가 현재(브랜치 `seona`, `8e9586b`) 기준으로 재측정한 갱신분이다.
+
+### 무엇이 뒤집혔나
+
+| 본문 | 지금 |
+|---|---|
+| §1.3 "**백엔드 `.go` 를 한 번도 건드리지 않았다**" | **더는 사실이 아니다.** 그 브랜치의 diff에 한해 참이었을 뿐, 이후 이슈 #6·#22·#23·#31·#24 가 백엔드를 바꿨다 |
+| §3 ③ 베이스라인 표 | 아래 표로 대체 |
+| §3 ④ "`webui`·`mcpserver`·`audit` 에 테스트가 0개" | `webui` 는 **2개 생겼다**(`endpoints_test.go`·`projects_delete_test.go`). `mcpserver`·`audit` 은 **여전히 0개** |
+| §3 ② "`.github/` 에 ISSUE_TEMPLATE 3종 + `PULL_REQUEST_TEMPLATE.md` + `config.yml`" | 현재 `.github/` 에는 `ISSUE_TEMPLATE/` 4종만(`bug_report`·`detector_report`·`feature_request`·`config`). **PR 템플릿은 없다** |
+| §4 2번 `bundleDownload` 위치 `webui.go:598-607` | **`webui.go:622-631` 로 이동**. ACL 누락은 **그대로 미해결** |
+
+### 재측정 베이스라인 (§3 ③ 표 대체)
+
+| 항목 | 본문 값 | **현재 값** | 재현 명령 |
+|---|---|---|---|
+| 전체 Go 패키지 | 35 | **37** | `cd backend && go list ./... \| wc -l` |
+| 테스트 보유 패키지 | 21 | **25** | `git ls-files \| grep '_test\.go$' \| xargs -n1 dirname \| sort -u \| wc -l` |
+| `go test ./...` | ok 21 | **전 패키지 통과 (FAIL 0)** | `cd backend && go test ./...` |
+| 웹 라우트 등록 | 58 | **67** (66 `HandleFunc` + 1 `Handle`) | `grep -c 'mux.HandleFunc' backend/internal/webui/webui.go` |
+| MCP 툴 | 54 | **56** | `grep -c 'mcp.AddTool' backend/internal/mcpserver/mcpserver.go` |
+| 비테스트 Go LOC | 11,256 | **12,770** | `find backend -name '*.go' ! -name '*_test.go' \| xargs wc -l \| tail -1` |
+| 테스트 Go LOC | 3,280 | **4,227** | `find backend -name '*_test.go' \| xargs wc -l \| tail -1` |
+| `webui.go` / `mcpserver.go` | 1,017 / 797 | **1,248 / 831** | `wc -l backend/internal/webui/webui.go backend/internal/mcpserver/mcpserver.go` |
+
+### 여전히 유효한 것
+
+- **§4 미해결 항목 4건 전부 그대로다.** MCP 무인증·번들 ACL 누락·`audit.json` 쓰기전용·상대경로 영속화.
+  (`grep -c 'func Load' backend/internal/audit/audit.go` → `0`)
+- **§3 ② CI 워크플로 부재.** `ls .github/workflows` → 없음. 빌드 순서(프론트 → Go)는 여전히 README 산문으로만 보장된다.
+- **§5 환경 제약.** `gh` CLI 없음, Go 1.26.5 고정, 프론트 빌드 선행 필수.
+- **§6 실패 모드 4건.** 특히 §6.1(서브에이전트 수치 불일치)·§6.3(`git -C` worktree)은 이후에도 유효한 교훈이다.
+
+### 최근 작업 — 정찰 고도화 (#22 → #24)
+
+정찰(공격면 탐색) 품질을 **숫자로 측정하고 개선하는** 흐름이 붙었다. 순서에 이유가 있다 —
+계기판(#22)을 먼저 만들고, 그 계기판으로 개선(#24)의 효과와 회귀를 확인한다.
+
+| 이슈 | 내용 | 산출물 |
+|---|---|---|
+| #22 | 정찰 벤치 하네스 — ground-truth 대조로 P/R/F1·트리 팽창률 산출 | `backend/internal/recon/bench/`, `docs/recon-groundtruth/` |
+| #23 | 정답셋 4종(juice-shop·dvwa·vampi·vulnlab) + 다중 대상 순회 | `docs/recon-groundtruth/*.yaml` |
+| #31 | 인증 크롤(세션 주입) — DVWA 재현율 4.0% → 80.0% | `bench.ApplyAuth`, `dvwa.yaml` 로그인 시퀀스 |
+| **#24** | **경로 정규화 v2** — UUID/hash/date/b64 분류기 + 형제 클러스터링 | `backend/internal/endpoints/normalize.go` |
+
+**#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
+값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
+`{id}`/`{uuid}`/`{hash}`/`{date}`/`{b64}` 로 분류하고, 같은 부모 밑에 값처럼 생긴 리프가
+12개 이상 쌓이면 `{slug}` 하나로 접는다. 기존 `endpoints.json` 은 로드 시 1회 재분류·병합한다.
+
+측정 결과(Juice Shop, 전·후 각 4회): **트리 팽창률 headless 1.20x → 1.00x**(목표 ≤1.3 충족),
+**static 은 8회 전부 한 칸도 다르지 않음**(P 15.5% / R 41.9% 유지 = 회귀 없음).
+상세 표와 재현 절차는 `docs/recon-groundtruth/README.md`, 규칙 설명은 `docs/03-정찰.md`.
+
+> **여기서 겪은 실패 — §6에 추가할 값어치가 있다.**
+> 형제 클러스터링의 첫 구현이 후보 조건을 "리프 + 파라미터 없음 + 고유비율 높음"으로만 잡았더니,
+> juice-shop `/api` 밑의 REST 리소스 12종(`Products`·`Feedbacks`·`Challenges`…)이
+> **전부 `/api/{slug}` 하나로 뭉개져** 재현율이 41.9% → 22.6% 로 무너졌다.
+> 단위 테스트는 전부 통과했고, **하네스 실측에서만 드러났다.**
+> → 교훈: 휴리스틱의 임계치는 합성 테스트로 검증되지 않는다. #22 같은 계기판이 없었으면
+> 이 회귀는 조용히 머지됐을 것이다. 가드(`looksLikeValue`)를 넣고 실제 리소스명으로 회귀 테스트를 고정했다.
+
+### #24 에서 넘긴 것
+
+- `docs/recon-groundtruth/README.md` 의 "단계별 목표"에 있던 **`#3(정규화) 후 P ≥ 40%` 는 미달**로 기록했다.
+  juice-shop 의 오탐은 값만 다른 중복 노드가 아니라 **SPA 클라이언트 라우트·정적자산·외부 링크**라,
+  정규화가 아니라 **필터의 몫**임이 실측으로 확인됐다 → 라이브니스/필터(#5 계열)로 이월.
+- DVWA·VAmPI 도 회귀 확인차 재측정했다(#24 완료기준 밖). **전·후 8행이 한 칸도 다르지 않았다.**
+  DVWA 는 경로가 전부 고정 PHP 파일이라 접을 가변 세그먼트가 없고(팽창률 1.02x/1.01x 유지),
+  VAmPI 는 링크 없는 API 라 크롤이 static 0건·headless 2건뿐이라 팽창률 측정 자체가 성립하지 않는다.
+  → **정규화 v2 가 실제로 이득을 보는 대상은 Juice Shop 뿐**이다.
+  (이번 DVWA 는 `ghcr.io/digininja/dvwa` + `mariadb:10` 구성이라 기존 baseline 의
+  `vulnerables/web-dvwa` 수치와 절대값을 나란히 읽으면 안 된다.)
+
+---
+
 ## 0. 이 프로젝트가 무엇인가 (3문단 요약)
 
 **AVA**(Go 모듈명은 `proxypoc`, `backend/go.mod:1`)는 LLM을 판단 엔진으로 쓰는 **반자동 웹 취약점 진단 도구**다.
@@ -69,6 +149,9 @@ grep -rl "from '\.\./api'\|from '\./api'" frontend/src/ | wc -l   # 12
 ```
 
 ### 1.3 하지 않은 것 — **백엔드 `.go` 파일을 한 번도 건드리지 않았다**
+
+> **⚠ 이 절은 그 브랜치의 diff에 한해서만 참이다.** 현재 레포에는 해당하지 않는다 —
+> 이후 이슈 #6·#22·#23·#31·#24 가 백엔드를 바꿨다. §0 갱신 블록 참조.
 
 ```bash
 git diff --name-status c3ea722..HEAD -- backend/   # 출력 없음 = 순변경 0건
@@ -198,6 +281,10 @@ CI가 없으면 그 비교가 사람의 로컬 실행에 의존하고, 이 프�
 
 ### ③ 베이스라인 재측정
 
+> **⚠ 아래 표의 수치는 2026-08-10 기준이라 전부 낡았다.** 재측정값은 §0 갱신 블록의
+> "재측정 베이스라인" 표를 볼 것. **다만 "기준선을 CI에 고정한다"는 과제 자체는 그대로 미해결이다**
+> (§3 ② CI 워크플로가 아직 없다).
+
 **"26개 패키지" vs "ok 21" 불일치 — 규명 완료. 새로 조사할 것은 없다.**
 
 결론부터: **26은 처음부터 틀린 수치였다.** 실제로 테스트를 가진 패키지는 감사 시점에도 지금도 21개다.
@@ -231,6 +318,10 @@ git ls-files | grep '_test\.go$' | xargs -n1 dirname | sort -u | wc -l          
 
 ### ④ 보안 3건 수정 — **③ 이후에**
 
+> **⚠ 부분 갱신.** "이 패키지들에 테스트가 0개"는 `webui` 에는 더 이상 해당하지 않는다
+> (`endpoints_test.go`·`projects_delete_test.go` 2개). `mcpserver`·`audit` 은 **여전히 0개**라
+> 아래 논지(테스트 없이 인증·인가를 손대지 말 것)는 그 둘에 대해 그대로 유효하다.
+
 대상은 §4 표의 1·2·3번이다.
 
 **왜 지금 하면 안 되는가.** 세 건이 모두 `internal/webui`와 `internal/mcpserver`,
@@ -258,7 +349,7 @@ wc -l backend/internal/webui/webui.go backend/internal/mcpserver/mcpserver.go   
 | # | 항목 | 위치 | 내용과 영향 |
 |---|---|---|---|
 | 1 | **MCP 표면 무인증 + 전역 리더 권한** | `backend/internal/mcpserver/mcpserver.go:717-719`, `:758-759` | `:717-719`가 `withAuth` 같은 미들웨어 없이 `mcp.NewStreamableHTTPHandler`를 그대로 `http.ListenAndServe`에 바인딩한다. `authz()`(`:758-759`)는 프로세스 전역 `user.Current()`로 신원을 해석하는데 `user.Seed()`(`backend/internal/user/user.go:125`)가 이를 `leader`로 초기화한다. → **`:8765`에 도달 가능한 클라이언트는 누구나 리더 권한**으로 `run_scan`·`set_project_credentials`·`export_project`·`create_project`를 호출한다. 기본 바인딩 `127.0.0.1`만이 방어다. 추가로 `export_project`/`import_project`가 툴 인자의 파일시스템 경로를 검증 없이 사용한다(`:307` `os.WriteFile`, `:321` `os.ReadFile`). |
-| 2 | **`GET /api/projects/{id}/bundle` ACL 누락** | `backend/internal/webui/webui.go:598-607` (등록은 `:176`) | `bundleDownload`가 형제 `/api/projects/{id}/*` 라우트와 달리 `authorize`도 `requireAccess`도 호출하지 않고 곧바로 `bundle.Export(r.PathValue("id"))`를 부른다. `withAuth`의 세션 검사만 걸리므로 **인증된 아무 분석가나 임의 프로젝트를 통째로 내보낼 수 있다.** |
+| 2 | **`GET /api/projects/{id}/bundle` ACL 누락** | `backend/internal/webui/webui.go:622-631` (2026-08-18 재확인, 미해결) | `bundleDownload`가 형제 `/api/projects/{id}/*` 라우트와 달리 `authorize`도 `requireAccess`도 호출하지 않고 곧바로 `bundle.Export(r.PathValue("id"))`를 부른다. `withAuth`의 세션 검사만 걸리므로 **인증된 아무 분석가나 임의 프로젝트를 통째로 내보낼 수 있다.** |
 | 3 | **`audit.json` 쓰기 전용 — 재시작마다 감사 추적 파괴** | `backend/internal/audit/audit.go` | `Record()`가 `audit.json`을 쓰지만(`:44`) **패키지에 `Load()`가 없다.** 노출 함수는 `Record`(`:31`)·`List`(`:48`)·`Reset`(`:55`) 셋뿐. 인메모리 슬라이스가 nil로 시작하므로 **재시작 후 첫 `Record()`가 파일을 1건짜리 배열로 덮어쓴다.** `webui.go:921`이 이 파일을 "규제 제출용 증적"으로 문서화하고 있어 실질적 결함이다. `internal/profile`도 동일 형태(`profile.go:32`에 `Save()`만 있고 `Load()` 없음). |
 | 4 | **영속화 경로가 전부 상대경로** | `backend/internal/finding/finding.go:16`, `backend/internal/scanengine/scanengine.go:285`, `backend/internal/profile/profile.go:32` 외 | `const file = "findings.json"` 식의 맨 상대 경로라 **상태가 프로세스를 시작한 디렉터리에 종속된다.** 다른 디렉터리에서 실행하면 조용히 빈 상태로 시작하고, 경고도 없다. `go test`가 각 패키지 디렉터리에 `findings.json`·`endpoints.json`·`scanruns.json`·`profiles.json`을 흩뿌리는 것도 같은 원인이다(`.gitignore`의 `backend/internal/**/*.json` 규칙이 이를 막는다). |
 
