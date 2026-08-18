@@ -262,8 +262,8 @@ func (t *Tree) Record(scheme, host, method, rawPath string, params []Param, auth
 	acc := ""
 	for _, s := range splitSegs(norm) {
 		acc += "/" + s
-		if cur.slugged && !isTemplate(s) {
-			s = tplSlug // 이미 접힌 자리 — 새 값도 바로 흡수 (이슈 #24)
+		if cur.slugged && !isTemplate(s) && looksLikeValue(s) {
+			s = tplSlug // 이미 접힌 자리 — 값처럼 생긴 새 세그먼트만 바로 흡수 (이슈 #24)
 			acc = cur.path + "/" + s
 		}
 		ch, ok := cur.children[s]

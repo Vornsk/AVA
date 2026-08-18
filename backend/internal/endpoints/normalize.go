@@ -134,13 +134,38 @@ func NormalizePath(p string) string {
 // 보수적 설계 (재현율 보호):
 //   - 호스트 루트 직속 자식은 접지 않는다. 루트 세그먼트는 대개 최상위 라우트명이라
 //     접히면 /metrics, /api 같은 실제 엔드포인트가 통째로 사라진다.
-//   - 후보는 자식이 없고(리프) 파라미터도 없는 노드만. 공격면(파라미터)이 있는 노드는 보존.
+//   - 후보는 자식이 없고(리프) 파라미터도 없고 값처럼 생긴(looksLikeValue) 노드만.
+//     공격면(파라미터)이나 하위 구조가 있는 노드는 보존.
 //   - 한 번 접힌 부모는 slugged 로 표시해 이후 같은 자리 값은 바로 {slug} 로 흡수한다
 //     (다시 12개가 쌓일 때까지 트리가 재팽창하는 것을 막는다).
+//
+// ★ looksLikeValue 가 없으면 REST 리소스 컬렉션이 통째로 사라진다.
+// juice-shop /api 밑에는 Products·Feedbacks·Challenges… 12종 이상이 각각 1회씩만 등장하는
+// 리프로 쌓인다. "리프 + 무파라미터 + 고유" 조건만으로는 이들이 slug 값과 구분되지 않아
+// /api/{slug} 하나로 접혔고, 하네스 재현율이 41.9% → 22.6% 로 무너졌다(#24 완료기준 3 위반).
 const (
 	slugMinSiblings     = 12  // 접기 발동 최소 형제 수
 	slugMinDistinctRate = 0.8 // 고유비율 = 후보 수 ÷ 후보 총 히트 (재사용 적을수록 값에 가깝다)
+	slugMinSeparators   = 2   // 값 표식: 단어 구분자(- _) 이 정도 이상이면 라우트명이 아니라 slug
 )
+
+// looksLikeValue — 라우트명이 아니라 값(slug)처럼 생겼는가.
+// 라우트명은 대개 한 단어이거나 하이픈 하나로 이어진 짧은 명사구다
+// (Products, SecurityQuestions, application-configuration, reset-password).
+// 반대로 slug 값은 숫자를 끼거나 단어를 여러 번 잇는다
+// (my-first-post, red-nike-shoes-42, order-2026-08-a).
+func looksLikeValue(s string) bool {
+	seps := 0
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			return true
+		case r == '-' || r == '_':
+			seps++
+		}
+	}
+	return seps >= slugMinSeparators
+}
 
 // foldSiblings — parent 의 리프 자식들이 조건을 만족하면 {slug} 하나로 병합한다.
 // 호출자가 t.mu 를 쥐고 있어야 한다. parent 가 호스트 루트면 아무것도 하지 않는다.
@@ -151,7 +176,7 @@ func foldSiblings(parent *node, isHostRoot bool) {
 	var cand []string
 	hits := 0
 	for seg, ch := range parent.children {
-		if isTemplate(seg) || len(ch.children) > 0 || len(ch.params) > 0 {
+		if isTemplate(seg) || len(ch.children) > 0 || len(ch.params) > 0 || !looksLikeValue(seg) {
 			continue
 		}
 		cand = append(cand, seg)

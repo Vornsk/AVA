@@ -196,6 +196,54 @@ func TestFoldSiblingsProtectsSubtree(t *testing.T) {
 	}
 }
 
+// TestFoldSiblingsProtectsRestCollections — REST 리소스 컬렉션은 접히면 안 된다 (회귀).
+// juice-shop /api 밑 12종 이상의 리소스가 {slug} 로 접혀 하네스 재현율이
+// 41.9% → 22.6% 로 무너진 적이 있다(#24). looksLikeValue 가드의 회귀 테스트.
+func TestFoldSiblingsProtectsRestCollections(t *testing.T) {
+	tr := NewTree()
+	res := []string{
+		"Products", "Users", "Feedbacks", "Complaints", "Challenges", "BasketItems",
+		"Quantitys", "Recycles", "Cards", "Addresss", "Deliverys", "SecurityQuestions",
+		"SecurityAnswers", "PrivacyRequests",
+	}
+	if len(res) < slugMinSiblings {
+		t.Fatalf("회귀 재현에 형제 %d개 이상 필요", slugMinSiblings)
+	}
+	for _, r := range res {
+		tr.Record("https", "h.com", "GET", "/api/"+r, nil, false, "")
+	}
+	// 하이픈 하나짜리 라우트명도 값이 아니다.
+	tr.Record("https", "h.com", "GET", "/rest/admin/application-configuration", nil, false, "")
+	tr.Record("https", "h.com", "GET", "/rest/user/reset-password", nil, false, "")
+
+	if n := childCount(tr, "h.com", "/api"); n != len(res) {
+		t.Errorf("REST 리소스가 접힘: /api 자식 %d개 (want %d)", n, len(res))
+	}
+	for _, want := range []string{"/api/Products", "/api/Feedbacks", "/api/SecurityQuestions",
+		"/rest/admin/application-configuration", "/rest/user/reset-password"} {
+		if _, ok := tr.Find("h.com", want); !ok {
+			t.Errorf("%s 가 사라짐 — 재현율 회귀", want)
+		}
+	}
+}
+
+// TestLooksLikeValue — 값 표식 판정 (라우트명 vs slug 값).
+func TestLooksLikeValue(t *testing.T) {
+	value := []string{"my-first-post", "red-nike-shoes-42", "order-2026-08-a", "Aashish683", "v1_beta_2", "post7"}
+	route := []string{"Products", "SecurityQuestions", "application-configuration", "reset-password",
+		"search", "whoami", "order-history", "login"}
+	for _, s := range value {
+		if !looksLikeValue(s) {
+			t.Errorf("looksLikeValue(%q) = false, want true (값)", s)
+		}
+	}
+	for _, s := range route {
+		if looksLikeValue(s) {
+			t.Errorf("looksLikeValue(%q) = true, want false (라우트명)", s)
+		}
+	}
+}
+
 // TestFoldSiblingsLowDiversity — 같은 값이 반복되면(고유비율 낮음) 라우트명이므로 접지 않는다.
 func TestFoldSiblingsLowDiversity(t *testing.T) {
 	tr := NewTree()
