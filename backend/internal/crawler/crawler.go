@@ -32,6 +32,7 @@ type Options struct {
 	MaxPages int    // 가져올 최대 페이지 (기본 200)
 	MaxDepth int    // 시작 URL로부터 최대 깊이 (기본 5)
 	Mode     string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
+	NoIngest bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
@@ -42,6 +43,7 @@ type Result struct {
 	Pages   int    `json:"pages"`  // 가져온 페이지 수
 	Found   int    `json:"found"`  // 발견한 고유 엔드포인트 수
 	JS      int    `json:"js"`     // 분석한 JS 번들 수 (SPA 정적 추출)
+	Spec    int    `json:"spec"`   // 명세 인제스트로 등록한 엔드포인트 수 (#25)
 	Mode    string `json:"mode"`   // static | headless | ingest
 	Queued  int    `json:"queued"` // 남은 큐
 	Errors  int    `json:"errors"`
@@ -143,13 +145,32 @@ type item struct {
 	depth int
 }
 
+// ingestOnce — 크롤 시작 시 명세를 1회 인제스트한다 (이슈 #25).
+// 링크를 따라가기 전에 대상이 스스로 공개한 경로를 먼저 확보하면, 이후 크롤이 만나는
+// 구체값(/users/v1/alice)이 명세가 선언한 변수 자리로 흡수돼 트리가 갈라지지 않는다.
+func (j *job) ingestOnce(seed string, opts Options, client *http.Client) {
+	if opts.NoIngest || j.ctx.Err() != nil {
+		return
+	}
+	rep := ingest.Run(j.ctx, seed, client)
+	j.mu.Lock()
+	// 인제스트 요청은 Pages 에 더하지 않는다. MaxPages 는 크롤을 제한하는 예산이지
+	// 명세 프로브를 제한하는 값이 아니다 — 더했더니 프로브 18건이 MaxPages=10 을
+	// 즉시 소진해 크롤이 첫 페이지에서 멈췄다.
+	j.res.Spec = rep.Recorded
+	j.res.Found += rep.Recorded
+	j.res.Errors += rep.Errors
+	j.mu.Unlock()
+}
+
 // runIngest — 명세 인제스트만 수행한다 (이슈 #25, profile=ingest).
 // 링크 크롤을 돌리지 않으므로 "명세만으로 얼마나 찾는가"가 그대로 측정된다.
 func (j *job) runIngest(seed string) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	rep := ingest.Run(j.ctx, seed, client)
 	j.mu.Lock()
-	j.res.Pages = rep.Requests
+	j.res.Pages = rep.Requests // ingest 전용 모드에서는 프로브 수가 곧 요청 수다
+	j.res.Spec = rep.Recorded
 	j.res.Found = rep.Recorded
 	j.res.Errors = rep.Errors
 	j.mu.Unlock()
@@ -162,6 +183,7 @@ func (j *job) runIngest(seed string) {
 
 func (j *job) run(seed string, opts Options) {
 	client := &http.Client{Timeout: 15 * time.Second}
+	j.ingestOnce(seed, opts, client)
 	visited := map[string]bool{}
 	foundEP := map[string]bool{}
 	jsFetched := 0 // 분석한 JS 번들 수(상한 maxJSBundles)
