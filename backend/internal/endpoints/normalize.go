@@ -1,0 +1,276 @@
+// 정찰 정규화 v2 (이슈 #24) — 경로 세그먼트 분류기 + 형제 다양성 클러스터링.
+//
+// v1 은 숫자-only 세그먼트만 {id} 로 접었다. UUID·해시·날짜·base64 경로가 그대로 남아
+// 동일 엔드포인트가 수백 노드로 쪼개졌고(트리 폭발), 스캔 타겟·커버리지 지표가 오염됐다.
+//
+//	· 분류기(classifyToken) : 숫자→{id}, UUID→{uuid}, hex(≥16)→{hash}, YYYY-MM-DD→{date}, base64-ish→{b64}
+//	· 확장자 보존           : main.9f8a7b6c5d4e3f21.js → main.{hash}.js (번들 해시 접기)
+//	· 형제 클러스터링       : 같은 부모 밑 리프 자식이 임계치 초과 + 값 다양성 높으면 {slug} 로 접기
+//	· inferType 와 규칙 공유 : 숫자·UUID 판정 정규식이 한 곳에만 존재 (중복 제거)
+//
+// ★ 측정 제약 (이슈 #22/#24): 벤치 하네스의 채점 키(bench.Canon)는 이 파일에 의존하지 않는다.
+// 이 이슈의 효과는 트리 팽창률(제품 구분 노드 수 ÷ 하네스 canonical 수)로만 관찰한다.
+package endpoints
+
+import (
+	"regexp"
+	"sort"
+	"strings"
+)
+
+// 세그먼트 템플릿 토큰.
+const (
+	tplID   = "{id}"
+	tplUUID = "{uuid}"
+	tplHash = "{hash}"
+	tplDate = "{date}"
+	tplB64  = "{b64}"
+	tplSlug = "{slug}"
+)
+
+var (
+	reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	reDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+	// hex 는 실단어 오폴딩을 피하려 16자 이상만 변수로 간주(세션·토큰·해시). 하네스 Canon 과 동일 기준.
+	reHex = regexp.MustCompile(`^[0-9a-fA-F]{16,}$`)
+	// base64-ish 는 charset 만으로는 일반 slug(application-configuration)와 구분되지 않는다.
+	// → 20자 이상 + 숫자 포함 + 대문자 포함을 모두 요구해 소문자 slug 를 배제한다.
+	reB64 = regexp.MustCompile(`^[A-Za-z0-9+/_=-]{20,}$`)
+
+	reEmail = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
+	// 확장자: 마지막 점 뒤 1~5자 영숫자 (js, css, html, json …).
+	reExt = regexp.MustCompile(`^[A-Za-z0-9]{1,5}$`)
+)
+
+// classifyToken — 토큰 하나를 템플릿으로 분류한다. 가변값이 아니면 (,false).
+// inferType(파라미터 값 타입추정)과 경로 정규화가 공유하는 단일 규칙 지점이다.
+func classifyToken(s string) (string, bool) {
+	switch {
+	case s == "":
+		return "", false
+	case reDate.MatchString(s): // 날짜가 숫자보다 먼저 (2026-08-18 은 hex 도 숫자도 아님)
+		return tplDate, true
+	case isAllDigits(s):
+		return tplID, true
+	case reUUID.MatchString(s):
+		return tplUUID, true
+	case reHex.MatchString(s): // dash 없는 32자 UUID 도 여기로 (hex ≥16)
+		return tplHash, true
+	case isBase64ish(s):
+		return tplB64, true
+	}
+	return "", false
+}
+
+// isBase64ish — base64/base64url 로 보이는가. 소문자-하이픈 slug 오폴딩 방지용 추가 조건 포함.
+func isBase64ish(s string) bool {
+	if !reB64.MatchString(s) {
+		return false
+	}
+	var hasDigit, hasUpper bool
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+			hasDigit = true
+		case r >= 'A' && r <= 'Z':
+			hasUpper = true
+		}
+	}
+	return hasDigit && hasUpper
+}
+
+// classifySegment — 경로 세그먼트 하나를 템플릿으로. 가변값이 아니면 원본 그대로.
+// 세그먼트 전체가 분류되지 않으면 점(.)으로 쪼개 부분 분류를 시도한다
+// (예: main.9f8a7b6c5d4e3f21.js → main.{hash}.js — 번들 해시).
+func classifySegment(s string) string {
+	if tpl, ok := classifyToken(s); ok {
+		return tpl
+	}
+	if !strings.Contains(s, ".") {
+		return s
+	}
+	parts := strings.Split(s, ".")
+	changed := false
+	for i, p := range parts {
+		if i == len(parts)-1 && reExt.MatchString(p) {
+			continue // 마지막 확장자는 보존 (.js/.json — 파일 타입 정보)
+		}
+		if tpl, ok := classifyToken(p); ok {
+			parts[i] = tpl
+			changed = true
+		}
+	}
+	if !changed {
+		return s
+	}
+	return strings.Join(parts, ".")
+}
+
+// isTemplate — 이미 접힌 세그먼트인가 ({id}, {slug} …).
+func isTemplate(s string) bool {
+	return len(s) >= 2 && s[0] == '{' && s[len(s)-1] == '}'
+}
+
+// NormalizePath — 가변 세그먼트를 템플릿으로 치환해 중복 제거 (v2, 이슈 #24).
+// 엔드포인트 트리와 LLM 토큰최소화 dedup(FR-2.3), 크롤러 방문 키가 공용으로 쓴다.
+// 순수 함수 — 형제 클러스터링({slug})은 트리 상태가 필요해 여기가 아니라 foldSiblings 가 한다.
+func NormalizePath(p string) string {
+	segs := strings.Split(p, "/")
+	for i, s := range segs {
+		if s == "" || isTemplate(s) {
+			continue
+		}
+		segs[i] = classifySegment(s)
+	}
+	return strings.Join(segs, "/")
+}
+
+// ── 형제 다양성 클러스터링 ────────────────────────────────────────
+//
+// 같은 부모 밑에 리프 자식이 임계치를 넘도록 많고 값 다양성이 높으면(대부분 1회만 등장)
+// 그 자리는 라우트명이 아니라 값(slug)이라고 보고 {slug} 하나로 접는다.
+//
+// 보수적 설계 (재현율 보호):
+//   - 호스트 루트 직속 자식은 접지 않는다. 루트 세그먼트는 대개 최상위 라우트명이라
+//     접히면 /metrics, /api 같은 실제 엔드포인트가 통째로 사라진다.
+//   - 후보는 자식이 없고(리프) 파라미터도 없는 노드만. 공격면(파라미터)이 있는 노드는 보존.
+//   - 한 번 접힌 부모는 slugged 로 표시해 이후 같은 자리 값은 바로 {slug} 로 흡수한다
+//     (다시 12개가 쌓일 때까지 트리가 재팽창하는 것을 막는다).
+const (
+	slugMinSiblings     = 12  // 접기 발동 최소 형제 수
+	slugMinDistinctRate = 0.8 // 고유비율 = 후보 수 ÷ 후보 총 히트 (재사용 적을수록 값에 가깝다)
+)
+
+// foldSiblings — parent 의 리프 자식들이 조건을 만족하면 {slug} 하나로 병합한다.
+// 호출자가 t.mu 를 쥐고 있어야 한다. parent 가 호스트 루트면 아무것도 하지 않는다.
+func foldSiblings(parent *node, isHostRoot bool) {
+	if isHostRoot {
+		return
+	}
+	var cand []string
+	hits := 0
+	for seg, ch := range parent.children {
+		if isTemplate(seg) || len(ch.children) > 0 || len(ch.params) > 0 {
+			continue
+		}
+		cand = append(cand, seg)
+		hits += ch.count
+	}
+	if len(cand) == 0 {
+		return
+	}
+	if !parent.slugged { // 최초 발동에만 임계치를 요구한다
+		if len(cand) < slugMinSiblings {
+			return
+		}
+		if hits > 0 && float64(len(cand))/float64(hits) < slugMinDistinctRate {
+			return
+		}
+	}
+
+	slug := parent.children[tplSlug]
+	if slug == nil {
+		slug = newNode(tplSlug, parent.path+"/"+tplSlug)
+		parent.children[tplSlug] = slug
+	}
+	for _, seg := range cand {
+		mergeNode(slug, parent.children[seg])
+		delete(parent.children, seg)
+	}
+	parent.slugged = true
+	repath(slug, parent.path)
+}
+
+// mergeNode — src 를 dst 에 흡수한다(같은 템플릿으로 접힌 두 노드의 집계 합산).
+// 처음부터 한 노드에 기록됐을 때와 같은 상태가 되도록 count·seen 을 더해
+// Required(seen == count) 정합을 유지한다.
+func mergeNode(dst, src *node) {
+	for m := range src.methods {
+		dst.methods[m] = true
+	}
+	for name, sp := range src.params {
+		dp := dst.params[name]
+		if dp == nil {
+			dp = &paramAgg{ins: map[string]bool{}}
+			dst.params[name] = dp
+		}
+		for in := range sp.ins {
+			dp.ins[in] = true
+		}
+		if dp.typ == "" {
+			dp.typ = sp.typ
+		}
+		if dp.sample == "" {
+			dp.sample = sp.sample
+		}
+		dp.seen += sp.seen
+	}
+	dst.count += src.count
+	dst.auth = dst.auth || src.auth
+	if dst.verdict == "" {
+		dst.verdict = src.verdict
+	}
+	if dst.firstSeen == "" || (src.firstSeen != "" && src.firstSeen < dst.firstSeen) {
+		dst.firstSeen = src.firstSeen
+	}
+	if src.lastSeen > dst.lastSeen {
+		dst.lastSeen = src.lastSeen
+	}
+	// 재요청용 구체 경로는 더 최근에 본 쪽을 남긴다.
+	if dst.lastPath == "" || (src.lastPath != "" && src.lastSeen >= dst.lastSeen) {
+		dst.lastPath, dst.scheme = src.lastPath, src.scheme
+	}
+	dst.slugged = dst.slugged || src.slugged
+	for seg, sc := range src.children {
+		if dc := dst.children[seg]; dc != nil {
+			mergeNode(dc, sc)
+		} else {
+			dst.children[seg] = sc
+		}
+	}
+}
+
+// repath — 노드 구조가 바뀐 뒤 path 필드를 부모 기준으로 다시 계산한다.
+func repath(n *node, parentPath string) {
+	n.path = parentPath + "/" + n.segment
+	for _, c := range n.children {
+		repath(c, n.path)
+	}
+}
+
+// ── 하위호환: 로드 시 1회 마이그레이션 ────────────────────────────
+//
+// v1 로 저장된 endpoints.json 에는 접히지 않은 구체 세그먼트가 남아 있다.
+// 그대로 두면 같은 엔드포인트가 /u/550e8400-… 과 /u/{uuid} 두 노드로 공존하므로,
+// 로드 직후 한 번 v2 로 재분류하고 같은 템플릿이 된 노드를 병합한다(파일은 다음 Record 때 갱신).
+
+// migrateNode — n 의 자손 세그먼트를 v2 로 재분류·병합하고 형제 클러스터링을 적용한다.
+// n 자신의 segment 는 건드리지 않는다(호스트 루트 보호).
+func migrateNode(n *node, isHostRoot bool) {
+	if len(n.children) == 0 {
+		return
+	}
+	rebuilt := map[string]*node{}
+	for _, seg := range sortedChildKeys(n) {
+		ch := n.children[seg]
+		migrateNode(ch, false)
+		ch.segment = classifySegment(seg)
+		if ex := rebuilt[ch.segment]; ex != nil {
+			mergeNode(ex, ch)
+			continue
+		}
+		rebuilt[ch.segment] = ch
+	}
+	n.children = rebuilt
+	foldSiblings(n, isHostRoot)
+}
+
+// sortedChildKeys — 자식 세그먼트 키(정렬). 병합 순서를 결정론적으로 만든다.
+func sortedChildKeys(n *node) []string {
+	out := make([]string, 0, len(n.children))
+	for k := range n.children {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}

@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -57,6 +56,7 @@ type node struct {
 	verdict   string
 	firstSeen string // 최초 캡처 시각 (RFC3339, FR-2.4 조회 강화 — 이슈 #7)
 	lastSeen  string // 최근 캡처 시각 (RFC3339)
+	slugged   bool   // 이 자리 자식이 {slug} 로 접혔는가 (형제 클러스터링, 이슈 #24)
 	children  map[string]*node
 }
 
@@ -80,12 +80,8 @@ type Tree struct {
 // NewTree — 테넌트용 인메모리 트리(파일 덤프 없음).
 func NewTree() *Tree { return &Tree{roots: map[string]*node{}} }
 
-var (
-	def = &Tree{roots: map[string]*node{}, name: "endpoints.json"} // 기본(전역) 트리
-
-	reUUID  = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-	reEmail = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
-)
+// def — 기본(전역) 트리. 경로 분류 규칙(정규식)은 normalize.go 에 모여 있다(이슈 #24).
+var def = &Tree{roots: map[string]*node{}, name: "endpoints.json"}
 
 // Default — 기본(전역) 트리.
 func Default() *Tree { return def }
@@ -262,16 +258,20 @@ func (t *Tree) Record(scheme, host, method, rawPath string, params []Param, auth
 		root = newNode(host, "")
 		t.roots[host] = root
 	}
-	cur := root
+	cur, parent := root, (*node)(nil)
 	acc := ""
 	for _, s := range splitSegs(norm) {
 		acc += "/" + s
+		if cur.slugged && !isTemplate(s) {
+			s = tplSlug // 이미 접힌 자리 — 새 값도 바로 흡수 (이슈 #24)
+			acc = cur.path + "/" + s
+		}
 		ch, ok := cur.children[s]
 		if !ok {
 			ch = newNode(s, acc)
 			cur.children[s] = ch
 		}
-		cur = ch
+		parent, cur = cur, ch
 	}
 	cur.methods[method] = true
 	cur.lastPath = rawPath
@@ -306,6 +306,11 @@ func (t *Tree) Record(scheme, host, method, rawPath string, params []Param, auth
 	}
 	for name := range namesThisReq {
 		cur.params[name].seen++
+	}
+	// 형제 다양성 클러스터링 — 방금 삽입한 자리의 형제가 값처럼 보이면 {slug} 로 접는다(이슈 #24).
+	// 파라미터 집계 뒤에 호출해야 "파라미터 있는 노드는 보존" 조건이 제대로 걸린다.
+	if parent != nil {
+		foldSiblings(parent, parent == root)
 	}
 	t.mu.Unlock()
 
@@ -510,6 +515,7 @@ type storeNode struct {
 	Verdict   string       `json:"verdict,omitempty"`
 	FirstSeen string       `json:"first_seen,omitempty"` // 이슈 #7
 	LastSeen  string       `json:"last_seen,omitempty"`
+	Slugged   bool         `json:"slugged,omitempty"` // 형제 클러스터링 상태 (이슈 #24)
 	Children  []storeNode  `json:"children,omitempty"`
 }
 
@@ -517,7 +523,7 @@ func toStore(n *node) storeNode {
 	s := storeNode{
 		Segment: n.segment, Path: n.path, LastPath: n.lastPath, Scheme: n.scheme,
 		Methods: sortedKeys(n.methods), Count: n.count, Auth: n.auth, Verdict: n.verdict,
-		FirstSeen: n.firstSeen, LastSeen: n.lastSeen,
+		FirstSeen: n.firstSeen, LastSeen: n.lastSeen, Slugged: n.slugged,
 	}
 	pnames := make([]string, 0, len(n.params))
 	for name := range n.params {
@@ -542,7 +548,7 @@ func toStore(n *node) storeNode {
 func fromStore(s storeNode) *node {
 	n := newNode(s.Segment, s.Path)
 	n.lastPath, n.scheme, n.count, n.auth, n.verdict = s.LastPath, s.Scheme, s.Count, s.Auth, s.Verdict
-	n.firstSeen, n.lastSeen = s.FirstSeen, s.LastSeen
+	n.firstSeen, n.lastSeen, n.slugged = s.FirstSeen, s.LastSeen, s.Slugged
 	for _, m := range s.Methods {
 		n.methods[m] = true
 	}
@@ -597,7 +603,13 @@ func (t *Tree) Load() {
 	}
 	t.mu.Lock()
 	for _, s := range roots {
-		t.roots[s.Segment] = fromStore(s)
+		// v1 로 저장된 트리를 v2 규칙으로 1회 재분류·병합한다(이슈 #24 하위호환).
+		// 파일은 여기서 다시 쓰지 않는다 — 다음 Record 의 dump 때 자연히 갱신된다.
+		r := fromStore(s)
+		migrateNode(r, true)
+		repath(r, "")
+		r.path, r.segment = "", s.Segment // 호스트 루트는 path 없음
+		t.roots[s.Segment] = r
 	}
 	t.mu.Unlock()
 }
@@ -607,34 +619,27 @@ func Load() { def.Load() }
 
 // ── 헬퍼 ──────────────────────────────────────────────────────────
 
-// NormalizePath — 숫자로만 된 세그먼트를 {id}로 치환해 중복 제거.
-// 엔드포인트 트리와 LLM 토큰최소화 dedup(FR-2.3)이 공용으로 쓴다.
-func NormalizePath(p string) string {
-	segs := strings.Split(p, "/")
-	for i, s := range segs {
-		if s != "" && isAllDigits(s) {
-			segs[i] = "{id}"
-		}
-	}
-	return strings.Join(segs, "/")
-}
+// NormalizePath 는 normalize.go 로 옮겼다 (v2, 이슈 #24).
 
 // inferType — 값에서 타입 추정 (§3 타입추정).
+// 숫자·UUID 판정은 경로 세그먼트 분류기(classifyToken)와 규칙을 공유한다(이슈 #24 중복 제거).
+// 반환 집합은 v1 그대로 유지한다(int|bool|uuid|email|string) — 저장·표시 계약을 바꾸지 않기 위해.
 func inferType(v string) string {
 	switch {
 	case v == "":
 		return "string"
-	case isAllDigits(v):
-		return "int"
 	case v == "true" || v == "false":
 		return "bool"
-	case reUUID.MatchString(v):
-		return "uuid"
 	case reEmail.MatchString(v):
 		return "email"
-	default:
-		return "string"
 	}
+	switch tpl, _ := classifyToken(v); tpl {
+	case tplID:
+		return "int"
+	case tplUUID:
+		return "uuid"
+	}
+	return "string"
 }
 
 func first(vs []string) string {
