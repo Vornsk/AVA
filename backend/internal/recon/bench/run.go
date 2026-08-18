@@ -23,7 +23,7 @@ func authClient() *http.Client {
 // ApplyAuth — gt.Auth 를 전역 injector 에 설정한다(#31). 반환 cleanup 으로 대상 간 격리.
 // 인증 설정이 nil 이면 비인증(기존 동작) — 하위호환.
 func ApplyAuth(a *Auth) func() {
-	auth.Set(auth.Config{})       // 초기화(이전 대상 잔여 제거)
+	auth.Set(auth.Config{})        // 초기화(이전 대상 잔여 제거)
 	auth.SetLogin(auth.LoginSeq{}) // 로그인 시퀀스 초기화
 	if a != nil {
 		auth.Set(auth.Config{Cookies: a.Cookies, Headers: a.Headers})

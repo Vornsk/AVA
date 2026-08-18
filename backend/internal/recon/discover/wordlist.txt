@@ -1,0 +1,182 @@
+# AVA 능동 발견 wordlist (이슈 #27)
+#
+# 자체 작성 — 외부 wordlist 를 인용하지 않아 라이선스 제약이 없다.
+# 공개적으로 알려진 관례 경로만 담는다. 항목마다 왜 넣었는지 분류로 알 수 있게 묶어 두었다.
+#
+# 원칙
+#   · GET 으로 읽어도 부작용이 없는 경로만 넣는다. 삭제·초기화·전송을 유발할 만한 경로는 넣지 않는다
+#     (예: /logout, /reset, /admin/delete 류는 제외 — 능동 탐색이 상태를 바꾸면 안 된다).
+#   · 디렉터리는 슬래시 없이 적는다. 프로브가 그대로 붙인다.
+#   · 한 줄 한 경로. '#' 로 시작하는 줄과 빈 줄은 무시된다.
+#
+# 규모: 아래 목록은 embed 부담과 요청 예산(기본 500건, 120ms/건 ≈ 1분)을 고려해 엄선했다.
+
+# ── 버전관리 노출 ──
+.git/config
+.git/HEAD
+.git/index
+.gitignore
+.svn/entries
+.hg/store
+.bzr/README
+
+# ── 설정·시크릿 ──
+.env
+.env.local
+.env.production
+.env.example
+config
+config.json
+config.yml
+config.yaml
+configuration
+settings.json
+appsettings.json
+web.config
+application.properties
+application.yml
+credentials
+secrets
+secrets.json
+id_rsa
+.npmrc
+.dockerenv
+docker-compose.yml
+Dockerfile
+.aws/credentials
+.ssh/authorized_keys
+
+# ── 백업·아카이브 ──
+backup
+backups
+bak
+old
+tmp
+temp
+dump
+dump.sql
+database.sql
+db.sql
+backup.sql
+backup.zip
+backup.tar.gz
+site.zip
+www.zip
+archive.zip
+db_backup
+.bak
+index.php.bak
+index.html.bak
+web.config.bak
+
+# ── 관리·인증 화면 ──
+admin
+administrator
+admin.php
+admin/login
+adminer.php
+phpmyadmin
+pma
+manager
+management
+console
+dashboard
+cpanel
+webadmin
+wp-admin
+wp-login.php
+login
+signin
+auth
+portal
+
+# ── 로그·진단 ──
+logs
+log
+support/logs
+var/log
+error.log
+access.log
+debug.log
+debug
+trace
+status
+health
+healthz
+livez
+readyz
+metrics
+server-status
+server-info
+actuator
+actuator/health
+actuator/env
+actuator/heapdump
+phpinfo.php
+info.php
+test.php
+
+# ── API·명세 (인제스터(#25)가 못 잡은 변형 보완) ──
+api
+api/v1
+api/v2
+v1
+v2
+rest
+graphql
+graphiql
+swagger
+swagger-ui
+swagger-ui.html
+api-docs
+docs
+redoc
+openapi
+.well-known/security.txt
+.well-known/openid-configuration
+
+# ── 파일 저장소·업로드 ──
+ftp
+files
+file
+upload
+uploads
+uploaded
+media
+assets
+static
+public
+private
+download
+downloads
+data
+storage
+share
+shared
+attachments
+images/uploads
+
+# ── 앱 메타·기타 ──
+readme
+README.md
+CHANGELOG.md
+LICENSE
+robots.txt
+sitemap.xml
+humans.txt
+crossdomain.xml
+clientaccesspolicy.xml
+.DS_Store
+Thumbs.db
+package.json
+composer.json
+composer.lock
+yarn.lock
+bower.json
+Gemfile
+requirements.txt
+go.mod
+encryptionkeys
+keys
+certs
+ssl

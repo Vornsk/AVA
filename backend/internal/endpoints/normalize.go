@@ -38,6 +38,7 @@ const (
 	SrcSpec        = "spec"         // 명세 인제스트 (#25) — 프로브 면제
 	SrcTraffic     = "traffic"      // 프록시 실캡처 — 프로브 면제
 	SrcHeadlessXHR = "headless-xhr" // 헤드리스가 캡처한 XHR/fetch — 프로브 면제
+	SrcDiscover    = "discover"     // 능동 발견 (#27) — 등록 전 실재 확인 완료, 프로브 면제
 	SrcCrawlLink   = "crawl-link"   // 크롤러가 따라간 링크 — 프로브 대상
 	SrcStaticRegex = "static-regex" // JS/HTML 정규식 추출물 — 프로브 대상
 )
@@ -51,10 +52,14 @@ const srcSpec = SrcSpec
 func sourceRank(src string) int {
 	switch src {
 	case SrcSpec:
-		return 5
+		return 6
 	case SrcTraffic, "":
-		return 4
+		return 5
 	case SrcHeadlessXHR:
+		return 4
+	case SrcDiscover:
+		// 실재는 확인됐지만(등록 전 프로브) 실제로 쓰이는지는 모른다 —
+		// 앱이 스스로 호출하는 XHR 보다는 아래, 링크가 가리키는 것보다는 위.
 		return 3
 	case SrcCrawlLink:
 		return 2

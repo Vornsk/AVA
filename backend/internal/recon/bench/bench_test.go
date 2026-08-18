@@ -14,13 +14,13 @@ import (
 func TestCanon(t *testing.T) {
 	cases := map[string]string{
 		"/rest/products/42":                       "/rest/products/{}",
-		"/rest/products/{id}":                     "/rest/products/{}", // GT 플레이스홀더
-		"/rest/basket/:id":                        "/rest/basket/{}",   // :id 스타일
-		"/api/Feedbacks":                          "/api/Feedbacks",    // 정적 세그먼트 보존(대소문자 유지)
-		"/u/550e8400-e29b-41d4-a716-446655440000": "/u/{}",             // uuid
-		"/logs/2026-08-14":                        "/logs/{}",          // date
-		"/t/0123456789abcdef0123":                 "/t/{}",             // hex ≥16
-		"/x/cafe":                                 "/x/cafe",           // 짧은 hex 는 단어로 보존
+		"/rest/products/{id}":                     "/rest/products/{}",     // GT 플레이스홀더
+		"/rest/basket/:id":                        "/rest/basket/{}",       // :id 스타일
+		"/api/Feedbacks":                          "/api/Feedbacks",        // 정적 세그먼트 보존(대소문자 유지)
+		"/u/550e8400-e29b-41d4-a716-446655440000": "/u/{}",                 // uuid
+		"/logs/2026-08-14":                        "/logs/{}",              // date
+		"/t/0123456789abcdef0123":                 "/t/{}",                 // hex ≥16
+		"/x/cafe":                                 "/x/cafe",               // 짧은 hex 는 단어로 보존
 		"/rest/products/search?q=apple":           "/rest/products/search", // 쿼리 제거
 		"/":                                       "/",
 	}
