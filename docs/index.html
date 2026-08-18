@@ -475,6 +475,29 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <p>공용 프록시는 항상 켜져 있고, <strong>엔드포인트 캡처(공격면 기록)만 런타임에 on/off</strong> 합니다 (프로세스·스코프·인증·판단 파이프라인은 영향 없음). 캡처를 끄면 트래픽은 그대로 통과하되 <code>endpoints.json</code>에 새 엔드포인트가 기록되지 않고, 다시 켜면 재개됩니다.</p>
 <ul><li><strong>상태 조회</strong> <code>GET /api/proxy</code> — 리슨 주소·캡처 여부·스코프 호스트 수·누적 캡처 수·공격면 규모</li><li><strong>캡처 토글</strong> <code>POST /api/proxy/capture</code> <code>{on}</code> — 리더(<code>proxy:control</code>), 감사 기록</li><li><strong>MCP</strong> <code>proxy_status</code>(조회) · <code>set_capture</code>(토글, 리더) — 외부 에이전트용</li><li>테넌트 전용 프록시(<a href="#sec-02" data-go="02">02-프로젝트</a>)는 이 토글의 영향을 받지 않습니다(격리 유지)</li></ul>
 <div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p>GUI 연동 완료(이슈 #9) — 위 상태·토글은 정찰 페이지 좌측 <strong>프록시 도구</strong> 카드에서 바로 쓸 수 있고, API·MCP로도 동일하게 제공됩니다. (CA 설치는 OS 신뢰저장소 변경이라 웹에서 실행 불가 → 명령 안내로 제공)</p></div>
+<h3>능동 콘텐츠 발견 (이슈 #27)</h3>
+<p>링크·명세·트래픽 어디에도 안 걸리는 <strong>unlinked 공격면</strong>이 있습니다 — 백업 파일·<code>.git</code>·설정·로그 디렉터리·관리 화면. Juice Shop 실측 기준 <code>/support/logs</code>·<code>/encryptionkeys</code> 는 <strong>디렉터리 목록이 그대로 열려 있는데도</strong> 링크가 없어 크롤·인제스트로는 영원히 못 찾습니다. 능동 발견은 알려진 관례 경로 목록(wordlist)을 직접 찔러 실재하는 것만 등록합니다.</p>
+<h4>★ 기본 비활성 (옵트인)</h4>
+<p>능동 탐색은 <strong>파괴성·소음·법적 경계</strong>가 있어 안전장치가 전제입니다. <code>Options.Discover</code> 를 켜야만 요청이 나가고, <strong>켜지 않으면 한 건도 나가지 않습니다</strong>(테스트로 고정). 웹 API 는 <code>POST /api/crawl</code> 의 <code>discover</code> 파라미터로 켜며, 켜면 일반 crawl 감사에 더해 <code>crawl:discover</code> 감사 기록이 따로 남습니다 — 누가 언제 켰는지, wordlist 몇 항목에 예산 몇 건이었는지.</p>
+<div class="table-wrap"><table><thead><tr><th>안전장치</th><th>내용</th></tr></thead><tbody><tr><td>옵트인</td><td><code>Discover=false</code> 가 기본. 켜지 않으면 프로브 0건</td></tr><tr><td>GET only·비파괴</td><td>wordlist 에 상태를 바꿀 경로(<code>/logout</code>·<code>/reset</code> 류)를 넣지 않음</td></tr><tr><td>스코프 하드</td><td><code>scope.Allowed</code> 로 게이트 (FR-2.1)</td></tr><tr><td>레이트리밋</td><td>크롤러와 같은 120ms/건</td></tr><tr><td>요청 예산</td><td>기본 500건(약 1분). 소진 시 중단하고 <code>Report.Exhausted</code> 로 "부분 확인"을 남김</td></tr><tr><td>감사</td><td><code>crawl:discover</code> 기록</td></tr></tbody></table></div>
+<h4>wordlist</h4>
+<p><code>internal/recon/discover/wordlist.txt</code> 에 <code>go:embed</code> 로 넣어 폐쇄망 단일 exe 를 유지합니다. <strong>자체 작성</strong>이라 외부 라이선스 제약이 없고, 154항목 / 2.7KB 로 embed 부담도 없습니다. 분류별로 묶여 있습니다 — VCS 노출(<code>.git/*</code>)·설정/시크릿(<code>.env</code>·<code>config.*</code>)·백업(<code>backup</code>·<code>*.sql.zip</code>)· 관리 화면(<code>admin</code>·<code>phpmyadmin</code>)·로그/진단(<code>logs</code>·<code>phpinfo.php</code>)·API/명세·파일 저장소·앱 메타.</p>
+<h4>판정은 라이브니스(#26)와 공유한다</h4>
+<p>같은 soft-404 캘리브레이션을 씁니다(<code>internal/recon/probe</code>). 존재할 리 없는 경로로 기준 지문을 잡고, 후보 응답이 같은 모양이면 실재하지 않는 것으로 봅니다. <code>/admin</code> 은 Juice Shop 에 <strong>없지만</strong> SPA catch-all 이라 200 을 주는데, 이렇게 걸러집니다:</p>
+<pre><code>baseline                  200  text/html  9393B
+/admin  /.git/config  /.env  /backup      → 전부 200 9393B (= baseline) → 버림
+/support/logs             200  text/html  8891B  → 다름 → 등록</code></pre>
+<p>라이브니스와 다른 점 두 가지:</p>
+<ul><li><strong>등록 전에 판정합니다.</strong> 라이브니스는 "일단 등록 후 강등"이지만 discover 는 실재를 확인한</li></ul>
+<p>  뒤에만 넣습니다 — 트리에 쓰레기를 넣었다 지우는 것보다 낫고 <code>unverified</code> 노드가 쌓이지 않습니다.</p>
+<ul><li><strong>5xx 를 버립니다.</strong> Juice Shop 은 없는 API 베이스 경로에 <code>500 "Unexpected path: /api"</code> 를 주는데,</li></ul>
+<p>  이건 엔드포인트가 아니라 "그런 경로 없음"의 다른 표현입니다. 라이브니스는 반대로 5xx 를 살립니다   (우연히 터진 실 엔드포인트를 강등하면 재현율 손실) — <strong>두 기능의 리스크 방향이 반대</strong>라 그렇습니다.</p>
+<h4>출처 등급</h4>
+<p>등록분은 <code>source=discover</code> 로 태깅됩니다. 등급은 6단계가 됩니다:</p>
+<pre><code>spec &gt; traffic &gt; headless-xhr &gt; discover &gt; crawl-link &gt; static-regex</code></pre>
+<p>discover 는 "<strong>실재는 확실하나 실제로 쓰이는지는 모른다</strong>"이므로 앱이 스스로 호출하는 XHR 보다 아래, 링크가 가리키는 것보다 위입니다. <strong>등록 전에 이미 실재를 확인했으므로 라이브니스 재프로브 대상이 아닙니다</strong>(<code>NeedsProbe</code>=false) — 안 그러면 방금 찾은 것을 또 찌릅니다.</p>
+<p>재현:</p>
+<pre><code>cd backend &amp;&amp; go test ./internal/recon/discover -v</code></pre>
 <h3>라이브니스 검증 · 출처 신뢰도 (이슈 #26)</h3>
 <p>크롤러가 JS 번들에서 정규식으로 긁어온 경로에는 <strong>실재하지 않는 것</strong>이 섞입니다 — i18n 키·CSS 경로·SPA 클라이언트 라우트가 그대로 스캔 대상이 되면 오탐과 낭비를 만듭니다. Juice Shop <code>static</code>은 페이지를 3개만 가져왔는데 엔드포인트 84개를 발견했고 그중 71건(83.5%)이 오탐이었습니다.</p>
 <h4>출처 신뢰도 등급</h4>

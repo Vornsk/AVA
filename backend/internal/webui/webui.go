@@ -34,6 +34,7 @@ import (
 	"proxypoc/internal/payload"
 	"proxypoc/internal/project"
 	"proxypoc/internal/proxyengine"
+	"proxypoc/internal/recon/discover"
 	"proxypoc/internal/report"
 	"proxypoc/internal/retention"
 	"proxypoc/internal/reverify"
@@ -106,12 +107,12 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/findings", jsonHandler(func() any { return finding.ByProject(activePID()) }))
 	mux.HandleFunc("/api/scanruns", jsonHandler(func() any { return scanengine.RunsByProject(activePID()) }))
 	mux.HandleFunc("/api/coverage", jsonHandler(func() any { return coverage.Report() }))
-	mux.HandleFunc("/api/endpoints", endpointsListHandler)                                  // 필터·검색·페이징 (이슈 #7, 무필터=하위호환)
+	mux.HandleFunc("/api/endpoints", endpointsListHandler)                                             // 필터·검색·페이징 (이슈 #7, 무필터=하위호환)
 	mux.HandleFunc("GET /api/endpoints/tree", jsonHandler(func() any { return endpoints.Snapshot() })) // 풍부한 트리 (이슈 #7)
-	mux.HandleFunc("GET /api/endpoints/detail", endpointDetailHandler)                      // 단일 엔드포인트 상세 (이슈 #7)
-	mux.HandleFunc("GET /api/proxy", jsonHandler(proxyStatus))       // 공용 프록시 상태 (이슈 #5)
-	mux.HandleFunc("POST /api/proxy/capture", proxyCaptureHandler)   // 캡처 on/off (proxy:control, 리더)
-	mux.HandleFunc("/api/crawl", crawlHandler) // GET: 크롤 실행목록 / POST: 크롤 시작(Explore)
+	mux.HandleFunc("GET /api/endpoints/detail", endpointDetailHandler)                                 // 단일 엔드포인트 상세 (이슈 #7)
+	mux.HandleFunc("GET /api/proxy", jsonHandler(proxyStatus))                                         // 공용 프록시 상태 (이슈 #5)
+	mux.HandleFunc("POST /api/proxy/capture", proxyCaptureHandler)                                     // 캡처 on/off (proxy:control, 리더)
+	mux.HandleFunc("/api/crawl", crawlHandler)                                                         // GET: 크롤 실행목록 / POST: 크롤 시작(Explore)
 	mux.HandleFunc("/api/crawl-modes", jsonHandler(func() any {
 		return map[string]any{"headless_available": crawler.HeadlessAvailable()}
 	}))
@@ -125,12 +126,12 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/payloads", jsonHandler(func() any { return payload.Info() }))
 	mux.HandleFunc("/api/llm-decisions", jsonHandler(func() any { return llm.Decisions() }))
 	mux.HandleFunc("/api/rule-candidates", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, advisor.CandidatesLang(langOf(r))) }) // X-Lang 반영(#18)
-	mux.HandleFunc("/api/rules/adopt", ruleAdoptHandler) // POST: 추천 후보를 활성 룰로 채택(rule:promote)
+	mux.HandleFunc("/api/rules/adopt", ruleAdoptHandler)                                                                                     // POST: 추천 후보를 활성 룰로 채택(rule:promote)
 	mux.HandleFunc("/api/checkitems", jsonHandler(func() any { return checklist.Current().CheckItems }))
 	mux.HandleFunc("/api/vulndefs", jsonHandler(func() any { return checklist.Current().Vulns })) // 취약점 카탈로그(name_en 포함, 화면 로케일용 #18)
-	mux.HandleFunc("/api/projects", projectsHandler)               // GET list / POST create (§5.1)
-	mux.HandleFunc("/api/activate-project", activateHandler)       // POST {id} (§5.1)
-	mux.HandleFunc("/api/project-credentials", credentialsHandler) // GET summary / POST set (encrypted, §5.1 FR-1.4)
+	mux.HandleFunc("/api/projects", projectsHandler)                                              // GET list / POST create (§5.1)
+	mux.HandleFunc("/api/activate-project", activateHandler)                                      // POST {id} (§5.1)
+	mux.HandleFunc("/api/project-credentials", credentialsHandler)                                // GET summary / POST set (encrypted, §5.1 FR-1.4)
 	mux.HandleFunc("/api/active-project", jsonHandler(func() any {
 		p, _ := project.Active()
 		return p
@@ -302,19 +303,19 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 // Stats — 대시보드 요약.
 type Stats struct {
-	Endpoints   int      `json:"endpoints"`
-	Hosts       int      `json:"hosts"`
-	Findings    int      `json:"findings"`
-	ScanRuns    int      `json:"scanruns"`
-	Scope       []string `json:"scope"`
-	Schemes     []string `json:"schemes"`
-	SafeMode    bool     `json:"safe_mode"`
-	CATrusted   bool     `json:"ca_trusted"`
-	Rules       int      `json:"rules"`
-	Detectors   int      `json:"detectors"`
-	LLMProvider string   `json:"llm_provider"`
-	RiskProfile string   `json:"risk_profile"`   // 최고 심각도 기반 (high/medium/low/none)
-	RetentionDays int    `json:"retention_days"` // 휴지통 자동 영구삭제 보존기간(일) — D-n 표시용 (이슈 #15)
+	Endpoints     int      `json:"endpoints"`
+	Hosts         int      `json:"hosts"`
+	Findings      int      `json:"findings"`
+	ScanRuns      int      `json:"scanruns"`
+	Scope         []string `json:"scope"`
+	Schemes       []string `json:"schemes"`
+	SafeMode      bool     `json:"safe_mode"`
+	CATrusted     bool     `json:"ca_trusted"`
+	Rules         int      `json:"rules"`
+	Detectors     int      `json:"detectors"`
+	LLMProvider   string   `json:"llm_provider"`
+	RiskProfile   string   `json:"risk_profile"`   // 최고 심각도 기반 (high/medium/low/none)
+	RetentionDays int      `json:"retention_days"` // 휴지통 자동 영구삭제 보존기간(일) — D-n 표시용 (이슈 #15)
 }
 
 // authorize — 현재 사용자가 action 권한이 있는지. 없으면 403 + 감사기록 후 false.
@@ -587,6 +588,8 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			MaxPages int    `json:"max_pages"`
 			MaxDepth int    `json:"max_depth"`
 			Mode     string `json:"mode"`
+			Discover bool   `json:"discover"` // 능동 콘텐츠 발견 옵트인 (#27)
+			Budget   int    `json:"budget"`   // 능동 발견 요청 예산 (0 = 기본값)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Seed == "" {
 			http.Error(w, "seed URL 필요", http.StatusBadRequest)
@@ -596,8 +599,21 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "헤드리스 크롤 불가 — 이 서버에 Chrome/Chromium이 설치돼 있지 않습니다", http.StatusBadRequest)
 			return
 		}
-		res := crawler.Start(in.Seed, crawler.Options{MaxPages: in.MaxPages, MaxDepth: in.MaxDepth, Mode: in.Mode})
+		res := crawler.Start(in.Seed, crawler.Options{
+			MaxPages: in.MaxPages, MaxDepth: in.MaxDepth, Mode: in.Mode,
+			Discover: in.Discover, Budget: in.Budget,
+		})
 		audit.Record(u.Name, string(u.Role), "crawl", in.Seed, "ok", res.ID)
+		// 능동 탐색은 파괴성·소음·법적 경계가 있다. 누가 언제 켰는지 별도로 남긴다 (#27).
+		if in.Discover {
+			budget := in.Budget
+			if budget <= 0 {
+				budget = discover.DefaultBudget
+			}
+			audit.Record(u.Name, string(u.Role), "crawl:discover", in.Seed, "ok",
+				fmt.Sprintf("%s wordlist=%d budget=%d", res.ID, len(discover.Words()), budget))
+			log.Printf("[WEB ] %s(%s) crawl:discover %s budget=%d → %s", u.Name, u.Role, in.Seed, budget, res.ID)
+		}
 		log.Printf("[WEB ] %s(%s) crawl %s → %s", u.Name, u.Role, in.Seed, res.ID)
 		writeJSON(w, res)
 		return
@@ -1101,16 +1117,16 @@ func stats() any {
 	}
 	pid := activePID()
 	return Stats{
-		Endpoints:   len(endpoints.Targets()),
-		Hosts:       len(scope.HostsSnapshot()),
-		Findings:    len(finding.ByProject(pid)),
-		ScanRuns:    len(scanengine.RunsByProject(pid)),
-		Scope:       scope.HostsSnapshot(),
-		Schemes:     schemes,
-		SafeMode:    scanengine.SafeMode(),
-		CATrusted:   trusted,
-		Rules:       len(rules.Snapshot()),
-		Detectors:   len(detector.Catalog()),
+		Endpoints:     len(endpoints.Targets()),
+		Hosts:         len(scope.HostsSnapshot()),
+		Findings:      len(finding.ByProject(pid)),
+		ScanRuns:      len(scanengine.RunsByProject(pid)),
+		Scope:         scope.HostsSnapshot(),
+		Schemes:       schemes,
+		SafeMode:      scanengine.SafeMode(),
+		CATrusted:     trusted,
+		Rules:         len(rules.Snapshot()),
+		Detectors:     len(detector.Catalog()),
 		LLMProvider:   llm.ProviderName(),
 		RiskProfile:   riskProfile(),
 		RetentionDays: retentionDays,
