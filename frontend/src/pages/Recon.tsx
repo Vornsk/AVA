@@ -134,8 +134,9 @@ function CrawlExplore() {
                onKeyDown={(e) => e.key === 'Enter' && start()}
                placeholder={t('recon.crawl.seedPlaceholder')}
                className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1.5 font-mono text-xs" />
-        <button onClick={start} disabled={busy || running}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+        <button onClick={start} disabled={busy || running || !seed.trim()}
+                title={!seed.trim() ? t('recon.crawl.needSeed') : undefined}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
           <Play size={13} /> {busy ? t('recon.crawl.starting') : running ? t('recon.crawl.running') : t('recon.crawl.start')}
         </button>

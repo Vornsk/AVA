@@ -142,6 +142,7 @@ export const ko = {
   'recon.crawl.seedPlaceholder': '시작 URL — 예: http://127.0.0.1:4280/ (스코프 내)',
   'recon.crawl.starting': '시작 중…',
   'recon.crawl.running': '진행 중…',
+  'recon.crawl.needSeed': '먼저 시작 URL을 입력하세요 (스코프 내)',
   'recon.crawl.start': '크롤 시작',
   'recon.crawl.hlTitleOn': 'Chrome로 JS를 실행해 SPA까지 완전 크롤(느림). 렌더된 DOM+XHR/fetch까지 수집',
   'recon.crawl.hlTitleOff': '이 서버에 Chrome/Chromium이 없어 사용 불가',

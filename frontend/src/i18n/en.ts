@@ -143,6 +143,7 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.crawl.seedPlaceholder': 'Seed URL — e.g. http://127.0.0.1:4280/ (in scope)',
   'recon.crawl.starting': 'Starting…',
   'recon.crawl.running': 'Running…',
+  'recon.crawl.needSeed': 'Enter a start URL first (within scope)',
   'recon.crawl.start': 'Start crawl',
   'recon.crawl.hlTitleOn': 'Full crawl running JS via Chrome, including SPAs (slow). Collects rendered DOM plus XHR/fetch.',
   'recon.crawl.hlTitleOff': 'No Chrome/Chromium on this server — unavailable',
