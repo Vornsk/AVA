@@ -28,8 +28,44 @@ const (
 	tplSlug = "{slug}"
 )
 
-// 출처 태그 (이슈 #25). 빈 문자열 = 크롤/프록시 캡처.
-const srcSpec = "spec"
+// 출처 신뢰도 등급 (이슈 #25 → #26). 값이 클수록 믿을 만하다.
+//
+// 등급이 필요한 이유는 "실제로 요청해서 2xx 를 받았다"와 "실재한다"가 다르기 때문이다.
+// SPA 는 없는 경로에도 200 + index.html 을 주므로, 크롤러가 스스로 만들어낸 요청
+// (링크 추종·정규식 추출)은 실재 여부를 따로 확인해야 한다. 반대로 외부에서 들어온
+// 트래픽과 앱이 스스로 호출한 XHR 은 실재의 증거 자체다.
+const (
+	SrcSpec        = "spec"         // 명세 인제스트 (#25) — 프로브 면제
+	SrcTraffic     = "traffic"      // 프록시 실캡처 — 프로브 면제
+	SrcHeadlessXHR = "headless-xhr" // 헤드리스가 캡처한 XHR/fetch — 프로브 면제
+	SrcCrawlLink   = "crawl-link"   // 크롤러가 따라간 링크 — 프로브 대상
+	SrcStaticRegex = "static-regex" // JS/HTML 정규식 추출물 — 프로브 대상
+)
+
+// srcSpec — 패키지 내부 별칭 (#25 코드 호환).
+const srcSpec = SrcSpec
+
+// sourceRank — 출처 등급의 서열. 병합 시 높은 쪽이 이긴다.
+// 빈 문자열("")은 출처를 기록하지 않던 시절의 값이자 프록시 캡처의 기본값이라
+// traffic 과 같은 등급으로 본다(프로브 면제) — 하위호환.
+func sourceRank(src string) int {
+	switch src {
+	case SrcSpec:
+		return 5
+	case SrcTraffic, "":
+		return 4
+	case SrcHeadlessXHR:
+		return 3
+	case SrcCrawlLink:
+		return 2
+	case SrcStaticRegex:
+		return 1
+	}
+	return 0
+}
+
+// NeedsProbe — 이 출처가 실재 여부 검증(라이브니스 프로브) 대상인가 (이슈 #26).
+func NeedsProbe(src string) bool { return src == SrcCrawlLink || src == SrcStaticRegex }
 
 var (
 	reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
@@ -291,8 +327,14 @@ func mergeNode(dst, src *node) {
 	if dst.lastPath == "" || (src.lastPath != "" && src.lastSeen >= dst.lastSeen) {
 		dst.lastPath, dst.scheme = src.lastPath, src.scheme
 	}
-	if dst.source == "" {
-		dst.source = src.source // "spec" 은 병합 뒤에도 유지 (이슈 #25)
+	// 출처는 더 높은 등급이 이긴다 (이슈 #26). 등급이 2종이던 시절에는 "비어 있으면 채운다"로
+	// 충분했지만, 5단계가 되면 static-regex 노드에 traffic 노드가 병합될 때 낮은 등급이 남는다.
+	if sourceRank(src.source) > sourceRank(dst.source) {
+		dst.source = src.source
+	}
+	// 하나라도 실재가 확인됐으면 verified 다.
+	if !src.unverified {
+		dst.unverified = false
 	}
 	if dst.varChild == "" {
 		dst.varChild, dst.varSpec = src.varChild, src.varSpec

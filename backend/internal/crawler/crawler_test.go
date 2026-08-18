@@ -72,6 +72,13 @@ func TestCrawlSPA_EndToEnd(t *testing.T) {
 			_, _ = w.Write([]byte(`fetch("/api/profile?id=1"); axios.post("/api/logout");`))
 			return
 		}
+		// 실재하는 API 는 JSON 을 준다. 라이브니스 검증(#26)이 SPA 셸과 구분하는 근거이므로
+		// 셸로 뭉뚱그리면 정규식으로 발굴한 /api/profile 이 실재하지 않는 것으로 강등된다.
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":1,"name":"alice"}`))
+			return
+		}
 		// SPA 셸: 링크 없이 JS 번들만(정적 크롤러는 여기서 막힘).
 		_, _ = w.Write([]byte(`<html><body><div id="root"></div><script src="/app.js"></script></body></html>`))
 	})

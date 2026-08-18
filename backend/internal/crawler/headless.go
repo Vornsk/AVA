@@ -14,6 +14,7 @@ import (
 	"github.com/chromedp/chromedp"
 
 	"proxypoc/internal/auth"
+	"proxypoc/internal/endpoints"
 	"proxypoc/internal/scope"
 )
 
@@ -74,8 +75,8 @@ func (j *job) runHeadless(seed string, opts Options) {
 	foundEP := map[string]bool{}
 	queue := []item{{seed, 0}}
 
-	recordFound := func(eu *url.URL) {
-		recordURL(eu, "GET")
+	recordFound := func(eu *url.URL, source string) {
+		recordURL(eu, "GET", source)
 		epk := eu.Host + eu.Path
 		if !foundEP[epk] {
 			foundEP[epk] = true
@@ -98,7 +99,7 @@ func (j *job) runHeadless(seed string, opts Options) {
 				continue
 			}
 			if ok, _ := scope.Allowed(hu.Hostname(), hu.Path); ok {
-				recordFound(hu)
+				recordFound(hu, endpoints.SrcHeadlessXHR) // 앱이 실제로 호출한 XHR/fetch
 			}
 		}
 	}
@@ -135,8 +136,8 @@ func (j *job) runHeadless(seed string, opts Options) {
 			continue
 		}
 
-		recordFound(u)
-		drainNet() // 이 페이지가 부른 XHR/fetch
+		recordFound(u, endpoints.SrcCrawlLink) // 렌더된 DOM 링크를 따라간 것
+		drainNet()                             // 이 페이지가 부른 XHR/fetch
 		if pages >= opts.MaxPages {
 			break
 		}
@@ -149,11 +150,11 @@ func (j *job) runHeadless(seed string, opts Options) {
 			}
 		}
 		for _, f := range forms {
-			recordForm(f)
+			recordForm(f, endpoints.SrcCrawlLink)
 		}
 		for _, ep := range extractAPIEndpoints(html, u) {
 			if eu, e := url.Parse(ep); e == nil {
-				recordFound(eu)
+				recordFound(eu, endpoints.SrcStaticRegex) // 렌더된 HTML 정규식 추출물
 			}
 		}
 		j.mu.Lock()
@@ -161,6 +162,7 @@ func (j *job) runHeadless(seed string, opts Options) {
 		j.mu.Unlock()
 		time.Sleep(120 * time.Millisecond)
 	}
+	j.verifyOnce(opts, &http.Client{Timeout: 15 * time.Second}) // 실재 검증 (#26)
 	j.setStatus("완료")
 }
 

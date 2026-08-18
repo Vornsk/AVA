@@ -475,6 +475,26 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <p>공용 프록시는 항상 켜져 있고, <strong>엔드포인트 캡처(공격면 기록)만 런타임에 on/off</strong> 합니다 (프로세스·스코프·인증·판단 파이프라인은 영향 없음). 캡처를 끄면 트래픽은 그대로 통과하되 <code>endpoints.json</code>에 새 엔드포인트가 기록되지 않고, 다시 켜면 재개됩니다.</p>
 <ul><li><strong>상태 조회</strong> <code>GET /api/proxy</code> — 리슨 주소·캡처 여부·스코프 호스트 수·누적 캡처 수·공격면 규모</li><li><strong>캡처 토글</strong> <code>POST /api/proxy/capture</code> <code>{on}</code> — 리더(<code>proxy:control</code>), 감사 기록</li><li><strong>MCP</strong> <code>proxy_status</code>(조회) · <code>set_capture</code>(토글, 리더) — 외부 에이전트용</li><li>테넌트 전용 프록시(<a href="#sec-02" data-go="02">02-프로젝트</a>)는 이 토글의 영향을 받지 않습니다(격리 유지)</li></ul>
 <div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p>GUI 연동 완료(이슈 #9) — 위 상태·토글은 정찰 페이지 좌측 <strong>프록시 도구</strong> 카드에서 바로 쓸 수 있고, API·MCP로도 동일하게 제공됩니다. (CA 설치는 OS 신뢰저장소 변경이라 웹에서 실행 불가 → 명령 안내로 제공)</p></div>
+<h3>라이브니스 검증 · 출처 신뢰도 (이슈 #26)</h3>
+<p>크롤러가 JS 번들에서 정규식으로 긁어온 경로에는 <strong>실재하지 않는 것</strong>이 섞입니다 — i18n 키·CSS 경로·SPA 클라이언트 라우트가 그대로 스캔 대상이 되면 오탐과 낭비를 만듭니다. Juice Shop <code>static</code>은 페이지를 3개만 가져왔는데 엔드포인트 84개를 발견했고 그중 71건(83.5%)이 오탐이었습니다.</p>
+<h4>출처 신뢰도 등급</h4>
+<p>엔드포인트마다 <strong>어디서 알게 됐는지</strong>를 기록하고, 믿을 수 없는 출처만 실재 여부를 확인합니다.</p>
+<div class="table-wrap"><table><thead><tr><th>등급</th><th>의미</th><th>프로브</th></tr></thead><tbody><tr><td><code>spec</code></td><td>명세 인제스트 (#25)</td><td>면제</td></tr><tr><td><code>traffic</code></td><td>프록시 실캡처 — 외부에서 들어온 트래픽</td><td>면제</td></tr><tr><td><code>headless-xhr</code></td><td>헤드리스가 캡처한 XHR/fetch — 앱이 스스로 호출</td><td>면제</td></tr><tr><td><code>crawl-link</code></td><td>크롤러가 따라간 링크</td><td><strong>대상</strong></td></tr><tr><td><code>static-regex</code></td><td>JS/HTML 정규식 추출물</td><td><strong>대상</strong></td></tr></tbody></table></div>
+<p><strong>"실제로 요청해서 2xx를 받았다"와 "실재한다"는 다릅니다.</strong> SPA는 없는 경로에도 200을 주므로, 크롤러가 스스로 만들어낸 요청(링크 추종·정규식 추출)은 따로 확인해야 합니다. 반대로 외부에서 들어온 트래픽과 앱이 스스로 호출한 XHR은 실재의 증거 자체라 면제합니다.</p>
+<p>출처를 남기지 않던 시절의 값(<code>""</code>)은 프록시 캡처의 기본값이라 <code>traffic</code>과 같은 등급으로 봅니다. 노드가 병합될 때는 <strong>더 높은 등급이 이깁니다</strong>.</p>
+<h4>soft-404 판정</h4>
+<p>상태코드로는 판정할 수 없습니다. 그래서 먼저 <strong>존재할 리 없는 경로 2개로 baseline</strong>을 잡고, 후보 응답이 그 baseline과 같은 모양(상태코드 · content-type · 본문 해시/길이 ±2%)이면 실재하지 않는 것으로 봅니다.</p>
+<div class="table-wrap"><table><thead><tr><th>응답</th><th>판정</th></tr></thead><tbody><tr><td>404 / 410</td><td>강등</td></tr><tr><td><strong>401 / 403</strong></td><td><strong>실재</strong> — 인증 벽 뒤 엔드포인트입니다</td></tr><tr><td>5xx</td><td>실재 — 서버 오류는 부재의 증거가 아닙니다</td></tr><tr><td>3xx</td><td>실재</td></tr><tr><td>2xx + baseline과 같은 모양</td><td>강등 (soft-404)</td></tr></tbody></table></div>
+<p>판정을 포기하는 경우도 둘 있습니다. <strong>정직하게 404를 주는 서버</strong>는 baseline이 필요 없고, <strong>응답이 매번 다른 서버</strong>는 비교가 불가능하므로 아무것도 강등하지 않습니다. 근거 없는 강등은 하지 않습니다.</p>
+<p><code>HEAD</code> 대신 <code>GET</code>을 씁니다 — soft-404는 본문 비교가 필요한데 HEAD는 본문도 <code>Content-Length</code>도 없을 수 있습니다. 본문을 1MB로 자르고 크롤러와 같은 120ms 레이트리밋을 겁니다.</p>
+<p><strong>루트 경로(<code>/</code>)는 강등하지 않습니다.</strong> SPA 셸 HTML은 곧 <code>/</code>의 진짜 내용이라 baseline과 같은 모양으로 보이는데, 서버가 응답한 이상 루트는 실재합니다. 여기서 걸러내면 크롤 시작점이 사라집니다.</p>
+<h4>삭제가 아니라 강등</h4>
+<p>실재가 확인되지 않으면 트리에서 지우지 않고 <strong><code>unverified</code> 플래그만</strong> 세웁니다. 지우면 왜 제외됐는지 근거가 사라져 재현할 수 없기 때문입니다.</p>
+<ul><li><code>endpoints.Targets()</code> — <code>unverified</code>를 <strong>기본 제외</strong>합니다(스캔 대상에서 빠짐)</li><li><code>endpoints.TargetsAll()</code> — 강등분까지 전부. 진단·감사용</li><li>강등된 노드가 나중에 <strong>면제 등급으로 다시 잡히면 복구</strong>됩니다(실 트래픽이 왔다 = 실재한다)</li></ul>
+<h4>언제 도는가</h4>
+<p>크롤(<code>static</code>/<code>headless</code>)이 끝나면 자동으로 1회 검증합니다. <code>Options.NoVerify</code>로 끌 수 있고, 결과는 <code>Result.Demoted</code>(강등 수)로 보고됩니다.</p>
+<p>재현:</p>
+<pre><code>cd backend &amp;&amp; go test ./internal/recon/liveness -v</code></pre>
 <h3>스펙 인제스터 (이슈 #25)</h3>
 <p>링크를 따라가는 크롤만으로는 <strong>링크가 없는 API</strong>를 찾을 수 없습니다. VAmPI 같은 순수 REST API는 크롤 재현율이 0%였습니다. 인제스터는 대상이 <strong>스스로 공개하는 명세</strong>를 읽어 엔드포인트를 얻습니다 (<code>backend/internal/recon/ingest/</code>). OpenAPI 한 파일이면 수백 페이지 크롤보다 정확한 경로·메서드·파라미터·타입을 한 번에 줍니다. Chrome이 필요 없어 <strong>폐쇄망 정적 SPA 대응의 핵심</strong>이기도 합니다.</p>
 <div class="table-wrap"><table><thead><tr><th>수집기</th><th>대상</th><th>얻는 것</th></tr></thead><tbody><tr><td>robots.txt</td><td><code>/robots.txt</code></td><td><code>Allow</code>/<code>Disallow</code> 경로 (와일드카드 규칙 제외)</td></tr><tr><td>sitemap.xml</td><td>robots의 <code>Sitemap:</code> 또는 <code>/sitemap.xml</code></td><td><code>&lt;loc&gt;</code> 경로. <code>sitemapindex</code> 중첩 재귀(깊이 3)</td></tr><tr><td>OpenAPI/Swagger</td><td>후보 8종 프로브</td><td>paths·methods·parameters·requestBody (타입·required 포함)</td></tr><tr><td>GraphQL</td><td><code>/graphql</code> 계열 3종</td><td>introspection 성공 시 경로를 공격면으로 등록</td></tr><tr><td>소스맵</td><td><code>&lt;script src&gt;</code> + <code>.map</code></td><td><code>sourcesContent</code>에서 API 경로 재추출</td></tr></tbody></table></div>

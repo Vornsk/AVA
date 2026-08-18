@@ -24,6 +24,7 @@ import (
 	"proxypoc/internal/auth"
 	"proxypoc/internal/endpoints"
 	"proxypoc/internal/recon/ingest"
+	"proxypoc/internal/recon/liveness"
 	"proxypoc/internal/scope"
 )
 
@@ -33,19 +34,21 @@ type Options struct {
 	MaxDepth int    // 시작 URL로부터 최대 깊이 (기본 5)
 	Mode     string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
 	NoIngest bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
+	NoVerify bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
 type Result struct {
 	ID      string `json:"id"`
 	Seed    string `json:"seed"`
-	Status  string `json:"status"` // 진행 | 완료 | 중단
-	Pages   int    `json:"pages"`  // 가져온 페이지 수
-	Found   int    `json:"found"`  // 발견한 고유 엔드포인트 수
-	JS      int    `json:"js"`     // 분석한 JS 번들 수 (SPA 정적 추출)
-	Spec    int    `json:"spec"`   // 명세 인제스트로 등록한 엔드포인트 수 (#25)
-	Mode    string `json:"mode"`   // static | headless | ingest
-	Queued  int    `json:"queued"` // 남은 큐
+	Status  string `json:"status"`  // 진행 | 완료 | 중단
+	Pages   int    `json:"pages"`   // 가져온 페이지 수
+	Found   int    `json:"found"`   // 발견한 고유 엔드포인트 수
+	JS      int    `json:"js"`      // 분석한 JS 번들 수 (SPA 정적 추출)
+	Spec    int    `json:"spec"`    // 명세 인제스트로 등록한 엔드포인트 수 (#25)
+	Demoted int    `json:"demoted"` // 라이브니스 검증에서 강등한 엔드포인트 수 (#26)
+	Mode    string `json:"mode"`    // static | headless | ingest
+	Queued  int    `json:"queued"`  // 남은 큐
 	Errors  int    `json:"errors"`
 	Started string `json:"started"`
 }
@@ -163,6 +166,19 @@ func (j *job) ingestOnce(seed string, opts Options, client *http.Client) {
 	j.mu.Unlock()
 }
 
+// verifyOnce — 크롤 종료 시 실재 여부를 검증한다 (이슈 #26).
+// 정규식 추출물·링크 추종 결과만 프로브하고, 실재가 확인되지 않으면 강등한다(삭제 아님).
+func (j *job) verifyOnce(opts Options, client *http.Client) {
+	if opts.NoVerify || j.ctx.Err() != nil {
+		return
+	}
+	rep := liveness.Run(j.ctx, endpoints.Default(), client)
+	j.mu.Lock()
+	j.res.Demoted = rep.Demoted
+	j.res.Errors += rep.Errors
+	j.mu.Unlock()
+}
+
 // runIngest — 명세 인제스트만 수행한다 (이슈 #25, profile=ingest).
 // 링크 크롤을 돌리지 않으므로 "명세만으로 얼마나 찾는가"가 그대로 측정된다.
 func (j *job) runIngest(seed string) {
@@ -222,8 +238,8 @@ func (j *job) run(seed string, opts Options) {
 		}
 
 		// 엔드포인트 등록 (프록시 캡처와 동일 의미)
-		recordFound := func(eu *url.URL) {
-			recordURL(eu, "GET")
+		recordFound := func(eu *url.URL, source string) {
+			recordURL(eu, "GET", source)
 			epk := eu.Host + eu.Path
 			if !foundEP[epk] {
 				foundEP[epk] = true
@@ -232,7 +248,7 @@ func (j *job) run(seed string, opts Options) {
 				j.mu.Unlock()
 			}
 		}
-		recordFound(u)
+		recordFound(u, endpoints.SrcCrawlLink) // 실제로 따라가 2xx 를 받은 링크
 
 		if pages >= opts.MaxPages {
 			break
@@ -246,12 +262,12 @@ func (j *job) run(seed string, opts Options) {
 				}
 			}
 			for _, f := range forms {
-				recordForm(f)
+				recordForm(f, endpoints.SrcCrawlLink)
 			}
 			// SPA 정적 추출: 인라인 JS + 링크된 JS 번들에서 API 엔드포인트 발굴(등록만, 비파괴).
 			for _, ep := range extractAPIEndpoints(body, u) {
 				if eu, e := url.Parse(ep); e == nil {
-					recordFound(eu)
+					recordFound(eu, endpoints.SrcStaticRegex) // 정규식 추출물 — 실재 미확인
 				}
 			}
 			for _, s := range scriptSrcs(body, u) {
@@ -275,7 +291,7 @@ func (j *job) run(seed string, opts Options) {
 				}
 				for _, ep := range extractAPIEndpoints(jsBody, su) {
 					if eu, e := url.Parse(ep); e == nil {
-						recordFound(eu)
+						recordFound(eu, endpoints.SrcStaticRegex) // 정규식 추출물 — 실재 미확인
 					}
 				}
 			}
@@ -285,6 +301,7 @@ func (j *job) run(seed string, opts Options) {
 		j.mu.Unlock()
 		time.Sleep(120 * time.Millisecond) // rate limit (FR-3.2)
 	}
+	j.verifyOnce(opts, client) // 실재하지 않는 추출물 강등 (#26)
 	j.setStatus("완료")
 }
 
@@ -305,16 +322,16 @@ func (j *job) fetch(c *http.Client, u *url.URL) (string, string, error) {
 }
 
 // recordURL — URL 하나를 엔드포인트 트리에 기록(프록시 DoFunc 과 동일 흐름).
-func recordURL(u *url.URL, method string) {
+func recordURL(u *url.URL, method, source string) {
 	req, _ := http.NewRequest(method, u.String(), nil)
 	params := endpoints.ExtractParams(req) // 주입 전 원본 파라미터
 	auth.Default().Inject(req)
 	authReq := req.Header.Get("Cookie") != "" || req.Header.Get("Authorization") != ""
-	endpoints.Record(u.Scheme, u.Host, method, u.Path, params, authReq, "")
+	endpoints.RecordFrom(source, u.Scheme, u.Host, method, u.Path, params, authReq, "")
 }
 
 // recordForm — 발견한 폼을 엔드포인트로 등록(제출하지 않음, 비파괴).
-func recordForm(f form) {
+func recordForm(f form, source string) {
 	fu, err := url.Parse(f.action)
 	if err != nil || (fu.Scheme != "http" && fu.Scheme != "https") {
 		return
@@ -332,7 +349,7 @@ func recordForm(f form) {
 	}
 	// 폼 요청도 인증 동반 여부 반영
 	authReq := auth.Default().Enabled()
-	endpoints.Record(fu.Scheme, fu.Host, f.method, fu.Path, params, authReq, "")
+	endpoints.RecordFrom(source, fu.Scheme, fu.Host, f.method, fu.Path, params, authReq, "")
 }
 
 // ── HTML 링크·폼 추출 ──────────────────────────────────────────────

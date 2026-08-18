@@ -46,6 +46,15 @@ endpoints:
   - { method: GET,  path: "/api/Deliverys" }
   - { method: GET,  path: "/rest/captcha" }
   - { method: GET,  path: "/metrics" }
+  # 라이브니스 검증(#26)에서 실재가 확인된 정답셋 누락 2건.
+  # 판정 기준은 "앱이 처리하는 라우트인가" 다 — 위 /api/Cards·/api/Addresss 도 401 을 주지만
+  # 정답셋에 있다. SPA catch-all(text/html 9393 bytes)과 구분되는 응답이면 라우트는 실재한다.
+  #   /api/Quantitys : 200 application/json 7628B — 실제 재고 데이터
+  #   /api/Recycles  : 200 application/json 76B  — {"data":{"err":"...not supported."}}
+  #     ⚠ GET 은 앱이 명시적으로 거부한다(POST 는 지원). 라우트 자체는 실재하며 공격면이라 포함.
+  #        method 단위로 엄격히 보려면 이 줄을 빼고 아래 근거를 남길 것.
+  - { method: GET,  path: "/api/Quantitys" }
+  - { method: GET,  path: "/api/Recycles" }
   # robots.txt 가 가리키는 디렉터리 목록 (#25 스펙 인제스트로 발견된 정답셋 누락)
   #   실재 확인: curl -s http://localhost:3000/ftp → 11307 bytes, .bak/.json/.md 노출
   #   (SPA catch-all 인 index.html 은 9393 bytes 로 크기가 다르다)
