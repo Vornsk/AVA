@@ -44,7 +44,7 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 |------|------|-----------|------|----------|
 | `juice-shop.yaml` | SPA (REST) | 31 | 앱 라우트 | 아래 표 기록됨 (+ 정규화 v2 #24 before/after) |
 | `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) + #24 회귀 확인 |
-| `vampi.yaml` | OpenAPI 명세 API | 13 | erev0s/VAmPI 스펙 | 아래 표 기록됨(#4 전 재현율 낮음 정상) + #24 회귀 확인 |
+| `vampi.yaml` | OpenAPI 명세 API | 14 | erev0s/VAmPI 스펙 | 아래 표 기록됨(#4 전 재현율 낮음 정상) + #24 회귀 확인 |
 | `vulnlab.yaml` | 자체 회귀 | (템플릿) | (채워야 함) | 라우트 확정 후 |
 
 ## 설계 제약 (중요)
