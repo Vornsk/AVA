@@ -78,8 +78,12 @@
 - `docs/recon-groundtruth/README.md` 의 "단계별 목표"에 있던 **`#3(정규화) 후 P ≥ 40%` 는 미달**로 기록했다.
   juice-shop 의 오탐은 값만 다른 중복 노드가 아니라 **SPA 클라이언트 라우트·정적자산·외부 링크**라,
   정규화가 아니라 **필터의 몫**임이 실측으로 확인됐다 → 라이브니스/필터(#5 계열)로 이월.
-- DVWA·VAmPI 팽창률은 재측정하지 않았다. #24 의 완료기준이 Juice Shop 만 요구했고,
-  DVWA 는 `setup.php` 1회 초기화가 별도로 필요하다.
+- DVWA·VAmPI 도 회귀 확인차 재측정했다(#24 완료기준 밖). **전·후 8행이 한 칸도 다르지 않았다.**
+  DVWA 는 경로가 전부 고정 PHP 파일이라 접을 가변 세그먼트가 없고(팽창률 1.02x/1.01x 유지),
+  VAmPI 는 링크 없는 API 라 크롤이 static 0건·headless 2건뿐이라 팽창률 측정 자체가 성립하지 않는다.
+  → **정규화 v2 가 실제로 이득을 보는 대상은 Juice Shop 뿐**이다.
+  (이번 DVWA 는 `ghcr.io/digininja/dvwa` + `mariadb:10` 구성이라 기존 baseline 의
+  `vulnerables/web-dvwa` 수치와 절대값을 나란히 읽으면 안 된다.)
 
 ---
 

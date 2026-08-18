@@ -43,8 +43,8 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 | 파일 | 성격 | 엔드포인트 | 출처 | baseline |
 |------|------|-----------|------|----------|
 | `juice-shop.yaml` | SPA (REST) | 31 | 앱 라우트 | 아래 표 기록됨 (+ 정규화 v2 #24 before/after) |
-| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) |
-| `vampi.yaml` | OpenAPI 명세 API | 13 | erev0s/VAmPI 스펙 | 아래 표 기록됨(#4 전 재현율 낮음 정상) |
+| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) + #24 회귀 확인 |
+| `vampi.yaml` | OpenAPI 명세 API | 13 | erev0s/VAmPI 스펙 | 아래 표 기록됨(#4 전 재현율 낮음 정상) + #24 회귀 확인 |
 | `vulnlab.yaml` | 자체 회귀 | (템플릿) | (채워야 함) | 라우트 확정 후 |
 
 ## 설계 제약 (중요)
@@ -137,6 +137,42 @@ cd backend && BENCH_GT=../docs/recon-groundtruth/juice-shop.yaml go test ./inter
 > `-count=1` 없이 돌리면 두 번째부터 `go test` 결과 캐시에 걸려 **같은 표가 그대로 다시 나온다**
 > (실행된 것처럼 보이지만 크롤은 돌지 않았다). before 를 재현하려면 레포를 별도 위치에 clone 해
 > `b5f128a` 를 체크아웃한 뒤 같은 명령을 쓴다.
+
+#### DVWA · VAmPI 회귀 확인 (#24)
+
+#24 의 완료기준은 Juice Shop 만 요구하지만, 회귀가 그 앱에만 없다는 보장은 없어 나머지 두 대상도 돌렸다.
+**전·후 8행이 한 칸도 다르지 않았다.**
+
+| app · profile   | disc | TP | FP | FN |   P    |   R    |  F1   | infl  | pages |
+|-----------------|------|----|----|----|--------|--------|-------|-------|-------|
+| dvwa static (전/후)   |  60 | 21 | 39 |  4 | 35.0%  | 84.0%  | 49.4% | 1.02x | 49 |
+| dvwa headless (전/후) |  91 | 22 | 69 |  3 | 24.2%  | 88.0%  | 37.9% | 1.01x | 49 |
+| vampi static (전/후)   |   0 |  0 |  0 | 13 |  0.0%  |  0.0%  |  0.0% |   —   |  1 |
+| vampi headless (전/후) |   2 |  1 |  1 | 12 | 50.0%  |  7.7%  | 13.3% | 1.00x |  1 |
+
+- **DVWA 는 접을 게 없다.** 경로가 `/login.php`·`/vulnerabilities/sqli/` 처럼 전부 고정 문자열이라
+  UUID·해시·날짜 세그먼트가 등장하지 않는다. 팽창률이 전·후 모두 1.02x / 1.01x 로 그대로다
+  (v2 가 **얻은 것도 잃은 것도 없다** = 회귀 없음).
+- **VAmPI 는 측정 자체가 성립하지 않는다.** 링크가 없는 순수 API 라 크롤이 static 0건 / headless 2건만
+  찾는다. 분모가 이래서는 팽창률에 의미가 없다. 이건 정규화가 아니라 **스펙 인제스터(#4)** 의 몫이다.
+- 정리하면 **정규화 v2 가 실제로 이득을 보는 대상은 Juice Shop 뿐**이었고, 이슈가 Juice Shop 만
+  요구한 이유도 이것이다. 나머지 둘에서는 "안 망가졌다"만 확인된다.
+
+> **⚠ 이 DVWA 수치는 위 baseline 표·인증 크롤(#31) 표와 나란히 읽으면 안 된다.**
+> 기존 기록은 `vulnerables/web-dvwa`(MySQL 내장) 이미지였는데, 이번 측정은 그 이미지가 로컬에
+> 없어 **`ghcr.io/digininja/dvwa:latest` + `mariadb:10`** 조합으로 띄웠다. 라우트 구성이 달라
+> 절대 수치가 크게 벌어진다(인증 static 기준 기존 disc 31 · P 64.5% · R 80.0% → 이번 disc 60 ·
+> P 35.0% · R 84.0%). **전·후를 같은 컨테이너에 대고 돌렸으므로 회귀 판정에는 영향이 없다.**
+
+재현(이번 구성 그대로):
+
+```bash
+docker network create dvwanet24
+docker run -d --rm --name dvwadb24 --network dvwanet24 -e MYSQL_ROOT_PASSWORD=dvwa -e MYSQL_DATABASE=dvwa -e MYSQL_USER=dvwa -e MYSQL_PASSWORD='p@ssw0rd' mariadb:10
+docker run -d --rm --name dvwa24 --network dvwanet24 -p 8081:80 -e DB_SERVER=dvwadb24 -e DB_DATABASE=dvwa -e DB_USER=dvwa -e DB_PASSWORD='p@ssw0rd' ghcr.io/digininja/dvwa:latest
+# DB 생성: /setup.php 에서 user_token 을 뽑아 create_db 를 POST (1회)
+docker run -d --rm --name vampi24 -p 5000:5000 erev0s/vampi:latest
+```
 
 **단위 테스트** (분류 규칙 20종 이상 — #24 완료기준 1)
 
