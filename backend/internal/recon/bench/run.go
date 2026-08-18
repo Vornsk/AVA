@@ -79,7 +79,12 @@ func RunProfile(seed, mode string, maxPages int, timeout time.Duration) (disc []
 	}
 
 	start := time.Now()
-	res := crawler.Start(seed, crawler.Options{Mode: mode, MaxPages: maxPages})
+	// discover 프로파일은 능동 발견만 켠 static 크롤이다 (#27). 옵트인이므로 여기서만 켠다.
+	opts := crawler.Options{Mode: mode, MaxPages: maxPages}
+	if mode == "discover" {
+		opts.Mode, opts.Discover = "static", true
+	}
+	res := crawler.Start(seed, opts)
 
 	deadline := time.Now().Add(timeout)
 	for {
