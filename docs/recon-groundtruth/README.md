@@ -42,7 +42,7 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 
 | 파일 | 성격 | 엔드포인트 | 출처 | baseline |
 |------|------|-----------|------|----------|
-| `juice-shop.yaml` | SPA (REST) | 34 | 앱 라우트 | 아래 표 기록됨 (+ #24 · #25 · #26 before/after) |
+| `juice-shop.yaml` | SPA (REST) | 38 | 앱 라우트 | 아래 표 기록됨 (+ #24 · #25 · #26 · #27 before/after) |
 | `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) + #24 · #25 · #26 before/after |
 | `vampi.yaml` | OpenAPI 명세 API | 14 | erev0s/VAmPI 스펙 | 아래 표 기록됨 + **#25 로 R 0% → 100%** · #26 무변화(전부 spec) |
 | `vulnlab.yaml` | 자체 회귀 | (템플릿) | (채워야 함) | 라우트 확정 후 |
@@ -361,6 +361,54 @@ cd backend && BENCH_GT=../docs/recon-groundtruth/juice-shop.yaml go test ./inter
 cd backend && go test ./internal/recon/liveness -v
 ```
 
+### 능동 콘텐츠 발견 (#27) — Juice Shop
+
+wordlist 를 직접 프로브해 unlinked 공격면을 찾는 `discover` 프로파일. **기본 static 크롤과의 차이가
+곧 발견분**이다. 측정: 2026-08-18, `bkimminich/juice-shop:latest`. **정답셋 기준: juice-shop 38**
+(#27 로 unlinked 4건 추가 — 아래 참조).
+
+| profile | disc | TP | FP | FN |   P    |   R    |  F1   | 오탐율 |
+|---------|------|----|----|----|--------|--------|-------|--------|
+| static (기준선) |  44 | 16 | 28 | 22 | 36.4% | 42.1% | 39.0% | 63.6% |
+| **discover**    |  50 | **21** | 29 | **17** | **42.0%** | **55.3%** | **47.7%** | 58.0% |
+
+- **재현율 42.1% → 55.3%, 정밀도 36.4% → 42.0%, F1 39.0% → 47.7%** — 셋 다 올랐다.
+  능동 발견이 unlinked 표면 5건을 새로 찾고(TP 16 → 21) 오탐은 1건만 늘었다.
+- **wordlist 154항목 중 발견 7건**(로그): `/support/logs`·`/encryptionkeys`·`/.well-known/security.txt`·
+  `/api-docs`·`/ftp`·`/metrics`·`/robots.txt`. 뒤 3개는 이미 정답셋에 있어 TP, 앞 4개가 신규다.
+- **soft-404 오탐 0**: 프로브 156건 중 143건을 catch-all(200 text/html 9393B)로 걸러냈다.
+  `/admin`·`/.git/config`·`/.env`·`/backup` 등 SPA 라우트는 한 건도 등록하지 않았다.
+- **5xx 도 버린다**: Juice Shop 은 없는 API 베이스 경로에 `500 "Unexpected path: /api"` 를 주는데,
+  이걸 등록하면 `/api`·`/api/v1`·`/api/v2`·`/rest` 4건이 오탐이 된다. 능동 발견은 5xx 를 등록하지 않는다
+  (라이브니스(#26)는 반대로 5xx 를 살린다 — 리스크 방향이 반대다).
+
+#### 정답셋 확장 (능동 발견이 찾은 unlinked 4건)
+
+전부 실재 확인 후 반영했다. juice-shop 34 → 38.
+
+| 항목 | 응답 | 성격 |
+|---|---|---|
+| `/support/logs` | 200 text/html 8891B | **디렉터리 목록 노출**(로그) |
+| `/encryptionkeys` | 200 text/html 7951B | **디렉터리 목록 노출**(키) |
+| `/.well-known/security.txt` | 200 text/plain 475B | 표준 보안 연락처 |
+| `/api-docs` | 301 → `/api-docs/` (Swagger UI) | API 문서 노출 |
+
+`/support/logs`·`/encryptionkeys` 는 백업·로그가 그대로 열린 디렉터리라 진단 도구가 반드시 찾아야
+하는 표면이다. 링크·명세·트래픽 어디에도 안 걸려 **능동 발견 없이는 도달 불가**였다.
+
+**재현**
+
+```bash
+docker run -d --rm -p 3000:3000 bkimminich/juice-shop
+cd backend && BENCH_GT=../docs/recon-groundtruth/juice-shop.yaml go test ./internal/recon/bench -run ReconBench -count=1 -timeout 1200s -v
+```
+
+**단위 테스트** (discover 8종 — soft-404 오탐 0·옵트인·5xx·예산·스코프)
+
+```bash
+cd backend && go test ./internal/recon/discover -v
+```
+
 ## 목표 (합격선 — 개선 성공 판정 기준)
 
 보안(공격면) 도구는 **재현율이 최우선**이다(엔드포인트를 놓치면 그 취약점을 통째로 못 봄).
@@ -388,4 +436,6 @@ cd backend && go test ./internal/recon/liveness -v
   — **부분 달성**(#26). juice-shop static 정밀도가 18.8% → 36.4% 로 약 2배가 됐지만 60% 에는
   못 미친다. 남은 오탐 28건은 **실재하는 응답을 주는 경로**라 라이브니스로는 더 못 걷어낸다.
   정적자산·SPA 라우트 필터가 남은 몫이다.
+- **#27 능동 발견 후 → 재현율 보강**(unlinked 표면): `discover` 프로파일이 R 42.1% → 55.3% 로,
+  정밀도도 36.4% → 42.0% 로 동반 상승. unlinked 공격면(로그·키 디렉터리)을 새로 찾았다.
 - **최종: R ≥ 80% · P ≥ 60% · F1 ≥ 0.70 · 팽창률 ≤ 1.2x**

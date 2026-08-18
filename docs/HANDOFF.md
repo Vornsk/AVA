@@ -56,7 +56,8 @@
 | #31 | 인증 크롤(세션 주입) — DVWA 재현율 4.0% → 80.0% | `bench.ApplyAuth`, `dvwa.yaml` 로그인 시퀀스 |
 | #24 | 경로 정규화 v2 — UUID/hash/date/b64 분류기 + 형제 클러스터링 | `backend/internal/endpoints/normalize.go` |
 | #25 | 스펙 인제스터 — robots/sitemap/OpenAPI/GraphQL/소스맵 | `backend/internal/recon/ingest/` |
-| **#26** | **라이브니스 검증 + 출처 신뢰도 등급** | `backend/internal/recon/liveness/` |
+| #26 | 라이브니스 검증 + 출처 신뢰도 등급 | `backend/internal/recon/liveness/` |
+| **#27** | **능동 콘텐츠 발견** — embed wordlist + soft-404 재사용 | `backend/internal/recon/discover/` · `probe/` |
 
 **#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
 값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
@@ -85,6 +86,30 @@
 측정 결과: **juice-shop static 오탐 69 → 28(-59%), 정밀도 18.8% → 36.4%, 재현율 47.1% 그대로.**
 dvwa 도 static·headless 둘 다 개선되고 재현율 유지. vampi 는 전부 `spec` 출처라 프로브가 한 건도
 나가지 않았다(면제 동작 증거). **8개 프로파일 전부 재현율이 한 칸도 떨어지지 않았다.**
+
+**#27 이 무엇을 바꿨나.** 링크·명세·트래픽 어디에도 안 걸리는 unlinked 공격면(백업·.git·설정·
+로그 디렉터리·관리 화면)을 wordlist 프로브로 찾는다. Juice Shop 실측 기준 /support/logs·
+/encryptionkeys 는 디렉터리 목록이 그대로 열려 있는데도 링크가 없어 지금까지의 정찰로는 도달하지
+못했다. **기본 비활성(옵트인)** — 능동 탐색은 파괴성·소음·법적 경계가 있어 안전장치가 전제다.
+
+측정: discover 프로파일이 static 대비 **R 42.1% → 55.3%, P 36.4% → 42.0%, F1 39.0% → 47.7%**.
+셋 다 올랐다. wordlist 154항목 중 발견 7건(신규 unlinked 4건), soft-404 로 143건을 걸러냈다.
+
+- **soft-404 캘리브레이션을 #26 과 공유한다.** internal/recon/probe 로 분리해 liveness·discover 가
+  같은 판정을 쓴다. 똑같은 것을 두 번 만들면 두 곳이 어긋난다.
+- **등급이 6단계가 됐다**: spec > traffic > headless-xhr > discover > crawl-link > static-regex.
+  discover 는 등록 전에 실재를 확인하므로 라이브니스 재프로브 대상이 아니다(NeedsProbe=false).
+- **wordlist 는 자체 작성**(154항목/2.7KB). 외부 인용이 없어 라이선스 제약이 없다.
+
+> **#27 에서 배운 것 — 두 기능의 리스크 방향이 반대다.**
+> 라이브니스(#26)는 우연히 터진 실 엔드포인트를 강등하면 재현율 손실이라 5xx 를 살린다.
+> 능동 발견(#27)은 프레임워크 오류 페이지를 등록하면 오탐이라 5xx 를 버린다. Juice Shop 이
+> 없는 API 경로에 500 "Unexpected path" 를 주는데, 실측에서 /api·/api/v1·/rest 4건이 이렇게
+> 오탐으로 잡혔다가 걸러졌다. 공용 판정(probe.Exists)은 #26 편(5xx=실재)을 유지하고,
+> discover 쪽에만 5xx 게이트를 뒀다 — 공용 함수를 한쪽 편의로 바꾸면 다른 쪽이 깨진다.
+>
+> **옵트인은 테스트로 못 박아야 한다.** 안 켜면 프로브 0건, 켜면 나감을 양방향으로 확인한다.
+> 이 보장이 깨지면 사용자가 켜지도 않은 능동 탐색이 대상 서버로 나간다 — 법적 경계 문제다.
 
 > **#26 에서 배운 것 — "2xx 를 받았다"와 "실재한다"는 다르다.**
 > SPA 는 없는 경로에도 200 을 주므로, 크롤러가 스스로 만들어낸 요청(링크 추종·정규식 추출)은

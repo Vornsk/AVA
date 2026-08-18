@@ -46,6 +46,16 @@ endpoints:
   - { method: GET,  path: "/api/Deliverys" }
   - { method: GET,  path: "/rest/captcha" }
   - { method: GET,  path: "/metrics" }
+  # 능동 발견(#27)이 wordlist 프로브로 찾은 unlinked 공격면. 링크·명세·트래픽 어디에도
+  # 안 걸려 크롤·인제스트로는 도달 불가. 전부 실재 확인(SPA catch-all 9393B 와 구분됨).
+  #   /support/logs   : 200 text/html 8891B — 디렉터리 목록 노출(로그)
+  #   /encryptionkeys : 200 text/html 7951B — 디렉터리 목록 노출(키)
+  #   /.well-known/security.txt : 200 text/plain 475B — 표준 보안 연락처
+  #   /api-docs       : 301 → /api-docs/ (Swagger UI) — API 문서 노출
+  - { method: GET,  path: "/support/logs" }
+  - { method: GET,  path: "/encryptionkeys" }
+  - { method: GET,  path: "/.well-known/security.txt" }
+  - { method: GET,  path: "/api-docs" }
   # 라이브니스 검증(#26)에서 실재가 확인된 정답셋 누락 2건.
   # 판정 기준은 "앱이 처리하는 라우트인가" 다 — 위 /api/Cards·/api/Addresss 도 401 을 주지만
   # 정답셋에 있다. SPA catch-all(text/html 9393 bytes)과 구분되는 응답이면 라우트는 실재한다.
