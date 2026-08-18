@@ -42,9 +42,9 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 
 | 파일 | 성격 | 엔드포인트 | 출처 | baseline |
 |------|------|-----------|------|----------|
-| `juice-shop.yaml` | SPA (REST) | 32 | 앱 라우트 | 아래 표 기록됨 (+ #24 · #25 before/after) |
-| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) + #24 · #25 회귀 확인 |
-| `vampi.yaml` | OpenAPI 명세 API | 14 | erev0s/VAmPI 스펙 | 아래 표 기록됨 + **#25 로 R 0% → 100%** |
+| `juice-shop.yaml` | SPA (REST) | 32 | 앱 라우트 | 아래 표 기록됨 (+ #24 · #25 · #26 before/after) |
+| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) + #24 · #25 · #26 before/after |
+| `vampi.yaml` | OpenAPI 명세 API | 14 | erev0s/VAmPI 스펙 | 아래 표 기록됨 + **#25 로 R 0% → 100%** · #26 무변화(전부 spec) |
 | `vulnlab.yaml` | 자체 회귀 | (템플릿) | (채워야 함) | 라우트 확정 후 |
 
 ## 설계 제약 (중요)
@@ -267,6 +267,76 @@ cd backend && BENCH_GT=../docs/recon-groundtruth/vampi.yaml go test ./internal/r
 cd backend && go test ./internal/recon/ingest -v
 ```
 
+### 라이브니스 검증 (#26) — 3개 대상 before/after
+
+정규식 추출물·링크 추종 결과의 실재 여부를 프로브해 강등하는 검증을 붙인 효과.
+**이 이슈의 판정 지표는 오탐율**이며, 동시에 **재현율이 떨어지지 않아야** 한다(강등 ≠ 삭제).
+
+측정: 2026-08-18. before = `efc0b8c`(#25 머지 시점), after = 라이브니스 검증.
+
+| 대상 · 프로파일 | disc | TP | FP  | FN |   P    |   R    |  F1   | **오탐율** |
+|-----------------|------|----|-----|----|--------|--------|-------|-----------|
+| juice-shop static (전)   |  85 | 14 |  71 | 18 |  16.5% |  43.8% | 23.9% |  83.5% |
+| **juice-shop static (후)** |  44 | 14 |  **30** | 18 | **31.8%** | **43.8%** | **36.8%** | **68.2%** |
+| juice-shop headless (전) | 244 |  6 | 238 | 26 |   2.5% |  18.8% |  4.3% |  97.5% |
+| juice-shop headless (후) | 242 |  6 | 236 | 26 |   2.5% |  18.8% |  4.4% |  97.5% |
+| dvwa static (전)         |  60 | 21 |  39 |  4 |  35.0% |  84.0% | 49.4% |  65.0% |
+| **dvwa static (후)**     |  56 | 21 |  **35** |  4 | **37.5%** | **84.0%** | **51.9%** | **62.5%** |
+| dvwa headless (전)       |  91 | 22 |  69 |  3 |  24.2% |  88.0% | 37.9% |  75.8% |
+| **dvwa headless (후)**   |  80 | 22 |  **58** |  3 | **27.5%** | **88.0%** | **41.9%** | **72.5%** |
+| vampi (전/후, 3프로파일) | 변화 없음 — 전부 `spec` 출처라 프로브 후보 0건 |||||||
+
+- **juice-shop static 오탐 71 → 30 (−58%), 정밀도 16.5% → 31.8%(약 2배).**
+  **재현율은 43.8% 그대로** — 강등 41건이 전부 오탐에서만 나왔다. TP 는 하나도 잃지 않았다.
+- **dvwa 는 static·headless 둘 다 개선**되고 재현율(84.0% / 88.0%)이 유지됐다.
+- **vampi 는 아무 변화가 없다.** 전부 명세(`spec`) 출처라 프로브가 **한 건도 나가지 않았다** —
+  면제 등급이 의도대로 동작한다는 증거다.
+- **세 대상 8개 프로파일 전부 재현율(TP)이 한 칸도 떨어지지 않았다.**
+
+#### 두 서버 유형이 서로 다른 코드 경로를 탄다
+
+| 대상 | baseline | 판정 근거 | 강등 |
+|---|---|---|---|
+| juice-shop | `200 text/html 9393B` | 본문 시그니처 비교 (soft-404) | 41건 |
+| dvwa | `""` (없음) | 정직한 404 → 상태코드만 | static 4 · headless 11건 |
+
+Juice Shop 은 SPA catch-all 이라 없는 경로에도 200 을 준다. baseline 을 잡아 본문 모양을
+비교해야만 SPA 클라이언트 라우트를 갈라낼 수 있다. 반대로 DVWA 는 정직하게 404 를 주므로
+baseline 자체를 잡지 않고(`baseline=""`) 상태코드로만 판정한다 — **두 경로 모두 실측으로 확인**.
+
+```
+[LIVE] 후보=84 프로브=86 강등=41 면제=1  baseline="localhost:3000 → 200 text/html 9393B"
+[LIVE] 후보=56 프로브=58 강등=4  면제=2  baseline=""          (dvwa static)
+[LIVE] 후보=26 프로브=28 강등=11 면제=62 baseline=""          (dvwa headless)
+```
+
+`면제=62`(dvwa headless)는 헤드리스가 캡처한 XHR 과 실제 방문 페이지가 그만큼 있었다는 뜻이다.
+프로브는 후보 수 + baseline 2건만큼만 나간다.
+
+#### juice-shop headless 는 이 하네스에서 측정되지 않는다
+
+수치가 변하지 않은 이유는 검증이 **동작하지 않아서가 아니라 도달하지 못해서**다.
+하네스는 프로파일마다 120s 타임아웃에 `crawler.Cancel` 을 호출하는데(`run.go:93-94`),
+취소된 컨텍스트에서는 검증을 건너뛴다. 사용자가 "중단"을 눌렀는데 프로브를 수십 건 더 보내는 것은
+중단이 아니므로 이 동작 자체는 옳다.
+
+**DVWA headless 는 92s 로 완주해 검증이 돌았고 11건을 강등했다** — headless 배선이 동작한다는
+증거다. juice-shop headless 를 측정하려면 하네스 프로파일 타임아웃을 늘려야 하며,
+이는 #22 하네스의 몫이라 이 이슈에서는 건드리지 않았다.
+
+**재현**
+
+```bash
+docker run -d --rm -p 3000:3000 bkimminich/juice-shop
+cd backend && BENCH_GT=../docs/recon-groundtruth/juice-shop.yaml go test ./internal/recon/bench -run ReconBench -count=1 -timeout 900s -v
+```
+
+**단위 테스트** (라이브니스 7종 — soft-404·면제·401/403·판정 포기 포함)
+
+```bash
+cd backend && go test ./internal/recon/liveness -v
+```
+
 ## 목표 (합격선 — 개선 성공 판정 기준)
 
 보안(공격면) 도구는 **재현율이 최우선**이다(엔드포인트를 놓치면 그 취약점을 통째로 못 봄).
@@ -291,4 +361,8 @@ cd backend && go test ./internal/recon/ingest -v
   — **VAmPI 달성**(0% → 100%). 다만 **명세를 공개하는 대상에 한한다**: juice-shop 은 robots.txt 만,
   dvwa 는 아무것도 없어 각각 +3.2%p / 0%p 였다. 명세 없는 대상의 재현율은 크롤·필터의 몫으로 남는다.
 - **#5 라이브니스 후 → 정밀도 마무리**(죽은/가짜 엔드포인트 제거): `P ≥ 60%`
+  — **부분 달성**(#26). juice-shop static 정밀도가 16.5% → 31.8% 로 약 2배가 됐지만 60% 에는
+  못 미친다. 남은 오탐 30건은 실재하는 응답을 주는 경로들이라 라이브니스로는 더 못 걷어낸다
+  (일부는 `/api/Quantitys`·`/api/Recycles` 처럼 **정답셋 누락**으로 보인다 — 확인 필요).
+  정적자산·SPA 라우트 필터가 남은 몫이다.
 - **최종: R ≥ 80% · P ≥ 60% · F1 ≥ 0.70 · 팽창률 ≤ 1.2x**
