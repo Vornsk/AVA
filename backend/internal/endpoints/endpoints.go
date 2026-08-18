@@ -607,8 +607,9 @@ func (t *Tree) Load() {
 		// 파일은 여기서 다시 쓰지 않는다 — 다음 Record 의 dump 때 자연히 갱신된다.
 		r := fromStore(s)
 		migrateNode(r, true)
-		repath(r, "")
-		r.path, r.segment = "", s.Segment // 호스트 루트는 path 없음
+		for _, c := range r.children {
+			repath(c, "") // 호스트 루트는 path 가 "" — 자식부터 다시 계산
+		}
 		t.roots[s.Segment] = r
 	}
 	t.mu.Unlock()

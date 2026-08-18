@@ -38,8 +38,9 @@ var (
 	reB64 = regexp.MustCompile(`^[A-Za-z0-9+/_=-]{20,}$`)
 
 	reEmail = regexp.MustCompile(`^[^@\s]+@[^@\s]+\.[^@\s]+$`)
-	// 확장자: 마지막 점 뒤 1~5자 영숫자 (js, css, html, json …).
-	reExt = regexp.MustCompile(`^[A-Za-z0-9]{1,5}$`)
+	// 확장자: 마지막 점 뒤 1~5자, 첫 글자는 영문 (js, css, html, json, png …).
+	// 숫자로 시작하는 조각은 확장자가 아니라 값이다(버전 1.2.3 의 "3" 을 확장자로 보지 않기 위해).
+	reExt = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9]{0,4}$`)
 )
 
 // classifyToken — 토큰 하나를 템플릿으로 분류한다. 가변값이 아니면 (,false).
