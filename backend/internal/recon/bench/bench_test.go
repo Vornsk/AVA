@@ -128,7 +128,8 @@ func benchOne(t *testing.T, gt GroundTruth) {
 		}
 	}
 
-	profiles := []string{"static"}
+	// ingest 는 명세만으로 얼마나 찾는지를 재는 프로파일이다 (이슈 #25). 크롤을 돌리지 않는다.
+	profiles := []string{"ingest", "static"}
 	if crawler.HeadlessAvailable() {
 		profiles = append(profiles, "headless")
 	} else {

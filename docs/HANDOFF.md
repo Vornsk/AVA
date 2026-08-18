@@ -54,7 +54,8 @@
 | #22 | 정찰 벤치 하네스 — ground-truth 대조로 P/R/F1·트리 팽창률 산출 | `backend/internal/recon/bench/`, `docs/recon-groundtruth/` |
 | #23 | 정답셋 4종(juice-shop·dvwa·vampi·vulnlab) + 다중 대상 순회 | `docs/recon-groundtruth/*.yaml` |
 | #31 | 인증 크롤(세션 주입) — DVWA 재현율 4.0% → 80.0% | `bench.ApplyAuth`, `dvwa.yaml` 로그인 시퀀스 |
-| **#24** | **경로 정규화 v2** — UUID/hash/date/b64 분류기 + 형제 클러스터링 | `backend/internal/endpoints/normalize.go` |
+| #24 | 경로 정규화 v2 — UUID/hash/date/b64 분류기 + 형제 클러스터링 | `backend/internal/endpoints/normalize.go` |
+| **#25** | **스펙 인제스터** — robots/sitemap/OpenAPI/GraphQL/소스맵 | `backend/internal/recon/ingest/` |
 
 **#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
 값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
@@ -65,7 +66,26 @@
 **static 은 8회 전부 한 칸도 다르지 않음**(P 15.5% / R 41.9% 유지 = 회귀 없음).
 상세 표와 재현 절차는 `docs/recon-groundtruth/README.md`, 규칙 설명은 `docs/03-정찰.md`.
 
-> **여기서 겪은 실패 — §6에 추가할 값어치가 있다.**
+**#25 가 무엇을 바꿨나.** 링크를 따라가는 크롤만으로는 링크 없는 API 를 찾을 수 없어 VAmPI 재현율이
+0% 였다. 인제스터는 대상이 스스로 공개하는 명세를 읽는다 — `/openapi.json` 한 파일이 VAmPI 정답셋
+14개를 전부 준다. 크롤 시작 시 1회 자동 인제스트하며, 벤치는 `ingest` 프로파일로 명세만 격리 측정한다.
+
+측정 결과: **VAmPI 재현율 0% → 100%**(ingest 프로파일은 P·R·F1 모두 100%). Juice Shop 은 명세가
+없어 `robots.txt` 의 `/ftp` 1건뿐이고 **오탐 0**, DVWA 는 0건에 회귀도 0. 팽창률은 전 대상 1.00x 유지 —
+명세 경로(`/users/v1/{username}`)와 크롤 경로(`/users/v1/alice`)가 한 노드로 합쳐지기 때문이다
+(#24 의 흡수 메커니즘을 일반화해 재사용).
+
+> **#25 에서 겪은 함정 — SPA catch-all.**
+> Juice Shop 은 **없는 경로에도 200 + `index.html`** 을 돌려준다. 상태코드로 명세 존재를 판정하면
+> `/openapi.json`·`/swagger.json`·`/v3/api-docs`·`/graphql` 4개를 "발견"하고 HTML 을 파싱하려 든다.
+> → content-type + 본문 필수 키까지 확인하고, 걸러낸 후보를 `Report.Rejected` 에 남겨 검증이
+> 동작했음을 드러낸다(실측: 후보 20건 중 13건 거부, 명세 0건 생성).
+>
+> **부수 함정 — 예산 혼입.** 인제스트 요청 수를 크롤의 `res.Pages` 에 더했더니 프로브 18건이
+> `MaxPages=10` 을 즉시 소진해 크롤이 첫 페이지에서 멈췄다. 기존 크롤러 테스트 2건이 깨져서 드러났다.
+> `MaxPages` 는 크롤을 제한하는 예산이지 명세 프로브를 제한하는 값이 아니다.
+
+> **#24 에서 겪은 실패 — §6에 추가할 값어치가 있다.**
 > 형제 클러스터링의 첫 구현이 후보 조건을 "리프 + 파라미터 없음 + 고유비율 높음"으로만 잡았더니,
 > juice-shop `/api` 밑의 REST 리소스 12종(`Products`·`Feedbacks`·`Challenges`…)이
 > **전부 `/api/{slug}` 하나로 뭉개져** 재현율이 41.9% → 22.6% 로 무너졌다.
@@ -78,6 +98,8 @@
 - `docs/recon-groundtruth/README.md` 의 "단계별 목표"에 있던 **`#3(정규화) 후 P ≥ 40%` 는 미달**로 기록했다.
   juice-shop 의 오탐은 값만 다른 중복 노드가 아니라 **SPA 클라이언트 라우트·정적자산·외부 링크**라,
   정규화가 아니라 **필터의 몫**임이 실측으로 확인됐다 → 라이브니스/필터(#5 계열)로 이월.
+- (#25 로 갱신) VAmPI 정답셋은 13 → 14(`GET /me`), Juice Shop 은 31 → 32(`GET /ftp`) 가 됐다.
+  둘 다 인제스터가 찾아냈으나 정답셋에 없어 오탐으로 계상되던 항목이고, 실재를 확인해 반영했다.
 - DVWA·VAmPI 도 회귀 확인차 재측정했다(#24 완료기준 밖). **전·후 8행이 한 칸도 다르지 않았다.**
   DVWA 는 경로가 전부 고정 PHP 파일이라 접을 가변 세그먼트가 없고(팽창률 1.02x/1.01x 유지),
   VAmPI 는 링크 없는 API 라 크롤이 static 0건·headless 2건뿐이라 팽창률 측정 자체가 성립하지 않는다.

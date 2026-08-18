@@ -56,7 +56,9 @@ type node struct {
 	verdict   string
 	firstSeen string // 최초 캡처 시각 (RFC3339, FR-2.4 조회 강화 — 이슈 #7)
 	lastSeen  string // 최근 캡처 시각 (RFC3339)
-	slugged   bool   // 이 자리 자식이 {slug} 로 접혔는가 (형제 클러스터링, 이슈 #24)
+	source    string // 출처 태그 ("spec" = 명세 인제스트, "" = 크롤/프록시 캡처) — 이슈 #25
+	varChild  string // 이 자리의 변수 자식 세그먼트 ("{slug}" 또는 명세 플레이스홀더 "{username}")
+	varSpec   bool   // varChild 가 명세 선언인가 (true 면 값 모양과 무관하게 흡수) — 이슈 #25
 	children  map[string]*node
 }
 
@@ -97,6 +99,11 @@ func Reset() {
 // ── 전역 위임 함수 (하위호환, :8080 공유 프록시) ──
 func Record(scheme, host, method, rawPath string, params []Param, auth bool, verdict string) {
 	def.Record(scheme, host, method, rawPath, params, auth, verdict)
+}
+
+// RecordSpec — 명세(OpenAPI/GraphQL/sitemap)에서 얻은 엔드포인트를 출처 "spec" 으로 기록 (이슈 #25).
+func RecordSpec(scheme, host, method, rawPath string, params []Param, auth bool, verdict string) {
+	def.RecordSpec(scheme, host, method, rawPath, params, auth, verdict)
 }
 func Snapshot() []OutNode                    { return def.Snapshot() }
 func Find(host, path string) (OutNode, bool) { return def.Find(host, path) }
@@ -247,6 +254,17 @@ func scalarString(v any) (string, bool) {
 
 // Record — 요청 1건을 트리에 반영하고(필요 시) 파일 갱신. host 는 authority(host[:port]).
 func (t *Tree) Record(scheme, host, method, rawPath string, params []Param, auth bool, verdict string) {
+	t.record(scheme, host, method, rawPath, params, auth, verdict, "")
+}
+
+// RecordSpec — 명세에서 얻은 엔드포인트 기록 (이슈 #25).
+// 경로에 {name} 플레이스홀더가 있으면 그 자리를 "변수 자리"로 선언한다 — 이후 크롤이 같은 자리에
+// 구체값(/users/v1/alice)을 기록하면 별도 노드를 만들지 않고 이 노드로 흡수된다.
+func (t *Tree) RecordSpec(scheme, host, method, rawPath string, params []Param, auth bool, verdict string) {
+	t.record(scheme, host, method, rawPath, params, auth, verdict, srcSpec)
+}
+
+func (t *Tree) record(scheme, host, method, rawPath string, params []Param, auth bool, verdict, source string) {
 	if scheme == "" {
 		scheme = "https"
 	}
@@ -262,14 +280,20 @@ func (t *Tree) Record(scheme, host, method, rawPath string, params []Param, auth
 	acc := ""
 	for _, s := range splitSegs(norm) {
 		acc += "/" + s
-		if cur.slugged && !isTemplate(s) && looksLikeValue(s) {
-			s = tplSlug // 이미 접힌 자리 — 값처럼 생긴 새 세그먼트만 바로 흡수 (이슈 #24)
+		if seg, redirected := absorb(cur, s, source); redirected {
+			s = seg
 			acc = cur.path + "/" + s
 		}
 		ch, ok := cur.children[s]
 		if !ok {
 			ch = newNode(s, acc)
 			cur.children[s] = ch
+		}
+		if source == srcSpec {
+			ch.source = srcSpec
+			if isTemplate(s) {
+				declareVar(cur, s) // 명세가 "이 자리는 변수"라고 알려준다 (이슈 #25)
+			}
 		}
 		parent, cur = cur, ch
 	}
@@ -329,6 +353,7 @@ type OutNode struct {
 	Verdict   string    `json:"verdict,omitempty"`
 	FirstSeen string    `json:"first_seen,omitempty"` // 최초 캡처 시각 (이슈 #7)
 	LastSeen  string    `json:"last_seen,omitempty"`  // 최근 캡처 시각
+	Source    string    `json:"source,omitempty"`     // "spec" = 명세 인제스트 (이슈 #25)
 	Children  []OutNode `json:"children,omitempty"`
 }
 
@@ -343,6 +368,7 @@ func toOut(n *node) OutNode {
 		Verdict:   n.verdict,
 		FirstSeen: n.firstSeen,
 		LastSeen:  n.lastSeen,
+		Source:    n.source,
 	}
 	keys := make([]string, 0, len(n.children))
 	for k := range n.children {
@@ -382,8 +408,10 @@ func (t *Tree) Find(host, path string) (OutNode, bool) {
 	cur := root
 	for _, s := range splitSegs(path) {
 		ch, ok := cur.children[s]
-		if !ok && cur.slugged && !isTemplate(s) && looksLikeValue(s) {
-			ch, ok = cur.children[tplSlug] // Record 의 흡수와 같은 규칙으로 조회 (이슈 #24)
+		if !ok {
+			if seg, redirected := absorb(cur, s, ""); redirected {
+				ch, ok = cur.children[seg] // Record 의 흡수와 같은 규칙으로 조회 (이슈 #24·#25)
+			}
 		}
 		if !ok {
 			return OutNode{}, false
@@ -402,11 +430,12 @@ type Target struct {
 	Path      string   `json:"path"`             // concrete (재요청 가능)
 	Methods   []string `json:"methods,omitempty"`
 	Params    []Param  `json:"params,omitempty"`
-	Auth      bool     `json:"auth_required"`         // 정상 접근 시 인증을 동반했는가 (접근통제 판정 힌트)
-	Verdict   string   `json:"verdict,omitempty"`     // 위험 판단 결과 (§5.2; 자동 대상선정 힌트, FR-3.9)
-	Count     int      `json:"count,omitempty"`       // 누적 히트 수 (조회 강화 — 이슈 #7)
-	FirstSeen string   `json:"first_seen,omitempty"`  // 최초 캡처 시각 (RFC3339)
-	LastSeen  string   `json:"last_seen,omitempty"`   // 최근 캡처 시각 (RFC3339)
+	Auth      bool     `json:"auth_required"`        // 정상 접근 시 인증을 동반했는가 (접근통제 판정 힌트)
+	Verdict   string   `json:"verdict,omitempty"`    // 위험 판단 결과 (§5.2; 자동 대상선정 힌트, FR-3.9)
+	Count     int      `json:"count,omitempty"`      // 누적 히트 수 (조회 강화 — 이슈 #7)
+	FirstSeen string   `json:"first_seen,omitempty"` // 최초 캡처 시각 (RFC3339)
+	LastSeen  string   `json:"last_seen,omitempty"`  // 최근 캡처 시각 (RFC3339)
+	Source    string   `json:"source,omitempty"`     // "spec" = 명세 인제스트 (이슈 #25)
 }
 
 // Interesting — 공격면이 넓은 대상인가 (파라미터/인증/위험판단 존재). FR-3.9 자동선정용.
@@ -433,6 +462,7 @@ func (t *Tree) Targets() []Target {
 				Count:     n.count,
 				FirstSeen: n.firstSeen,
 				LastSeen:  n.lastSeen,
+				Source:    n.source,
 			})
 		}
 		for _, c := range n.children {
@@ -518,7 +548,10 @@ type storeNode struct {
 	Verdict   string       `json:"verdict,omitempty"`
 	FirstSeen string       `json:"first_seen,omitempty"` // 이슈 #7
 	LastSeen  string       `json:"last_seen,omitempty"`
-	Slugged   bool         `json:"slugged,omitempty"` // 형제 클러스터링 상태 (이슈 #24)
+	Slugged   bool         `json:"slugged,omitempty"`   // (v1 호환) 형제 클러스터링 상태 — 이슈 #24
+	Source    string       `json:"source,omitempty"`    // "spec" = 명세 인제스트 (이슈 #25)
+	VarChild  string       `json:"var_child,omitempty"` // 이 자리의 변수 자식 세그먼트 (이슈 #25)
+	VarSpec   bool         `json:"var_spec,omitempty"`  // varChild 가 명세 선언인가
 	Children  []storeNode  `json:"children,omitempty"`
 }
 
@@ -526,7 +559,8 @@ func toStore(n *node) storeNode {
 	s := storeNode{
 		Segment: n.segment, Path: n.path, LastPath: n.lastPath, Scheme: n.scheme,
 		Methods: sortedKeys(n.methods), Count: n.count, Auth: n.auth, Verdict: n.verdict,
-		FirstSeen: n.firstSeen, LastSeen: n.lastSeen, Slugged: n.slugged,
+		FirstSeen: n.firstSeen, LastSeen: n.lastSeen,
+		Source: n.source, VarChild: n.varChild, VarSpec: n.varSpec,
 	}
 	pnames := make([]string, 0, len(n.params))
 	for name := range n.params {
@@ -551,7 +585,11 @@ func toStore(n *node) storeNode {
 func fromStore(s storeNode) *node {
 	n := newNode(s.Segment, s.Path)
 	n.lastPath, n.scheme, n.count, n.auth, n.verdict = s.LastPath, s.Scheme, s.Count, s.Auth, s.Verdict
-	n.firstSeen, n.lastSeen, n.slugged = s.FirstSeen, s.LastSeen, s.Slugged
+	n.firstSeen, n.lastSeen = s.FirstSeen, s.LastSeen
+	n.source, n.varChild, n.varSpec = s.Source, s.VarChild, s.VarSpec
+	if n.varChild == "" && s.Slugged {
+		n.varChild = tplSlug // v1(#24) 저장물 호환: slugged=true → 변수 자식이 {slug}
+	}
 	for _, m := range s.Methods {
 		n.methods[m] = true
 	}

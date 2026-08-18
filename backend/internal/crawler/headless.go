@@ -40,6 +40,7 @@ func HeadlessAvailable() bool {
 // runHeadless — Chrome로 렌더링하며 BFS 크롤. 렌더된 DOM은 static 추출기(extract/extractAPIEndpoints)를
 // 재사용하고, 페이지가 실제로 호출한 네트워크 요청(XHR/fetch)도 in-scope면 공격면에 등록한다.
 func (j *job) runHeadless(seed string, opts Options) {
+	j.ingestOnce(seed, opts, &http.Client{Timeout: 15 * time.Second}) // 명세 선행 인제스트 (#25)
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(j.ctx,
 		append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.Flag("headless", true),

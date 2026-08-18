@@ -2,7 +2,7 @@
 #
 # 성격: OpenAPI 명세 기반 REST API (Flask). 스펙 인제스터(#4)·API 정찰 검증용.
 # 도출 출처: VAmPI 공식 소스/스펙 (github.com/erev0s/VAmPI, openapi_specs).
-# 엔드포인트 수: 13
+# 엔드포인트 수: 14 (#25 에서 /me 추가)
 #
 # ⚠️ 기대치: 지금은 크롤(static/headless)만 있어 링크 없는 API 는 거의 못 찾는다 → 재현율 낮음이 정상.
 #   이 낮은 baseline 이 스펙 인제스터(#4) 도입 효과의 기준점이 된다.
@@ -25,3 +25,6 @@ endpoints:
   - { method: GET,    path: "/books/v1" }
   - { method: POST,   path: "/books/v1" }
   - { method: GET,    path: "/books/v1/{book_title}" }
+  # 인증 사용자 정보 (#25 스펙 인제스트로 발견된 정답셋 누락 — openapi.json 에 존재)
+  #   실재 확인: curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/me → 401(인증 필요)
+  - { method: GET,    path: "/me" }

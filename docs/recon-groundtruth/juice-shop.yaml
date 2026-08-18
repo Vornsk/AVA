@@ -46,3 +46,7 @@ endpoints:
   - { method: GET,  path: "/api/Deliverys" }
   - { method: GET,  path: "/rest/captcha" }
   - { method: GET,  path: "/metrics" }
+  # robots.txt 가 가리키는 디렉터리 목록 (#25 스펙 인제스트로 발견된 정답셋 누락)
+  #   실재 확인: curl -s http://localhost:3000/ftp → 11307 bytes, .bak/.json/.md 노출
+  #   (SPA catch-all 인 index.html 은 9393 bytes 로 크기가 다르다)
+  - { method: GET,  path: "/ftp" }

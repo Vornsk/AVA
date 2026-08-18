@@ -28,6 +28,9 @@ const (
 	tplSlug = "{slug}"
 )
 
+// 출처 태그 (이슈 #25). 빈 문자열 = 크롤/프록시 캡처.
+const srcSpec = "spec"
+
 var (
 	reUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 	reDate = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
@@ -136,7 +139,7 @@ func NormalizePath(p string) string {
 //     접히면 /metrics, /api 같은 실제 엔드포인트가 통째로 사라진다.
 //   - 후보는 자식이 없고(리프) 파라미터도 없고 값처럼 생긴(looksLikeValue) 노드만.
 //     공격면(파라미터)이나 하위 구조가 있는 노드는 보존.
-//   - 한 번 접힌 부모는 slugged 로 표시해 이후 같은 자리 값은 바로 {slug} 로 흡수한다
+//   - 한 번 접힌 부모는 varChild={slug} 로 표시해 이후 같은 자리 값은 바로 흡수한다
 //     (다시 12개가 쌓일 때까지 트리가 재팽창하는 것을 막는다).
 //
 // ★ looksLikeValue 가 없으면 REST 리소스 컬렉션이 통째로 사라진다.
@@ -167,6 +170,48 @@ func looksLikeValue(s string) bool {
 	return seps >= slugMinSeparators
 }
 
+// absorb — cur 아래에 세그먼트 s 를 넣을 때, 변수 자리로 흡수해야 하는지 판단한다.
+// 흡수 대상이면 (변수 세그먼트, true), 아니면 (s, false).
+//
+//	· 리터럴 우선 — 이미 같은 이름의 자식이 있으면 그쪽이다.
+//	  명세가 /users/v1/{username} 과 /users/v1/_debug 를 함께 등록했을 때,
+//	  크롤이 만난 /users/v1/_debug 가 {username} 으로 삼켜지면 안 된다.
+//	· 명세가 선언한 변수 자리(varSpec)는 값 모양을 따지지 않는다 — 명세가 확정적으로 알려줬다.
+//	  반대로 휴리스틱(#24)이 만든 자리는 값처럼 생긴 세그먼트만 흡수한다.
+//	· 명세 기록(source=spec) 자신은 흡수되지 않는다 — 명세가 트리 구조의 기준이다.
+func absorb(cur *node, s, source string) (string, bool) {
+	if source == srcSpec || cur.varChild == "" || isTemplate(s) {
+		return s, false
+	}
+	if _, literal := cur.children[s]; literal {
+		return s, false
+	}
+	if !cur.varSpec && !looksLikeValue(s) {
+		return s, false
+	}
+	return cur.varChild, true
+}
+
+// declareVar — 명세가 "이 자리는 변수"라고 선언한다 (이슈 #25).
+// 선언 이전에 크롤이 구체값으로 만들어 둔 자식이 있으면 변수 노드로 흡수한다.
+// 명세가 등록한 리터럴 형제(source=spec)와 하위 구조·파라미터가 있는 노드는 보존한다 —
+// #24 에서 REST 리소스 컬렉션을 통째로 삼켰던 실패의 재발 방지.
+func declareVar(parent *node, tpl string) {
+	parent.varChild, parent.varSpec = tpl, true
+	v := parent.children[tpl]
+	if v == nil {
+		return
+	}
+	for seg, ch := range parent.children {
+		if isTemplate(seg) || ch.source == srcSpec || len(ch.children) > 0 || len(ch.params) > 0 {
+			continue
+		}
+		mergeNode(v, ch)
+		delete(parent.children, seg)
+	}
+	repath(v, parent.path)
+}
+
 // foldSiblings — parent 의 리프 자식들이 조건을 만족하면 {slug} 하나로 병합한다.
 // 호출자가 t.mu 를 쥐고 있어야 한다. parent 가 호스트 루트면 아무것도 하지 않는다.
 func foldSiblings(parent *node, isHostRoot bool) {
@@ -185,7 +230,7 @@ func foldSiblings(parent *node, isHostRoot bool) {
 	if len(cand) == 0 {
 		return
 	}
-	if !parent.slugged { // 최초 발동에만 임계치를 요구한다
+	if parent.varChild == "" { // 최초 발동에만 임계치를 요구한다
 		if len(cand) < slugMinSiblings {
 			return
 		}
@@ -203,7 +248,7 @@ func foldSiblings(parent *node, isHostRoot bool) {
 		mergeNode(slug, parent.children[seg])
 		delete(parent.children, seg)
 	}
-	parent.slugged = true
+	parent.varChild = tplSlug // 이 자리는 값이다 — 이후 같은 자리 값을 흡수한다
 	repath(slug, parent.path)
 }
 
@@ -246,7 +291,12 @@ func mergeNode(dst, src *node) {
 	if dst.lastPath == "" || (src.lastPath != "" && src.lastSeen >= dst.lastSeen) {
 		dst.lastPath, dst.scheme = src.lastPath, src.scheme
 	}
-	dst.slugged = dst.slugged || src.slugged
+	if dst.source == "" {
+		dst.source = src.source // "spec" 은 병합 뒤에도 유지 (이슈 #25)
+	}
+	if dst.varChild == "" {
+		dst.varChild, dst.varSpec = src.varChild, src.varSpec
+	}
 	for seg, sc := range src.children {
 		if dc := dst.children[seg]; dc != nil {
 			mergeNode(dc, sc)

@@ -42,9 +42,9 @@ cd backend && go test ./internal/recon/bench -run ReconBench -v
 
 | 파일 | 성격 | 엔드포인트 | 출처 | baseline |
 |------|------|-----------|------|----------|
-| `juice-shop.yaml` | SPA (REST) | 31 | 앱 라우트 | 아래 표 기록됨 (+ 정규화 v2 #24 before/after) |
-| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) + #24 회귀 확인 |
-| `vampi.yaml` | OpenAPI 명세 API | 13 | erev0s/VAmPI 스펙 | 아래 표 기록됨(#4 전 재현율 낮음 정상) + #24 회귀 확인 |
+| `juice-shop.yaml` | SPA (REST) | 32 | 앱 라우트 | 아래 표 기록됨 (+ #24 · #25 before/after) |
+| `dvwa.yaml` | 전통 폼/서버렌더 | 25 | digininja/DVWA 소스 | 아래 표 기록됨(비인증) + #24 · #25 회귀 확인 |
+| `vampi.yaml` | OpenAPI 명세 API | 14 | erev0s/VAmPI 스펙 | 아래 표 기록됨 + **#25 로 R 0% → 100%** |
 | `vulnlab.yaml` | 자체 회귀 | (템플릿) | (채워야 함) | 라우트 확정 후 |
 
 ## 설계 제약 (중요)
@@ -180,6 +180,93 @@ docker run -d --rm --name vampi24 -p 5000:5000 erev0s/vampi:latest
 cd backend && go test ./internal/endpoints -run Normalize -v
 ```
 
+### 스펙 인제스터 (#25) — 3개 대상 before/after
+
+명세(robots/sitemap/OpenAPI/GraphQL/소스맵)를 읽어 엔드포인트를 얻는 인제스터를 붙인 효과.
+**이 이슈의 판정 지표는 재현율**이다. `ingest` 프로파일은 크롤을 돌리지 않아 "명세만으로 얼마나
+찾는가"를 격리 측정하고, `static`·`headless` 는 크롤 시작 시 명세를 1회 선행 인제스트한다.
+
+측정: 2026-08-18. before = `0af9a08`(#24 머지 시점), after = 스펙 인제스터.
+**before 도 갱신된 정답셋으로 다시 돌려** 같은 기준에서 비교했다(아래 정답셋 변경 참조).
+
+| 대상 · 프로파일 | disc | TP | FP  | FN |   P    |   R    |  F1   |
+|-----------------|------|----|-----|----|--------|--------|-------|
+| **vampi** ingest (후)   |  14 | 14 |   0 |  0 | **100.0%** | **100.0%** | **100.0%** |
+| vampi static (전)       |   0 |  0 |   0 | 14 |   0.0% |   0.0% |   0.0% |
+| **vampi static (후)**   |  13 | 13 |   0 |  1 | **100.0%** | **92.9%** | **96.3%** |
+| vampi headless (전)     |   2 |  1 |   1 | 13 |  50.0% |   7.1% |  12.5% |
+| **vampi headless (후)** |  15 | 14 |   1 |  0 | **93.3%** | **100.0%** | **96.6%** |
+| juice-shop ingest (후)  |   1 |  1 |   0 | 31 | 100.0% |   3.1% |   6.1% |
+| juice-shop static (전)  |  84 | 13 |  71 | 19 |  15.5% |  40.6% |  22.4% |
+| juice-shop static (후)  |  85 | 14 |  71 | 18 |  16.5% |  43.8% |  23.9% |
+| juice-shop headless (전)| 241 |  5 | 236 | 27 |   2.1% |  15.6% |   3.7% |
+| juice-shop headless (후)| 242 |  6 | 236 | 26 |   2.5% |  18.8% |   4.4% |
+| dvwa ingest (후)        |   0 |  0 |   0 | 25 |   0.0% |   0.0% |   0.0% |
+| dvwa static (전/후)     |  60 | 21 |  39 |  4 |  35.0% |  84.0% |  49.4% |
+| dvwa headless (전/후)   |  91 | 22 |  69 |  3 |  24.2% |  88.0% |  37.9% |
+
+- **VAmPI 재현율 0% → 100%.** `/openapi.json` 한 파일이 정답셋 14개를 전부 준다. 링크가 없어
+  크롤로는 손댈 수 없던 표면이 통째로 측정 범위에 들어왔다. `ingest` 프로파일은 **P·R·F1 모두 100%** 다.
+  static 이 92.9% 인 것은 `GET /` 를 크롤이 중복 기록하며 GT 의 한 항목과 어긋나서다.
+- **Juice Shop 은 명세가 없다.** 등록 1건은 `robots.txt` 의 `/ftp` 뿐이고, **오탐 0(P 100%)** 이다.
+  static·headless 재현율이 40.6% → 43.8% / 15.6% → 18.8% 로 오른 것도 이 한 건 덕이다.
+- **DVWA 는 명세도 robots.txt 도 없다.** 인제스트 0건, static·headless 는 **모든 칸이 전과 동일** =
+  회귀 없음. 이 대상에서는 얻을 것도 잃을 것도 없다.
+- **팽창률은 전 대상 1.00x 유지.** 명세 경로(`/users/v1/{username}`)와 크롤 경로(`/users/v1/alice`)가
+  한 노드로 합쳐지므로 트리가 갈라지지 않는다(#24 의 흡수 메커니즘 재사용).
+
+#### 없는 명세를 발견했다고 하지 않는다
+
+Juice Shop 은 SPA catch-all 이라 **없는 경로에도 200 + `index.html`** 을 돌려준다. 인제스터는
+후보 20건을 프로브해 **13건을 본문 검증으로 걸러냈고, 명세를 하나도 만들어내지 않았다**:
+
+```
+[ING ] localhost:3000  요청=20 등록=1 출처=[robots:/robots.txt] 걸러냄=13
+```
+
+상태코드만 봤다면 `/openapi.json`·`/swagger.json`·`/v3/api-docs`·`/graphql` 을 "발견"하고
+HTML 을 파싱하려 들었을 것이다. DVWA 는 후보가 전부 404 라 걸러낼 것도 없었다(요청=18 등록=0 걸러냄=0).
+
+#### 정답셋 변경 (이번 측정에서 발견된 누락 2건)
+
+인제스터가 찾아냈으나 정답셋에 없어 오탐으로 계상되던 항목을 **실재 확인 후 정답셋에 반영**했다.
+정답셋이 틀렸던 것이지 인제스터가 틀린 게 아니다.
+
+| 항목 | 근거 | 정답셋 |
+|---|---|---|
+| `GET /me` (vampi) | `curl -o /dev/null -w '%{http_code}' http://localhost:5000/me` → **401**(인증 필요=실재). `openapi.json` 에도 선언됨 | 13 → 14 |
+| `GET /ftp` (juice-shop) | `curl http://localhost:3000/ftp` → **11307 bytes**, `.bak`/`.json`/`.md` 노출. catch-all `index.html` 은 9393 bytes 로 크기가 다름 | 31 → 32 |
+
+`/ftp` 는 백업 파일이 노출된 디렉터리 목록이라 진단 도구가 **반드시 찾아야 하는** 표면이다.
+juice-shop 정답셋은 스스로 "실제 기동 버전에 맞춰 검증·확장할 것"이라 적고 있어 확장이 맞다.
+
+#### 소스맵은 검증 대상이 없다
+
+세 대상 모두 소스맵을 서빙하지 않는다. Juice Shop 번들 3종(`main.js`·`scripts.js`·`polyfills.js`)은
+`sourceMappingURL` 주석이 제거돼 있고, `.map` 요청이 200 인 것은 catch-all 이다(본문이 `index.html`).
+
+```
+[ING ] localhost:3000 소스맵 없음 (번들에 sourceMappingURL 없고 .map 도 명세 아님)
+```
+
+따라서 **on/off 재현율 델타는 필연적으로 0** 이며, 실측으로 기록할 수치가 없다.
+기능 자체는 단위 테스트로 고정했다(`TestIngestSourceMapByConvention` — 주석 없이 `<번들>.map`
+관례 프로브로 찾아 `sourcesContent` 에서 API 경로를 추출). **소스맵을 서빙하는 대상 선정은 이월한다.**
+
+**재현**
+
+```bash
+docker run -d --rm -p 5000:5000 erev0s/vampi:latest
+docker run -d --rm -p 3000:3000 bkimminich/juice-shop
+cd backend && BENCH_GT=../docs/recon-groundtruth/vampi.yaml go test ./internal/recon/bench -run ReconBench -count=1 -timeout 900s -v
+```
+
+**단위 테스트** (인제스터 8종 — SPA catch-all 거부·노드 통합 포함)
+
+```bash
+cd backend && go test ./internal/recon/ingest -v
+```
+
 ## 목표 (합격선 — 개선 성공 판정 기준)
 
 보안(공격면) 도구는 **재현율이 최우선**이다(엔드포인트를 놓치면 그 취약점을 통째로 못 봄).
@@ -201,5 +288,7 @@ cd backend && go test ./internal/endpoints -run Normalize -v
   juice-shop 의 FP 는 값이 다른 중복 노드가 아니라 SPA 클라이언트 라우트·정적자산·외부 링크라
   **정규화가 아니라 필터의 몫**임이 실측으로 확인됐다. `P ≥ 40%` 는 필터/라이브니스(#5)로 넘어간다.
 - **#4 스펙 인제스터 후 → 재현율 급등**(명세로 API 발견): `R ≥ 80%`
+  — **VAmPI 달성**(0% → 100%). 다만 **명세를 공개하는 대상에 한한다**: juice-shop 은 robots.txt 만,
+  dvwa 는 아무것도 없어 각각 +3.2%p / 0%p 였다. 명세 없는 대상의 재현율은 크롤·필터의 몫으로 남는다.
 - **#5 라이브니스 후 → 정밀도 마무리**(죽은/가짜 엔드포인트 제거): `P ≥ 60%`
 - **최종: R ≥ 80% · P ≥ 60% · F1 ≥ 0.70 · 팽창률 ≤ 1.2x**
