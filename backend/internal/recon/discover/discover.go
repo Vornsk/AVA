@@ -112,7 +112,10 @@ func Run(ctx context.Context, tree *endpoints.Tree, seed string, client *http.Cl
 		if !ok {
 			continue // 스코프 밖이거나 요청 실패 — 등록 근거가 없다
 		}
-		if !probe.Exists(path, got, sig404) {
+		// 능동 발견은 오탐 0 이 우선이다(완료기준). 5xx 는 "그런 경로 없음"을 서버가 500 으로
+		// 표현하는 경우가 많아(Juice Shop: 500 "Unexpected path: /api") 등록하지 않는다.
+		// 라이브니스(#26)는 반대로 5xx 를 살리지만, 그쪽은 이미 등록된 것을 지키는 입장이라 다르다.
+		if got.Status >= 500 || !probe.Exists(path, got, sig404) {
 			rep.Rejected++
 			continue
 		}
@@ -129,6 +132,9 @@ func Run(ctx context.Context, tree *endpoints.Tree, seed string, client *http.Cl
 	log.Printf("[DISC] %s  wordlist=%d 프로브=%d 발견=%d 버림=%d 예산=%d%s baseline=%q (%s)",
 		base.Host, rep.Words, rep.Probed, rep.Found, rep.Rejected, rep.Budget,
 		exhaustedMark(rep.Exhausted), rep.Baseline, rep.Duration)
+	for _, f := range rep.FoundList {
+		log.Printf("[DISC]   + %s", f) // 무엇을 찾았는지 남긴다 — 정답셋 대조·감사에 필요하다
+	}
 	if rep.Exhausted {
 		log.Printf("[DISC] ★ 예산 %d 건 소진으로 중단 — wordlist %d 항목 중 일부만 확인했다",
 			rep.Budget, rep.Words)

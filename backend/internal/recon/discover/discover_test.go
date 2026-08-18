@@ -203,6 +203,29 @@ func TestDiscoverAuthWallCountsAsFound(t *testing.T) {
 	}
 }
 
+// TestDiscoverRejects5xx — 5xx 는 등록하지 않는다. Juice Shop 은 없는 API 경로에
+// 500 "Unexpected path" 를 주는데, 이걸 실재로 보면 /api·/api/v1·/rest 가 전부 오탐이 된다.
+func TestDiscoverRejects5xx(t *testing.T) {
+	srv, _ := catchAll(t, map[string]func(http.ResponseWriter){
+		"/api": func(w http.ResponseWriter) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte("<html><title>Error: Unexpected path: /api</title></html>"))
+		},
+		"/backup": func(w http.ResponseWriter) { // 진짜 — 비교 대조군
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte("<html><title>listing directory /backup</title></html>"))
+		},
+	})
+	tree := setup(t, srv)
+	Run(context.Background(), tree, srv.URL, srv.Client(), 0)
+	if has(tree.Targets(), "/api") {
+		t.Error("500 을 주는 /api 를 등록했다 — 프레임워크 오류 페이지는 엔드포인트가 아니다")
+	}
+	if !has(tree.Targets(), "/backup") {
+		t.Error("진짜 /backup 을 놓쳤다")
+	}
+}
+
 // TestDiscoverBudget — 요청 예산을 넘지 않고, 소진 사실을 리포트에 남긴다.
 func TestDiscoverBudget(t *testing.T) {
 	srv, hits := catchAll(t, nil)

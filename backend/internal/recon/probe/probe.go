@@ -161,9 +161,9 @@ func Exists(path string, got, base Sig) bool {
 		// 인증 벽 뒤 엔드포인트다. 죽은 것으로 보면 재현율이 무너진다.
 		return true
 	case got.Status >= 500:
-		return true // 서버 오류는 부재의 증거가 아니다
+		return true // 서버 오류는 부재의 증거가 아니다 (라이브니스: 우연히 터진 실 엔드포인트 보호)
 	case got.Status >= 300 && got.Status < 400:
-		return true
+		return true // 리다이렉트 자체는 실재 신호로 본다
 	}
 	if !base.OK() {
 		return true // 기준을 못 잡았으면 판정하지 않는다
