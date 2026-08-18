@@ -172,6 +172,14 @@ const SOURCE_META: Record<string, { label: string; color: string }> = {
   'static-regex': { label: 'regex', color: 'var(--muted)' },
 }
 // sourceMeta — 빈 문자열(레거시 프록시 캡처)은 traffic 으로 본다 (#26 등급 규칙과 정합).
+// methodColor — HTTP 메서드 색. 읽기(GET/HEAD)는 차분하게, 쓰기·삭제는 경고색으로 (#28 가독성).
+function methodColor(m: string): string {
+  const u = m.toUpperCase()
+  if (u === 'DELETE') return 'var(--red)'
+  if (u === 'POST' || u === 'PUT' || u === 'PATCH') return 'var(--amber)'
+  return 'var(--accent)' // GET·HEAD·OPTIONS
+}
+
 function sourceMeta(src?: string) {
   return SOURCE_META[src || 'traffic'] ?? SOURCE_META['traffic']
 }
@@ -270,29 +278,34 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                   return (
                     <div key={key} className="border-t border-[var(--border)] first:border-t-0">
                       <button onClick={() => setOpen(isOpen ? null : key)}
-                              className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-[var(--panel-2)]">
+                              className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-[var(--panel-2)]">
                         <ChevronRight size={13} className={`shrink-0 text-[var(--muted)] transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                        {(t.methods ?? []).map((m) => (
-                          <span key={m} className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-                                style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>{m}</span>
-                        ))}
-                        <span className="font-mono text-sm">{t.path}</span>
-                        {(() => { const m = sourceMeta(t.source); return (
-                          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium"
-                                style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)` }}>{m.label}</span>
-                        ) })()}
-                        {t.unverified && (
-                          <span className="rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--amber)]"
-                                style={{ background: 'color-mix(in srgb, var(--amber) 14%, transparent)' }}>unverified</span>
-                        )}
-                        {t.auth_required && <KeyRound size={12} className="text-[var(--amber)]" />}
-                        {t.verdict && <Badge text={t.verdict} color="var(--red)" />}
-                        {t.params && t.params.length > 0 && (
-                          <span className="text-[10px] text-[var(--muted)]">· {t.params.length}p</span>
-                        )}
-                        {typeof t.count === 'number' && t.count > 0 && (
-                          <span className="ml-auto shrink-0 text-[11px] text-[var(--muted)]">{t.count} hits</span>
-                        )}
+                        {/* 메서드 — 고정폭 컬럼(경로 시작을 일렬로) */}
+                        <span className="flex shrink-0 flex-wrap justify-end gap-1" style={{ minWidth: '3rem' }}>
+                          {(t.methods ?? []).map((m) => (
+                            <span key={m} className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                                  style={{ color: methodColor(m), background: `color-mix(in srgb, ${methodColor(m)} 14%, transparent)` }}>{m}</span>
+                          ))}
+                        </span>
+                        {/* 경로 + 출처 — 남는 폭을 채우고 경로는 잘림 처리 */}
+                        <span className="flex min-w-0 flex-1 items-center gap-2">
+                          <span className="truncate font-mono text-sm">{t.path}</span>
+                          {(() => { const m = sourceMeta(t.source); return (
+                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                  style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)` }}>{m.label}</span>
+                          ) })()}
+                          {t.unverified && (
+                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--amber)]"
+                                  style={{ background: 'color-mix(in srgb, var(--amber) 14%, transparent)' }}>unverified</span>
+                          )}
+                        </span>
+                        {/* 메타 — 우측 정렬로 모음 */}
+                        <span className="flex shrink-0 items-center gap-2.5 text-[11px] text-[var(--muted)]">
+                          {t.auth_required && <KeyRound size={12} className="text-[var(--amber)]" />}
+                          {t.verdict && <Badge text={t.verdict} color="var(--red)" />}
+                          {t.params && t.params.length > 0 && <span>{t.params.length}p</span>}
+                          {typeof t.count === 'number' && t.count > 0 && <span className="tabular-nums">{t.count} hits</span>}
+                        </span>
                       </button>
                       {isOpen && (
                         <div className="border-t border-[var(--border)] bg-[var(--panel-2)] px-3 py-2.5 pl-8 text-xs">
