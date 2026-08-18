@@ -222,8 +222,8 @@ func (j *job) run(seed string, opts Options) {
 		}
 
 		// 엔드포인트 등록 (프록시 캡처와 동일 의미)
-		recordFound := func(eu *url.URL) {
-			recordURL(eu, "GET")
+		recordFound := func(eu *url.URL, source string) {
+			recordURL(eu, "GET", source)
 			epk := eu.Host + eu.Path
 			if !foundEP[epk] {
 				foundEP[epk] = true
@@ -232,7 +232,7 @@ func (j *job) run(seed string, opts Options) {
 				j.mu.Unlock()
 			}
 		}
-		recordFound(u)
+		recordFound(u, endpoints.SrcCrawlLink) // 실제로 따라가 2xx 를 받은 링크
 
 		if pages >= opts.MaxPages {
 			break
@@ -246,12 +246,12 @@ func (j *job) run(seed string, opts Options) {
 				}
 			}
 			for _, f := range forms {
-				recordForm(f)
+				recordForm(f, endpoints.SrcCrawlLink)
 			}
 			// SPA 정적 추출: 인라인 JS + 링크된 JS 번들에서 API 엔드포인트 발굴(등록만, 비파괴).
 			for _, ep := range extractAPIEndpoints(body, u) {
 				if eu, e := url.Parse(ep); e == nil {
-					recordFound(eu)
+					recordFound(eu, endpoints.SrcStaticRegex) // 정규식 추출물 — 실재 미확인
 				}
 			}
 			for _, s := range scriptSrcs(body, u) {
@@ -275,7 +275,7 @@ func (j *job) run(seed string, opts Options) {
 				}
 				for _, ep := range extractAPIEndpoints(jsBody, su) {
 					if eu, e := url.Parse(ep); e == nil {
-						recordFound(eu)
+						recordFound(eu, endpoints.SrcStaticRegex) // 정규식 추출물 — 실재 미확인
 					}
 				}
 			}
@@ -305,16 +305,16 @@ func (j *job) fetch(c *http.Client, u *url.URL) (string, string, error) {
 }
 
 // recordURL — URL 하나를 엔드포인트 트리에 기록(프록시 DoFunc 과 동일 흐름).
-func recordURL(u *url.URL, method string) {
+func recordURL(u *url.URL, method, source string) {
 	req, _ := http.NewRequest(method, u.String(), nil)
 	params := endpoints.ExtractParams(req) // 주입 전 원본 파라미터
 	auth.Default().Inject(req)
 	authReq := req.Header.Get("Cookie") != "" || req.Header.Get("Authorization") != ""
-	endpoints.Record(u.Scheme, u.Host, method, u.Path, params, authReq, "")
+	endpoints.RecordFrom(source, u.Scheme, u.Host, method, u.Path, params, authReq, "")
 }
 
 // recordForm — 발견한 폼을 엔드포인트로 등록(제출하지 않음, 비파괴).
-func recordForm(f form) {
+func recordForm(f form, source string) {
 	fu, err := url.Parse(f.action)
 	if err != nil || (fu.Scheme != "http" && fu.Scheme != "https") {
 		return
@@ -332,7 +332,7 @@ func recordForm(f form) {
 	}
 	// 폼 요청도 인증 동반 여부 반영
 	authReq := auth.Default().Enabled()
-	endpoints.Record(fu.Scheme, fu.Host, f.method, fu.Path, params, authReq, "")
+	endpoints.RecordFrom(source, fu.Scheme, fu.Host, f.method, fu.Path, params, authReq, "")
 }
 
 // ── HTML 링크·폼 추출 ──────────────────────────────────────────────
