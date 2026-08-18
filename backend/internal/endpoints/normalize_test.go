@@ -156,6 +156,29 @@ func TestFoldSiblingsAbsorb(t *testing.T) {
 	}
 }
 
+// TestFindResolvesSlugged — 접힌 자리는 구체 경로로도 조회된다.
+// Record 는 {slug} 로 흡수하는데 Find 가 리터럴 세그먼트만 보면
+// /api/endpoints/detail?path=<구체경로> 가 404 가 된다.
+func TestFindResolvesSlugged(t *testing.T) {
+	tr := NewTree()
+	for i := 0; i < slugMinSiblings; i++ {
+		tr.Record("https", "h.com", "GET", slugPath(i), nil, false, "")
+	}
+	if _, ok := tr.Find("h.com", "/blog/{slug}"); !ok {
+		t.Fatal("템플릿 경로 조회 실패")
+	}
+	if _, ok := tr.Find("h.com", slugPath(0)); !ok {
+		t.Errorf("접힌 구체 경로 %s 조회 실패", slugPath(0))
+	}
+	if _, ok := tr.Find("h.com", "/blog/never-seen-2-value"); !ok {
+		t.Error("같은 자리의 새 값도 {slug} 로 해석돼야 함")
+	}
+	// 값처럼 생기지 않은 세그먼트는 흡수 대상이 아니므로 여전히 없음.
+	if _, ok := tr.Find("h.com", "/blog/search"); ok {
+		t.Error("라우트명이 {slug} 로 잘못 해석됨")
+	}
+}
+
 // TestFoldSiblingsProtectsRoot — 호스트 루트 직속 자식은 절대 접히지 않는다.
 // juice-shop /metrics 처럼 루트에 붙은 실제 엔드포인트가 사라지면 재현율이 무너진다.
 func TestFoldSiblingsProtectsRoot(t *testing.T) {

@@ -382,6 +382,9 @@ func (t *Tree) Find(host, path string) (OutNode, bool) {
 	cur := root
 	for _, s := range splitSegs(path) {
 		ch, ok := cur.children[s]
+		if !ok && cur.slugged && !isTemplate(s) && looksLikeValue(s) {
+			ch, ok = cur.children[tplSlug] // Record 의 흡수와 같은 규칙으로 조회 (이슈 #24)
+		}
 		if !ok {
 			return OutNode{}, false
 		}
