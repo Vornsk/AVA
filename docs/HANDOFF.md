@@ -61,6 +61,7 @@
 | #28 | 정찰 UI — 소스 배지·verified 필터·출처 분포 + UX 개선 | `frontend/src/pages/Recon.tsx` |
 | **#38** | **인증 델타 크롤** — 인증 뒤에만 보이는 표면 = 접근통제 진단 후보 | `crawler.runAuthDelta`, `endpoints.authOnly` |
 | **#39** | **소스맵 완전 복원** — 파일 단위 프레임워크 라우트 추출 + static-regex 검증 | `ingest.extractFromSources`, `parseSourceMap` |
+| **#40** | **파라미터 마이닝** — hidden 파라미터 주입으로 인젝션 포인트 확대(옵트인) | `backend/internal/recon/parammine/`, `endpoints.AddMinedParam` |
 
 **#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
 값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
@@ -101,6 +102,16 @@
 **라이브니스(#26) 검증 대상**으로 만든다(Juice Shop static 정규식 추출 오탐률 81%를 이 등급 지정이
 걸러낸다). 검증은 단위 테스트 위주 — `composeRoutes` 중첩·문자열격리, `extractLoosePaths` 내부/외부
 구분, lazy 청크 복원 Run 통합 등. 기존 벤치 3종 무회귀.
+
+**#40 이 무엇을 바꿨나 (확장 로드맵 3번).** 트리는 관측된 요청의 파라미터만 담아, 서버가 처리하지만
+노출하지 않는 hidden 파라미터(debug·`admin`·`role`·레거시)를 놓쳤다 — 실제 인젝션·접근통제 진입점이다.
+새 `parammine` 모듈이 워드리스트를 검증된 GET 엔드포인트에 주입해 찾는다. 판정은 세 신호(이름/값 반사 —
+기준 본문에 없던 것만 · 길이/상태 변화 · 두 값 차등)를 합쳐 정적 반사·soft-404 오탐을 거른다. 효율은
+벌크 이분탐색(뭉텅이 주입 → 반응 난 뭉치만 절반씩). 안전장치는 #27 을 그대로 — 옵트인(미옵트인 시 주입
+0건, 테스트 보장)·GET only·스코프·예산·감사(`crawl:parammine`). 발견분은 `AddMinedParam` 으로 `mined`
+플래그와 함께 붙고 `In=query` 라 `detector.injectable` 이 자동으로 스캔에 포함한다(별도 배선 없음).
+검증은 단위 테스트 위주 — 발견·정적 오탐0·반사투성이 방어·예산소진·관측중복 + 크롤러 옵트인. body·header
+주입과 소스맵 JS 파라미터명 채굴은 후속.
 
 **#25 가 무엇을 바꿨나.** 링크를 따라가는 크롤만으로는 링크 없는 API 를 찾을 수 없어 VAmPI 재현율이
 0% 였다. 인제스터는 대상이 스스로 공개하는 명세를 읽는다 — `/openapi.json` 한 파일이 VAmPI 정답셋

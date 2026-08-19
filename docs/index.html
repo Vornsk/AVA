@@ -495,6 +495,24 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <ul><li>Endpoint Tree 행에 <strong><code>auth-only</code> 배지</strong>(빨강) + <strong>"인증 뒤 (N)" 필터</strong>(#28 프레임).</li><li>API: <code>GET /api/endpoints?auth_only=true</code> 로 인증 뒤 표면만.</li><li>벤치 하네스: <code>auth-delta</code> 프로파일(로그인 설정이 있는 대상만).</li></ul>
 <p>재현:</p>
 <pre><code>cd backend &amp;&amp; go test ./internal/crawler -run AuthDelta -v</code></pre>
+<h3>파라미터 마이닝 (이슈 #40)</h3>
+<p>엔드포인트 트리는 <strong>관측된 요청에 나타난 파라미터만</strong> 담습니다. 서버가 처리하지만 UI·트래픽에 드러나지 않는 <strong>hidden 파라미터</strong>(debug 플래그, 권한 우회 필드 <code>admin</code>·<code>role</code>, 레거시 필드)는 실제 인젝션·접근통제 진입점인데 지금까지의 정찰로는 영영 못 찾습니다. 파라미터 마이닝은 워드리스트를 검증된 GET 엔드포인트에 주입해 서버가 인식하는 파라미터를 식별합니다.</p>
+<h4>★ 기본 비활성 (옵트인)</h4>
+<p>능동 주입이라 안전장치가 전제입니다 — 능동 발견(#27)과 같은 원칙입니다.</p>
+<ul><li><strong>옵트인</strong> — <code>crawler.Options.ParamMine</code> 을 켜야만 주입이 나갑니다. 미옵트인 시 요청 0건(테스트로 보장).</li><li><strong>GET only·비파괴</strong> — 쿼리스트링으로만 주입합니다(착수 합의 ①). body·header 는 후속.</li><li><strong>스코프 하드 게이트·레이트리밋·인증 주입</strong> — <code>probe.Client</code> 를 재사용해 #26/#27 과 동일하게 처리.</li><li><strong>요청 예산 상한</strong> — 넘으면 중단하고 리포트에 남깁니다. 엔드포인트·엔드포인트당 파라미터 상한도 둡니다.</li><li><strong>감사 기록</strong> — <code>crawl:parammine</code> 으로 누가 언제 켰는지 남깁니다.</li></ul>
+<h4>판정 — 세 신호를 합칩니다 (합의 ②)</h4>
+<p>soft-404 캘리브레이션(#26/#27)과 같은 정신 — "기준과 다른 반응"만 실재로 봅니다.</p>
+<ul><li><strong>이름/값 반사</strong> — 주입한 파라미터 이름·값이 응답에 나타나는가. 단, <strong>기준 응답엔 없던 것만</strong> —</li></ul>
+<p>  페이지에 우연히 들어 있는 부분문자열(<code>&lt;title&gt;</code>, <code>search</code>)을 반사로 오인하지 않습니다.</p>
+<ul><li><strong>길이·상태 변화</strong> — 무의미 파라미터를 넣은 기준 대비 응답 크기·상태가 달라지는가(자연 요동은 밴드로 흡수).</li><li><strong>두 값 차등</strong> — 같은 파라미터에 다른 값 2개를 넣어, 값에 따라 응답이 갈리거나 존재만으로 응답이</li></ul>
+<p>  일관되게 달라질 때만 인정. 정적 반사·1회성 요동을 거릅니다.</p>
+<p>반사-투성이 엔드포인트(모든 이름·값을 되비추는 곳)는 신호가 노이즈이므로 통째로 등록하지 않습니다.</p>
+<h4>벌크 이분탐색 (합의 ④)</h4>
+<p>파라미터를 하나씩 넣으면 요청이 워드리스트 크기만큼 나갑니다. 대신 <strong>뭉텅이로 주입</strong>해 반응이 없으면 그 뭉치를 통째로 버리고, 반응한 뭉치만 절반씩 나눠 범인을 좁힙니다 — 요청이 훨씬 적어 예산 안전장치와 맞물립니다. 워드리스트는 내장 커레이션(~200)을 쓰며, 대상 JS·소스맵(#39)에서 파라미터명을 채굴해 시드로 쓰는 것은 후속입니다.</p>
+<h4>통합</h4>
+<p>발견분은 <code>endpoints.AddMinedParam</code> 으로 노드에 붙고 <code>mined</code> 플래그가 섭니다(관측이 아니므로 <code>Required</code> 판정 제외). <code>In</code> 은 <code>query</code> 라 <strong><code>detector.injectable</code> 이 자동으로 스캔 대상에 포함</strong> — 별도 배선이 없습니다. Endpoint Tree 파라미터 표에 <code>mined</code> 배지로 관측분과 구분해 보여줍니다.</p>
+<p>재현:</p>
+<pre><code>cd backend &amp;&amp; go test ./internal/recon/parammine -v</code></pre>
 <h3>능동 콘텐츠 발견 (이슈 #27)</h3>
 <p>링크·명세·트래픽 어디에도 안 걸리는 <strong>unlinked 공격면</strong>이 있습니다 — 백업 파일·<code>.git</code>·설정·로그 디렉터리·관리 화면. Juice Shop 실측 기준 <code>/support/logs</code>·<code>/encryptionkeys</code> 는 <strong>디렉터리 목록이 그대로 열려 있는데도</strong> 링크가 없어 크롤·인제스트로는 영원히 못 찾습니다. 능동 발견은 알려진 관례 경로 목록(wordlist)을 직접 찔러 실재하는 것만 등록합니다.</p>
 <h4>★ 기본 비활성 (옵트인)</h4>
