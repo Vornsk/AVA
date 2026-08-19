@@ -307,6 +307,43 @@ func TestIngestSourceMapFrameworkRoutes(t *testing.T) {
 	}
 }
 
+// TestIngestSourceMapLazyChunks — ★ 이슈 #39: 진입 번들이 참조하는 지연 로딩 청크의
+// 소스맵까지 따라가 라우트를 복원한다. /administration 은 오직 지연 청크에만 있다.
+func TestIngestSourceMapLazyChunks(t *testing.T) {
+	// main.js 는 lazy 청크 admin.module.js 를 문자열로 참조한다(sourceMappingURL·main.js.map 없음).
+	const adminMap = `{"version":3,"sources":["webpack:///./src/app/admin/admin-routing.module.ts"],` +
+		`"sourcesContent":["const routes=[{path:'administration',children:[{path:'users',component:U}]}];"]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(spaIndex))
+		case "/main.js":
+			w.Header().Set("Content-Type", "application/javascript")
+			// webpack 런타임이 lazy 청크를 문자열로 참조하는 형태.
+			_, _ = w.Write([]byte(`__webpack_require__.e("admin"); var c="admin.module.js";`))
+		case "/admin.module.js":
+			w.Header().Set("Content-Type", "application/javascript")
+			_, _ = w.Write([]byte("console.log('admin chunk')"))
+		case "/admin.module.js.map":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(adminMap))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	setup(t, srv)
+
+	Run(context.Background(), srv.URL, srv.Client())
+	got := discovered()
+	for _, want := range []string{"GET /administration", "GET /administration/users"} {
+		if !got[want] {
+			t.Errorf("지연 청크의 %s 미복원\n등록됨=%v", want, keys(got))
+		}
+	}
+}
+
 // TestIngestSpecThenCrawlSingleNode — ★ 완료기준: 명세 경로와 크롤 경로가 한 노드로 합쳐진다.
 func TestIngestSpecThenCrawlSingleNode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

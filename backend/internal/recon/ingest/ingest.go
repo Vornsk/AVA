@@ -379,64 +379,128 @@ var (
 	reAbsPathLit = regexp.MustCompile(`["'\x60](/[A-Za-z0-9][\w\-./{}:]*)["'\x60]`)
 	// reURLInText — 본문·주석 어디서든 절대 URL. 호스트와 경로를 함께 잡아 내부 URL 만 추린다.
 	reURLInText = regexp.MustCompile(`https?://([\w.\-]+)(?::\d+)?(/[\w\-./{}:%]*)`)
+	// reChunkRef — 번들 JS 가 참조하는 다른 청크(.js) 파일명 리터럴. 지연 로딩 모듈 추적용 (이슈 #39).
+	reChunkRef = regexp.MustCompile(`["'\x60]([\w./\-]+\.m?js)["'\x60]`)
 )
 
-// sourceMaps — 진입 HTML 의 <script src> 를 훑어 소스맵을 수집하고 원본에서 API 경로를 추출한다.
+// maxBundles — 처리할 번들(진입 스크립트 + 지연 청크) 상한. 폭주·레이트리밋 낭비 방지.
+const maxBundles = 40
+
+// sourceMaps — 진입 HTML 의 <script src> 를 시드로, 번들이 참조하는 지연 청크까지 따라가며
+// 소스맵을 수집하고 원본에서 경로를 추출한다 (이슈 #39: 지연 로딩 청크 추적).
 //
-// Juice Shop 번들은 sourceMappingURL 주석이 제거돼 있어 주석만 믿으면 하나도 못 찾는다.
-// 주석이 있으면 그것을 우선하고, 없으면 "<번들>.map" 관례로 프로브한다.
+// 라우트 정의는 흔히 지연 로딩 모듈(admin.module.js 등)에 있고, 그 청크는 index.html 이 아니라
+// 런타임 번들에서만 참조된다. 진입 스크립트만 보면 정작 라우트가 사는 파일을 못 읽는다.
+// 그래서 각 번들 JS 에서 참조하는 .js 파일명을 큐에 넣어 그 .map 까지 따라간다.
+//
+//	한계: webpack 이 청크 파일명을 런타임에 "name"+"."+hash+".js" 로 조립하면 완전한 .js
+//	리터럴이 없어 이 방식으로 못 잡는다(콘텐츠 해시 프로덕션 빌드). 후속 과제로 남긴다.
 func (g *ingester) sourceMaps() {
 	html, ct, ok := g.get("/")
 	if !ok || !strings.Contains(strings.ToLower(ct), "html") {
 		return
 	}
-	found := 0
+	var queue []string
+	enq := map[string]bool{}
+	push := func(p string) {
+		if p == "" || enq[p] || len(enq) >= maxBundles {
+			return
+		}
+		enq[p] = true
+		queue = append(queue, p)
+	}
 	for i, m := range reScriptSrc.FindAllStringSubmatch(html, 30) {
 		if i >= 10 {
-			break // 번들 상한
+			break // 진입 스크립트 시드 상한
 		}
-		src := m[1]
-		su, err := url.Parse(src)
-		if err != nil || (su.Host != "" && su.Hostname() != g.base.Hostname()) {
-			continue // 3rd-party CDN 제외
+		if b, ok := g.bundlePath(m[1]); ok {
+			push(b)
 		}
-		bundle := su.Path
-		if !strings.HasPrefix(bundle, "/") {
-			bundle = "/" + strings.TrimPrefix(bundle, "./")
-		}
+	}
+
+	found := 0
+	for qi := 0; qi < len(queue); qi++ {
+		bundle := queue[qi]
 		js, _, ok := g.get(bundle)
 		if !ok {
 			continue
 		}
-		mapPath := bundle + ".map"
-		if mm := reMapURL.FindStringSubmatch(js); mm != nil {
-			if mu, err := url.Parse(strings.TrimSpace(mm[1])); err == nil && mu.Path != "" && !strings.HasPrefix(mm[1], "data:") {
-				if strings.HasPrefix(mu.Path, "/") {
-					mapPath = mu.Path
-				} else {
-					mapPath = dirOf(bundle) + mu.Path
-				}
-			}
+		for _, chunk := range g.chunkRefs(bundle, js) {
+			push(chunk) // 이 번들이 참조하는 지연 청크를 큐에 추가
 		}
-		body, mct, ok := g.get(mapPath)
-		if !ok {
-			continue
-		}
-		files, err := parseSourceMap(body, mct)
-		if err != nil {
-			g.rep.Rejected = append(g.rep.Rejected, "sourcemap:"+mapPath)
-			continue
-		}
-		g.rep.Sources = append(g.rep.Sources, "sourcemap:"+mapPath)
-		found++
-		// 소스맵 본문은 정규식 추측이라 static-regex 로 등록해 라이브니스 검증을 받게 한다.
-		for _, p := range extractFromSources(files, g.base.Hostname()) {
-			g.recordAs(endpoints.SrcStaticRegex, "GET", p, nil)
+		if g.processMap(bundle, js) {
+			found++
 		}
 	}
 	if found == 0 {
 		log.Printf("[ING ] %s 소스맵 없음 (번들에 sourceMappingURL 없고 .map 도 명세 아님)", g.base.Host)
 	}
+}
+
+// bundlePath — <script src> 값을 같은 호스트의 절대 경로 번들로. 3rd-party 는 (,false).
+func (g *ingester) bundlePath(src string) (string, bool) {
+	su, err := url.Parse(src)
+	if err != nil || su.Path == "" || (su.Host != "" && su.Hostname() != g.base.Hostname()) {
+		return "", false
+	}
+	b := su.Path
+	if !strings.HasPrefix(b, "/") {
+		b = "/" + strings.TrimPrefix(b, "./")
+	}
+	return b, true
+}
+
+// chunkRefs — 번들 JS 가 참조하는 다른 .js 청크의 절대 경로를 뽑는다(같은 호스트·상대 해소).
+func (g *ingester) chunkRefs(bundle, js string) []string {
+	dir := dirOf(bundle)
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range reChunkRef.FindAllStringSubmatch(js, 200) {
+		ref := m[1]
+		if strings.Contains(ref, "://") || strings.HasPrefix(ref, "//") {
+			continue // 외부 URL
+		}
+		p := ref
+		if !strings.HasPrefix(p, "/") {
+			p = dir + strings.TrimPrefix(ref, "./")
+		}
+		if p == bundle || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
+}
+
+// processMap — 번들의 소스맵을 찾아(sourceMappingURL 주석 우선, 없으면 <번들>.map 관례)
+// 파싱·추출·등록한다. 소스맵을 실제로 파싱했으면 true.
+func (g *ingester) processMap(bundle, js string) bool {
+	mapPath := bundle + ".map"
+	if mm := reMapURL.FindStringSubmatch(js); mm != nil {
+		if mu, err := url.Parse(strings.TrimSpace(mm[1])); err == nil && mu.Path != "" && !strings.HasPrefix(mm[1], "data:") {
+			if strings.HasPrefix(mu.Path, "/") {
+				mapPath = mu.Path
+			} else {
+				mapPath = dirOf(bundle) + mu.Path
+			}
+		}
+	}
+	body, mct, ok := g.get(mapPath)
+	if !ok {
+		return false
+	}
+	files, err := parseSourceMap(body, mct)
+	if err != nil {
+		g.rep.Rejected = append(g.rep.Rejected, "sourcemap:"+mapPath)
+		return false
+	}
+	g.rep.Sources = append(g.rep.Sources, "sourcemap:"+mapPath)
+	// 소스맵 본문은 정규식 추측이라 static-regex 로 등록해 라이브니스 검증을 받게 한다.
+	for _, p := range extractFromSources(files, g.base.Hostname()) {
+		g.recordAs(endpoints.SrcStaticRegex, "GET", p, nil)
+	}
+	return true
 }
 
 // extractFromSources — 복원한 파일들에서 경로 후보를 파일 단위로 뽑는다 (이슈 #39).
