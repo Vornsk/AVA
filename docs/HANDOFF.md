@@ -57,7 +57,9 @@
 | #24 | 경로 정규화 v2 — UUID/hash/date/b64 분류기 + 형제 클러스터링 | `backend/internal/endpoints/normalize.go` |
 | #25 | 스펙 인제스터 — robots/sitemap/OpenAPI/GraphQL/소스맵 | `backend/internal/recon/ingest/` |
 | #26 | 라이브니스 검증 + 출처 신뢰도 등급 | `backend/internal/recon/liveness/` |
-| **#27** | **능동 콘텐츠 발견** — embed wordlist + soft-404 재사용 | `backend/internal/recon/discover/` · `probe/` |
+| #27 | 능동 콘텐츠 발견 — embed wordlist + soft-404 재사용 | `backend/internal/recon/discover/` · `probe/` |
+| #28 | 정찰 UI — 소스 배지·verified 필터·출처 분포 + UX 개선 | `frontend/src/pages/Recon.tsx` |
+| **#38** | **인증 델타 크롤** — 인증 뒤에만 보이는 표면 = 접근통제 진단 후보 | `crawler.runAuthDelta`, `endpoints.authOnly` |
 
 **#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
 값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
@@ -67,6 +69,16 @@
 측정 결과(Juice Shop, 전·후 각 4회): **트리 팽창률 headless 1.20x → 1.00x**(목표 ≤1.3 충족),
 **static 은 8회 전부 한 칸도 다르지 않음**(P 15.5% / R 41.9% 유지 = 회귀 없음).
 상세 표와 재현 절차는 `docs/recon-groundtruth/README.md`, 규칙 설명은 `docs/03-정찰.md`.
+
+**#38 이 무엇을 바꿨나 (확장 로드맵 1번).** 핵심 로드맵(#22~#28) 이후, 기획서 §7 확장의 첫 항목.
+로그인 뒤에만 접근되는 표면을 접근통제 진단 후보로 잡는다 — KII·전자금융의 수평/수직 접근통제와 직결.
+같은 대상을 비인증→인증 두 패스로 크롤해, **인증 패스에서 2xx 로 접근됐지만 비인증에선 접근 못 한**
+경로를 `auth-only` 로 표시한다. "경로 존재"가 아니라 "2xx 접근 성공"이 기준 — 링크는 양쪽에 있어도
+401 이면 접근 못 한 것이다. `auth-only` 는 출처 등급이 아니라 직교 플래그(#26 unverified 패턴).
+
+측정(vulnapp 실측): `/orders`·`/profile`·`/dashboard`(비인증 401·인증 200)가 auth-only 로 잡히고,
+`/admin`(비인증에도 200, 접근통제 취약)은 auth-only 아님으로 구분됐다. 이 구분이 핵심 —
+"숨겨진 표면"과 "인증 없이 뚫리는 표면"은 다르다. 벤치는 `auth-delta` 프로파일(로그인 설정 대상만).
 
 **#25 가 무엇을 바꿨나.** 링크를 따라가는 크롤만으로는 링크 없는 API 를 찾을 수 없어 VAmPI 재현율이
 0% 였다. 인제스터는 대상이 스스로 공개하는 명세를 읽는다 — `/openapi.json` 한 파일이 VAmPI 정답셋
