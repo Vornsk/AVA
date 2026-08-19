@@ -552,11 +552,17 @@ nonexistent-bogus-xyz.js.map -&gt; code=200 type=text/html size=9393</code></pre
 <p>소스맵 발견도 <code>sourceMappingURL</code> 주석에 의존하지 않습니다. Juice Shop 번들은 그 주석이 제거돼 있어 주석만 믿으면 하나도 못 찾습니다. 주석이 있으면 우선하고, 없으면 <strong><code>&lt;번들&gt;.map</code> 관례로 프로브</strong>합니다.</p>
 <h4>소스맵 완전 복원 — 파일 단위 라우트 추출 (이슈 #39)</h4>
 <p>이전에는 <code>sourcesContent</code>를 전부 이어 붙여 <code>/api·/rest·/vN·/graphql</code> 정규식 하나만 돌렸습니다. API 스타일 경로는 잡지만 <strong>클라이언트 라우트 정의</strong>(React Router·Vue Router·Angular RouterModule)는 통째로 놓쳤습니다. Juice Shop의 <code>/administration</code>·<code>/score-board</code> 같은 화면은 링크가 아니라 라우트 설정에만 있어, 크롤·API 추출 어느 쪽으로도 안 걸립니다.</p>
-<p><code>parseSourceMap</code>이 이제 <code>sources</code>(파일명)와 <code>sourcesContent</code>(본문)를 <strong>인덱스로 짝지어</strong> <code>SourceFile</code> 목록을 돌려줍니다. 파일 단위 분석이 두 가지를 가능케 합니다.</p>
-<ul><li><strong>프레임워크 라우트 추출</strong> — <code>path: '...'</code> / <code>path="..."</code> 프로퍼티를 정규식으로 뽑아 정규화합니다:</li></ul>
+<p><code>parseSourceMap</code>이 이제 <code>sources</code>(파일명)와 <code>sourcesContent</code>(본문)를 <strong>인덱스로 짝지어</strong> <code>SourceFile</code> 목록을 돌려줍니다. 파일 단위 분석이 다음을 가능케 합니다.</p>
+<ul><li><strong>프레임워크 라우트 추출</strong> — <code>path: '...'</code> / <code>path="..."</code> 프로퍼티를 뽑아 정규화합니다:</li></ul>
 <p>  <code>:id</code>→<code>{id}</code>(트리 변수 자리 규칙), 상대 경로 앞 <code>/</code> 보정(Angular 자식 라우트), 와일드카드(<code>*</code>·<code>**</code>)   자리에서 절단, 외부 URL·템플릿 보간(<code>${...}</code>)·표현식 제외.</p>
-<ul><li><strong>벤더 파일 제외</strong> — <code>node_modules</code>·번들러 런타임 파일은 라우트 추출에서 뺍니다. 라이브러리 내부</li></ul>
-<p>  라우터 코드에 <code>path:</code>가 많아 통째로 뽑으면 오탐이 쏟아지는데, 파일 경로로 걸러냅니다.   API 경로 추출은 프리픽스 앵커라 노이즈가 적어 벤더 포함 전체에서 돌립니다.</p>
+<ul><li><strong>자식 라우트 경로 합성</strong> — 평면 정규식은 중첩 라우트를 부모와 못 잇습니다.</li></ul>
+<p>  <code>{ path: 'admin', children: [{ path: 'users' }] }</code>는 <code>/admin/users</code>여야 하는데 정규식만 쓰면   루트급 <code>/users</code>가 돼 라이브니스가 강등합니다. 그래서 <strong>문자열·주석을 건너뛰며 <code>[</code>/<code>]</code> 깊이와   <code>children:</code> 프리픽스를 추적하는 경량 렉서</strong>(<code>composeRoutes</code>)로 절대 경로를 합성합니다.   빈 <code>path: ''</code>는 자식 기본 라우트(부모와 동일)로 처리합니다.</p>
+<ul><li><strong>설정 상수·내부 URL 추출</strong> — 라우트 정의 밖의 절대 경로 문자열 리터럴(<code>apiBase: '/config/v2'</code>)과</li></ul>
+<p>  주석·본문의 <strong>내부 URL</strong>(같은 호스트) 경로부도 공격면입니다(<code>extractLoosePaths</code>). 정적 에셋   (<code>.js</code>·<code>.css</code>·<code>.png</code>·<code>.json</code> 등)은 확장자로, 외부 호스트 URL은 호스트 비교로 제외합니다.</p>
+<ul><li><strong>지연 로딩 청크 추적</strong> — 라우트 정의는 흔히 지연 로딩 모듈(<code>admin.module.js</code>)에 있고, 그 청크는</li></ul>
+<p>  <code>index.html</code>이 아니라 런타임 번들에서만 참조됩니다. 진입 스크립트만 보면 정작 라우트가 사는 파일을   못 읽습니다. 각 번들 JS에서 참조하는 <code>.js</code> 청크를 <strong>워크리스트로 큐잉</strong>해 그 <code>.map</code>까지 따라갑니다   (상한 <code>maxBundles=40</code>). *한계*: webpack이 청크명을 런타임에 <code>name+hash+.js</code>로 조립하면 완전한   <code>.js</code> 리터럴이 없어 이 방식으로 못 잡습니다(콘텐츠 해시 프로덕션 빌드) — 후속 과제.</p>
+<ul><li><strong>벤더 파일 제외</strong> — <code>node_modules</code>·번들러 런타임 파일은 라우트·설정 추출에서 뺍니다. 라이브러리 내부</li></ul>
+<p>  <code>path:</code>가 많아 통째로 뽑으면 오탐이 쏟아지는데, 파일 경로로 걸러냅니다.   API 경로 추출은 프리픽스 앵커라 노이즈가 적어 벤더 포함 전체에서 돌립니다.</p>
 <h4>소스맵 추출물은 <code>static-regex</code> — 라이브니스 검증 대상</h4>
 <p>명세(OpenAPI/robots/sitemap/GraphQL)는 대상이 <strong>스스로 선언한</strong> 정보라 <code>spec</code>(프로브 면제)입니다. 반면 소스맵 본문에서 <strong>정규식으로 추측</strong>한 경로는 실재 보장이 없습니다 — 상대 라우트를 절대 경로로 오인하거나, 죽은 라우트가 남아 있을 수 있습니다. 그래서 소스맵 추출물은 <code>RecordSpec</code>이 아니라 <code>RecordFrom(static-regex)</code>로 등록해 <strong>라이브니스(#26) 프로브 대상</strong>으로 만듭니다. Juice Shop static 실측에서 정규식 추출의 81%가 오탐이었고, 이 등급 지정이 그 오탐을 트리에서 걸러냅니다.</p>
 <h4>명세 경로와 크롤 경로는 한 노드로 합쳐집니다</h4>
