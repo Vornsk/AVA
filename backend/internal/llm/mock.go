@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -45,7 +46,8 @@ func (MockProvider) Complete(_ context.Context, system, user string) (string, er
 		if len(labels) == 0 {
 			labels = []string{"other"}
 		}
-		return `{"labels":["` + strings.Join(labels, `","`) + `"]}`, nil
+		b, _ := json.Marshal(map[string][]string{"labels": labels})
+		return string(b), nil
 	}
 	// 오탐 검토(Review) — 응답 증적으로 휴리스틱 판정 (실제 LLM 대체 데모)
 	if strings.Contains(system, "triage") {

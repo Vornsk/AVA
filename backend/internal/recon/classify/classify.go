@@ -88,27 +88,10 @@ func sig(in Input) string {
 }
 
 // Classify — 한 엔드포인트를 분류한다. 룰 우선, 모호하면(그리고 프로바이더가 있으면) LLM.
+// 예산 없는 단건 분류 = classifyBudgeted(호출당 LLM 최대 1회).
 func Classify(ctx context.Context, in Input) Result {
-	key := sig(in)
-	cacheMu.Lock()
-	if r, ok := cache[key]; ok {
-		cacheMu.Unlock()
-		return Result{Labels: r.Labels, From: "cache"}
-	}
-	cacheMu.Unlock()
-
-	ruled, confident := ruleLabels(in)
-	var res Result
-	if confident || !llm.Available() {
-		res = Result{Labels: fallback(ruled), From: "rule"}
-	} else {
-		res = Result{Labels: mergeLabels(ruled, llmLabels(ctx, in)), From: "llm"}
-	}
-
-	cacheMu.Lock()
-	cache[key] = res
-	cacheMu.Unlock()
-	return res
+	budget := 1
+	return classifyBudgeted(ctx, in, &budget)
 }
 
 // Run — 트리의 대상 엔드포인트를 분류해 라벨을 붙인다.
