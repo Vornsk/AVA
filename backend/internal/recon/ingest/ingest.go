@@ -120,8 +120,12 @@ func (g *ingester) get(path string) (body, ctype string, ok bool) {
 	return string(b), resp.Header.Get("Content-Type"), true
 }
 
-// record — 엔드포인트 하나를 명세 출처로 등록한다(중복 제거).
-func (g *ingester) record(method, path string, params []endpoints.Param) {
+// recordAs — 엔드포인트 하나를 지정한 출처 등급으로 등록한다(중복 제거).
+//
+// 명세(robots/sitemap/openapi/graphql)는 spec 으로, 소스맵 본문에서 정규식으로 뽑은 추측은
+// static-regex 로 등록한다. static-regex 는 라이브니스(#26) 프로브 대상이라, 존재하지 않는
+// 추측 경로가 트리에 남지 않는다 — Juice Shop static 실측에서 정규식 추출의 81% 가 오탐이었다.
+func (g *ingester) recordAs(source, method, path string, params []endpoints.Param) {
 	if path == "" || path[0] != '/' {
 		return
 	}
@@ -130,11 +134,16 @@ func (g *ingester) record(method, path string, params []endpoints.Param) {
 	}
 	key := method + " " + path
 	if g.seen[key] {
-		return
+		return // 이미 더 먼저(더 믿을 만한 출처로) 잡혔다 — 명세가 소스맵보다 앞서 돈다
 	}
 	g.seen[key] = true
-	endpoints.RecordSpec(g.base.Scheme, g.base.Host, method, path, params, auth.Default().Enabled(), "")
+	endpoints.RecordFrom(source, g.base.Scheme, g.base.Host, method, path, params, auth.Default().Enabled(), "")
 	g.rep.Recorded++
+}
+
+// record — 명세 출처(spec)로 등록. RecordFrom(spec) 은 RecordSpec 과 동치다(변수 자리 선언 포함).
+func (g *ingester) record(method, path string, params []endpoints.Param) {
+	g.recordAs(endpoints.SrcSpec, method, path, params)
 }
 
 // ── robots.txt / sitemap.xml ──────────────────────────────────────
@@ -366,6 +375,12 @@ var (
 	reScriptSrc = regexp.MustCompile(`(?i)<script[^>]+src\s*=\s*["']([^"']+)["']`)
 	reMapURL    = regexp.MustCompile(`(?m)^//[#@]\s*sourceMappingURL=(\S+)\s*$`)
 	reAPIPath   = regexp.MustCompile(`["'\x60](/(?:api|rest|v\d|graphql)[A-Za-z0-9_\-/.{}]*)["'\x60]`)
+	// reRoutePath — 프레임워크 라우트 정의의 path 프로퍼티. sourcesContent 는 트랜스파일 전
+	// 원본이라 라우트 키가 대부분 따옴표 없는 리터럴이다 (이슈 #39).
+	//   React Router  <Route path="/users"> · { path: "users", element }
+	//   Vue Router    { path: '/about', component }
+	//   Angular       { path: 'admin', component } · RouterModule.forRoot([{ path: '', ... }])
+	reRoutePath = regexp.MustCompile(`(?i)\bpath["'\x60]?\s*[:=]\s*["'\x60]([^"'\x60\n]{1,256})["'\x60]`)
 )
 
 // sourceMaps — 진입 HTML 의 <script src> 를 훑어 소스맵을 수집하고 원본에서 API 경로를 추출한다.
@@ -409,15 +424,16 @@ func (g *ingester) sourceMaps() {
 		if !ok {
 			continue
 		}
-		sources, err := parseSourceMap(body, mct)
+		files, err := parseSourceMap(body, mct)
 		if err != nil {
 			g.rep.Rejected = append(g.rep.Rejected, "sourcemap:"+mapPath)
 			continue
 		}
 		g.rep.Sources = append(g.rep.Sources, "sourcemap:"+mapPath)
 		found++
-		for _, p := range extractPaths(sources) {
-			g.record("GET", p, nil)
+		// 소스맵 본문은 정규식 추측이라 static-regex 로 등록해 라이브니스 검증을 받게 한다.
+		for _, p := range extractFromSources(files) {
+			g.recordAs(endpoints.SrcStaticRegex, "GET", p, nil)
 		}
 	}
 	if found == 0 {
@@ -425,21 +441,85 @@ func (g *ingester) sourceMaps() {
 	}
 }
 
-// extractPaths — 소스맵의 원본 소스 본문에서 API 경로 후보를 뽑는다.
-func extractPaths(sources []string) []string {
+// extractFromSources — 복원한 파일들에서 경로 후보를 파일 단위로 뽑는다 (이슈 #39).
+//
+//	· API 경로(/api·/rest·/vN·/graphql) — 프리픽스 앵커라 노이즈가 적어 벤더 포함 전체에서 뽑는다
+//	· 프레임워크 라우트(path: '...') — 앱 소스만. 벤더 라이브러리는 자기 내부 라우터 코드에
+//	  path: 가 많아 통째로 뽑으면 오탐이 쏟아진다. 파일 경로로 걸러낸다.
+func extractFromSources(files []SourceFile) []string {
 	seen := map[string]bool{}
 	var out []string
-	for _, src := range sources {
-		for _, m := range reAPIPath.FindAllStringSubmatch(src, maxPaths) {
-			p := m[1]
-			if seen[p] || len(out) >= maxPaths {
-				continue
+	add := func(p string) {
+		if p == "" || seen[p] || len(out) >= maxPaths {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, f := range files {
+		if f.Content == "" {
+			continue
+		}
+		for _, m := range reAPIPath.FindAllStringSubmatch(f.Content, maxPaths) {
+			add(m[1])
+		}
+		if isVendorSource(f.Path) {
+			continue
+		}
+		for _, m := range reRoutePath.FindAllStringSubmatch(f.Content, maxPaths) {
+			if p, ok := cleanRoute(m[1]); ok {
+				add(p)
 			}
-			seen[p] = true
-			out = append(out, p)
 		}
 	}
 	return out
+}
+
+// cleanRoute — 라우트 프로퍼티 값을 등록 가능한 경로로 정규화한다. 라우트가 아니면 (,false).
+//
+//	· 외부 URL·프로토콜 상대·보간식(${}·표현식)은 정적 경로가 아니다 → 버린다
+//	· :id → {id} (트리의 변수 자리 규칙과 맞춘다) · 후행 ? (optional) 제거
+//	· 와일드카드(* · **) 자리에서 멈춘다 — 뒤 세그먼트는 의미가 없다
+//	· 앞에 / 를 붙인다 (Angular 자식 라우트는 상대 경로라 슬래시가 없다)
+func cleanRoute(v string) (string, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" || strings.Contains(v, "://") || strings.HasPrefix(v, "//") {
+		return "", false
+	}
+	if strings.ContainsAny(v, " \t<>(){}$|\\") {
+		return "", false // 표현식·보간·JSX 는 정적 경로가 아니다
+	}
+	var segs []string
+	for _, s := range strings.Split(v, "/") {
+		if s == "" {
+			continue
+		}
+		if s == "*" || s == "**" {
+			break
+		}
+		if strings.HasPrefix(s, ":") {
+			name := strings.TrimRight(s[1:], "?")
+			if name == "" {
+				name = "param"
+			}
+			s = "{" + name + "}"
+		}
+		segs = append(segs, s)
+	}
+	if len(segs) == 0 {
+		return "", false
+	}
+	return "/" + strings.Join(segs, "/"), true
+}
+
+// isVendorSource — 소스맵 원본 경로가 서드파티(node_modules)·번들러 런타임인가.
+// 프레임워크 라우트 추출에서 제외한다(라이브러리 내부 path: 가 오탐을 만든다).
+func isVendorSource(path string) bool {
+	p := strings.ToLower(path)
+	return strings.Contains(p, "node_modules") ||
+		strings.Contains(p, "/webpack/") ||
+		strings.HasPrefix(p, "webpack/") ||
+		strings.Contains(p, "/vendor")
 }
 
 func dirOf(p string) string {

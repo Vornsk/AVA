@@ -167,9 +167,19 @@ type sourceMap struct {
 	SourcesContent []string `json:"sourcesContent"`
 }
 
-// parseSourceMap — 소스맵을 파싱해 원본 소스 본문 목록을 돌려준다.
-// sourcesContent 가 없으면 경로 목록(sources)만이라도 돌려준다(파일명에 힌트가 있다).
-func parseSourceMap(body, ctype string) ([]string, error) {
+// SourceFile — 소스맵에서 복원한 원본 파일 하나. 경로와 본문을 짝지어 파일 단위로 분석한다 (이슈 #39).
+//
+// sources[i] 파일명과 sourcesContent[i] 본문을 붙여 두면 (1) 벤더(node_modules) 파일을
+// 프레임워크 라우트 추출에서 제외할 수 있고 (2) 파일명 힌트를 그대로 쓸 수 있다.
+// 전부 이어 붙여 정규식 하나만 돌리던 이전 방식은 이 둘을 못 했다.
+type SourceFile struct {
+	Path    string // sources[i] — 예: webpack:///./src/app/app-routing.module.ts
+	Content string // sourcesContent[i] — 없으면 ""
+}
+
+// parseSourceMap — 소스맵을 파싱해 (원본 경로, 본문) 짝 목록을 돌려준다.
+// sourcesContent 가 없으면 경로만 채운 SourceFile 을 돌려준다(파일명에 힌트가 있다).
+func parseSourceMap(body, ctype string) ([]SourceFile, error) {
 	trimmed := strings.TrimSpace(body)
 	if looksLikeHTML(trimmed) {
 		return nil, errHTML
@@ -184,10 +194,15 @@ func parseSourceMap(body, ctype string) ([]string, error) {
 	if sm.Version == 0 || len(sm.Sources) == 0 {
 		return nil, errNotSpec
 	}
-	if len(sm.SourcesContent) > 0 {
-		return sm.SourcesContent, nil
+	out := make([]SourceFile, 0, len(sm.Sources))
+	for i, src := range sm.Sources {
+		f := SourceFile{Path: src}
+		if i < len(sm.SourcesContent) {
+			f.Content = sm.SourcesContent[i]
+		}
+		out = append(out, f)
 	}
-	return sm.Sources, nil
+	return out, nil
 }
 
 func isYAML(ct string) bool {
