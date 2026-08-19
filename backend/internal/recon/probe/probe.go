@@ -70,14 +70,20 @@ func New(ctx context.Context, c *http.Client) *Client { return &Client{ctx: ctx,
 // Content-Length 도 없을 수 있다(Juice Shop 이 그렇다). 대신 본문을 1MB 로 자르고
 // 레이트리밋을 건다.
 func (c *Client) Probe(scheme, host, path string) (Sig, bool) {
-	u := &url.URL{Scheme: scheme, Host: host, Path: path}
+	sig, _, ok := c.ProbeURL(&url.URL{Scheme: scheme, Host: host, Path: path})
+	return sig, ok
+}
+
+// ProbeURL — 임의 URL(쿼리 포함)을 GET 해 응답 모양과 본문을 함께 잰다. 스코프 밖이면 (,,false).
+// 파라미터 마이닝(#40)은 본문 반사를 봐야 하므로 본문이 필요하다. 본문은 1MB 로 자른다.
+func (c *Client) ProbeURL(u *url.URL) (Sig, string, bool) {
 	if allowed, _ := scope.Allowed(u.Hostname(), u.Path); !allowed {
-		return Sig{}, false // 스코프 밖으로는 아무것도 내보내지 않는다
+		return Sig{}, "", false // 스코프 밖으로는 아무것도 내보내지 않는다
 	}
 	req, err := http.NewRequestWithContext(c.ctx, "GET", u.String(), nil)
 	if err != nil {
 		c.Errors++
-		return Sig{}, false
+		return Sig{}, "", false
 	}
 	auth.Default().Inject(req)
 	time.Sleep(RateLimit)
@@ -85,7 +91,7 @@ func (c *Client) Probe(scheme, host, path string) (Sig, bool) {
 	c.Probes++
 	if err != nil {
 		c.Errors++
-		return Sig{}, false
+		return Sig{}, "", false
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, maxBody))
@@ -95,7 +101,7 @@ func (c *Client) Probe(scheme, host, path string) (Sig, bool) {
 		Ctype:  resp.Header.Get("Content-Type"),
 		Size:   int64(len(b)),
 		Hash:   hex.EncodeToString(sum[:8]),
-	}, true
+	}, string(b), true
 }
 
 // Calibrate — 존재할 리 없는 경로를 찔러 soft-404 기준 지문을 잡는다.
