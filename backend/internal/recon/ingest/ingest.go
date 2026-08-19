@@ -120,8 +120,12 @@ func (g *ingester) get(path string) (body, ctype string, ok bool) {
 	return string(b), resp.Header.Get("Content-Type"), true
 }
 
-// record — 엔드포인트 하나를 명세 출처로 등록한다(중복 제거).
-func (g *ingester) record(method, path string, params []endpoints.Param) {
+// recordAs — 엔드포인트 하나를 지정한 출처 등급으로 등록한다(중복 제거).
+//
+// 명세(robots/sitemap/openapi/graphql)는 spec 으로, 소스맵 본문에서 정규식으로 뽑은 추측은
+// static-regex 로 등록한다. static-regex 는 라이브니스(#26) 프로브 대상이라, 존재하지 않는
+// 추측 경로가 트리에 남지 않는다 — Juice Shop static 실측에서 정규식 추출의 81% 가 오탐이었다.
+func (g *ingester) recordAs(source, method, path string, params []endpoints.Param) {
 	if path == "" || path[0] != '/' {
 		return
 	}
@@ -130,11 +134,16 @@ func (g *ingester) record(method, path string, params []endpoints.Param) {
 	}
 	key := method + " " + path
 	if g.seen[key] {
-		return
+		return // 이미 더 먼저(더 믿을 만한 출처로) 잡혔다 — 명세가 소스맵보다 앞서 돈다
 	}
 	g.seen[key] = true
-	endpoints.RecordSpec(g.base.Scheme, g.base.Host, method, path, params, auth.Default().Enabled(), "")
+	endpoints.RecordFrom(source, g.base.Scheme, g.base.Host, method, path, params, auth.Default().Enabled(), "")
 	g.rep.Recorded++
+}
+
+// record — 명세 출처(spec)로 등록. RecordFrom(spec) 은 RecordSpec 과 동치다(변수 자리 선언 포함).
+func (g *ingester) record(method, path string, params []endpoints.Param) {
+	g.recordAs(endpoints.SrcSpec, method, path, params)
 }
 
 // ── robots.txt / sitemap.xml ──────────────────────────────────────
@@ -366,58 +375,61 @@ var (
 	reScriptSrc = regexp.MustCompile(`(?i)<script[^>]+src\s*=\s*["']([^"']+)["']`)
 	reMapURL    = regexp.MustCompile(`(?m)^//[#@]\s*sourceMappingURL=(\S+)\s*$`)
 	reAPIPath   = regexp.MustCompile(`["'\x60](/(?:api|rest|v\d|graphql)[A-Za-z0-9_\-/.{}]*)["'\x60]`)
+	// reAbsPathLit — 절대 경로 문자열 리터럴(설정 상수: apiBase: '/config/v2' 등) (이슈 #39).
+	reAbsPathLit = regexp.MustCompile(`["'\x60](/[A-Za-z0-9][\w\-./{}:]*)["'\x60]`)
+	// reURLInText — 본문·주석 어디서든 절대 URL. 호스트와 경로를 함께 잡아 내부 URL 만 추린다.
+	reURLInText = regexp.MustCompile(`https?://([\w.\-]+)(?::\d+)?(/[\w\-./{}:%]*)`)
+	// reChunkRef — 번들 JS 가 참조하는 다른 청크(.js) 파일명 리터럴. 지연 로딩 모듈 추적용 (이슈 #39).
+	reChunkRef = regexp.MustCompile(`["'\x60]([\w./\-]+\.m?js)["'\x60]`)
 )
 
-// sourceMaps — 진입 HTML 의 <script src> 를 훑어 소스맵을 수집하고 원본에서 API 경로를 추출한다.
+// maxBundles — 처리할 번들(진입 스크립트 + 지연 청크) 상한. 폭주·레이트리밋 낭비 방지.
+const maxBundles = 40
+
+// sourceMaps — 진입 HTML 의 <script src> 를 시드로, 번들이 참조하는 지연 청크까지 따라가며
+// 소스맵을 수집하고 원본에서 경로를 추출한다 (이슈 #39: 지연 로딩 청크 추적).
 //
-// Juice Shop 번들은 sourceMappingURL 주석이 제거돼 있어 주석만 믿으면 하나도 못 찾는다.
-// 주석이 있으면 그것을 우선하고, 없으면 "<번들>.map" 관례로 프로브한다.
+// 라우트 정의는 흔히 지연 로딩 모듈(admin.module.js 등)에 있고, 그 청크는 index.html 이 아니라
+// 런타임 번들에서만 참조된다. 진입 스크립트만 보면 정작 라우트가 사는 파일을 못 읽는다.
+// 그래서 각 번들 JS 에서 참조하는 .js 파일명을 큐에 넣어 그 .map 까지 따라간다.
+//
+//	한계: webpack 이 청크 파일명을 런타임에 "name"+"."+hash+".js" 로 조립하면 완전한 .js
+//	리터럴이 없어 이 방식으로 못 잡는다(콘텐츠 해시 프로덕션 빌드). 후속 과제로 남긴다.
 func (g *ingester) sourceMaps() {
 	html, ct, ok := g.get("/")
 	if !ok || !strings.Contains(strings.ToLower(ct), "html") {
 		return
 	}
-	found := 0
+	var queue []string
+	enq := map[string]bool{}
+	push := func(p string) {
+		if p == "" || enq[p] || len(enq) >= maxBundles {
+			return
+		}
+		enq[p] = true
+		queue = append(queue, p)
+	}
 	for i, m := range reScriptSrc.FindAllStringSubmatch(html, 30) {
 		if i >= 10 {
-			break // 번들 상한
+			break // 진입 스크립트 시드 상한
 		}
-		src := m[1]
-		su, err := url.Parse(src)
-		if err != nil || (su.Host != "" && su.Hostname() != g.base.Hostname()) {
-			continue // 3rd-party CDN 제외
+		if b, ok := g.bundlePath(m[1]); ok {
+			push(b)
 		}
-		bundle := su.Path
-		if !strings.HasPrefix(bundle, "/") {
-			bundle = "/" + strings.TrimPrefix(bundle, "./")
-		}
+	}
+
+	found := 0
+	for qi := 0; qi < len(queue); qi++ {
+		bundle := queue[qi]
 		js, _, ok := g.get(bundle)
 		if !ok {
 			continue
 		}
-		mapPath := bundle + ".map"
-		if mm := reMapURL.FindStringSubmatch(js); mm != nil {
-			if mu, err := url.Parse(strings.TrimSpace(mm[1])); err == nil && mu.Path != "" && !strings.HasPrefix(mm[1], "data:") {
-				if strings.HasPrefix(mu.Path, "/") {
-					mapPath = mu.Path
-				} else {
-					mapPath = dirOf(bundle) + mu.Path
-				}
-			}
+		for _, chunk := range g.chunkRefs(bundle, js) {
+			push(chunk) // 이 번들이 참조하는 지연 청크를 큐에 추가
 		}
-		body, mct, ok := g.get(mapPath)
-		if !ok {
-			continue
-		}
-		sources, err := parseSourceMap(body, mct)
-		if err != nil {
-			g.rep.Rejected = append(g.rep.Rejected, "sourcemap:"+mapPath)
-			continue
-		}
-		g.rep.Sources = append(g.rep.Sources, "sourcemap:"+mapPath)
-		found++
-		for _, p := range extractPaths(sources) {
-			g.record("GET", p, nil)
+		if g.processMap(bundle, js) {
+			found++
 		}
 	}
 	if found == 0 {
@@ -425,21 +437,377 @@ func (g *ingester) sourceMaps() {
 	}
 }
 
-// extractPaths — 소스맵의 원본 소스 본문에서 API 경로 후보를 뽑는다.
-func extractPaths(sources []string) []string {
+// bundlePath — <script src> 값을 같은 호스트의 절대 경로 번들로. 3rd-party 는 (,false).
+func (g *ingester) bundlePath(src string) (string, bool) {
+	su, err := url.Parse(src)
+	if err != nil || su.Path == "" || (su.Host != "" && su.Hostname() != g.base.Hostname()) {
+		return "", false
+	}
+	b := su.Path
+	if !strings.HasPrefix(b, "/") {
+		b = "/" + strings.TrimPrefix(b, "./")
+	}
+	return b, true
+}
+
+// chunkRefs — 번들 JS 가 참조하는 다른 .js 청크의 절대 경로를 뽑는다(같은 호스트·상대 해소).
+func (g *ingester) chunkRefs(bundle, js string) []string {
+	dir := dirOf(bundle)
 	seen := map[string]bool{}
 	var out []string
-	for _, src := range sources {
-		for _, m := range reAPIPath.FindAllStringSubmatch(src, maxPaths) {
-			p := m[1]
-			if seen[p] || len(out) >= maxPaths {
-				continue
+	for _, m := range reChunkRef.FindAllStringSubmatch(js, 200) {
+		ref := m[1]
+		if strings.Contains(ref, "://") || strings.HasPrefix(ref, "//") {
+			continue // 외부 URL
+		}
+		p := ref
+		if !strings.HasPrefix(p, "/") {
+			p = dir + strings.TrimPrefix(ref, "./")
+		}
+		if p == bundle || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	return out
+}
+
+// processMap — 번들의 소스맵을 찾아(sourceMappingURL 주석 우선, 없으면 <번들>.map 관례)
+// 파싱·추출·등록한다. 소스맵을 실제로 파싱했으면 true.
+func (g *ingester) processMap(bundle, js string) bool {
+	mapPath := bundle + ".map"
+	if mm := reMapURL.FindStringSubmatch(js); mm != nil {
+		if mu, err := url.Parse(strings.TrimSpace(mm[1])); err == nil && mu.Path != "" && !strings.HasPrefix(mm[1], "data:") {
+			if strings.HasPrefix(mu.Path, "/") {
+				mapPath = mu.Path
+			} else {
+				mapPath = dirOf(bundle) + mu.Path
 			}
+		}
+	}
+	body, mct, ok := g.get(mapPath)
+	if !ok {
+		return false
+	}
+	files, err := parseSourceMap(body, mct)
+	if err != nil {
+		g.rep.Rejected = append(g.rep.Rejected, "sourcemap:"+mapPath)
+		return false
+	}
+	g.rep.Sources = append(g.rep.Sources, "sourcemap:"+mapPath)
+	// 소스맵 본문은 정규식 추측이라 static-regex 로 등록해 라이브니스 검증을 받게 한다.
+	for _, p := range extractFromSources(files, g.base.Hostname()) {
+		g.recordAs(endpoints.SrcStaticRegex, "GET", p, nil)
+	}
+	return true
+}
+
+// extractFromSources — 복원한 파일들에서 경로 후보를 파일 단위로 뽑는다 (이슈 #39).
+// host 는 base 호스트로, 내부 URL 판정에 쓴다("" 면 모든 URL 경로를 내부로 본다).
+//
+//	· API 경로(/api·/rest·/vN·/graphql) — 프리픽스 앵커라 노이즈가 적어 벤더 포함 전체에서 뽑는다
+//	· 프레임워크 라우트(path: '...') — 앱 소스만(벤더 라이브러리의 path: 는 오탐)
+//	· 설정 상수·내부 URL — 앱 소스만. 절대 경로 리터럴과 같은 호스트 URL 의 경로부.
+func extractFromSources(files []SourceFile, host string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		if p == "" || seen[p] || len(out) >= maxPaths {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, f := range files {
+		if f.Content == "" {
+			continue
+		}
+		for _, m := range reAPIPath.FindAllStringSubmatch(f.Content, maxPaths) {
+			add(m[1])
+		}
+		if isVendorSource(f.Path) {
+			continue
+		}
+		for _, p := range composeRoutes(f.Content) {
+			add(p)
+		}
+		for _, p := range extractLoosePaths(f.Content, host) {
+			add(p)
+		}
+	}
+	return out
+}
+
+// extractLoosePaths — 설정 상수(절대 경로 리터럴)와 내부 URL(같은 호스트)의 경로부를 뽑는다.
+// 정적 에셋(.js·.css·.png·.json 등)과 외부 호스트는 제외한다. static-regex 로 등록되므로
+// 남는 오탐은 라이브니스가 걸러낸다.
+func extractLoosePaths(content, host string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		p = strings.TrimRight(p, "/")
+		if len(p) < 2 || seen[p] || isAssetPath(p) {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, m := range reAbsPathLit.FindAllStringSubmatch(content, maxPaths) {
+		add(m[1]) // 설정 상수 — 절대 경로는 본질적으로 같은 오리진
+	}
+	for _, m := range reURLInText.FindAllStringSubmatch(content, maxPaths) {
+		if host != "" && !sameHost(m[1], host) {
+			continue // 외부 URL 은 내부 URL 이 아니다
+		}
+		add(m[2])
+	}
+	return out
+}
+
+// sameHost — u 가 host 와 같거나 그 하위 도메인인가.
+func sameHost(u, host string) bool {
+	u = strings.ToLower(u)
+	host = strings.ToLower(host)
+	return u == host || strings.HasSuffix(u, "."+host)
+}
+
+// isAssetPath — 마지막 세그먼트 확장자가 정적 자원인가(엔드포인트가 아니다).
+func isAssetPath(p string) bool {
+	seg := p
+	if i := strings.LastIndex(seg, "/"); i >= 0 {
+		seg = seg[i+1:]
+	}
+	dot := strings.LastIndex(seg, ".")
+	if dot < 0 {
+		return false
+	}
+	switch strings.ToLower(seg[dot:]) {
+	case ".js", ".mjs", ".cjs", ".css", ".scss", ".sass", ".less", ".map",
+		".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".avif", ".bmp",
+		".woff", ".woff2", ".ttf", ".eot", ".otf",
+		".mp4", ".webm", ".mp3", ".wav", ".ogg", ".wasm",
+		".json", ".xml", ".txt", ".html", ".htm", ".md", ".csv", ".pdf":
+		return true
+	}
+	return false
+}
+
+// composeRoutes — 프레임워크 라우트 정의를 문자열 단위로 훑어 절대 경로를 뽑는다 (이슈 #39).
+//
+// 평면 정규식은 중첩 라우트를 부모와 못 잇는다 — Angular/Vue 의
+//
+//	{ path: 'admin', children: [ { path: 'users' }, { path: '' } ] }
+//
+// 는 /admin/users·/admin 이어야 하는데 정규식만 쓰면 루트급 /users 가 돼 라이브니스가 강등한다.
+// 그래서 문자열·주석을 건너뛰며 `[`/`]` 깊이와 `children:` 프리픽스를 추적하는 경량 렉서로 합성한다.
+// (원본 소스는 트랜스파일 전이라 라우트 키가 따옴표 없는 리터럴 — 따옴표 키는 대상 밖이다.)
+func composeRoutes(content string) []string {
+	var out []string
+	seen := map[string]bool{}
+	emit := func(segs []string) {
+		if len(segs) == 0 {
+			return
+		}
+		p := "/" + strings.Join(segs, "/")
+		if !seen[p] {
 			seen[p] = true
 			out = append(out, p)
 		}
 	}
+	prefix := map[int][]string{0: nil} // 배열 깊이별 프리픽스(children 배열이 부모 경로를 물려준다)
+	lastAbs := map[int][]string{}      // 깊이별 최근 라우트의 절대 경로(자식 프리픽스가 된다)
+	depth := 0
+	pendingChildren := false // 다음 '[' 가 children 배열인가
+	n := len(content)
+	for i := 0; i < n; {
+		c := content[i]
+		switch {
+		case c == '/' && i+1 < n && content[i+1] == '/': // 줄 주석
+			i += 2
+			for i < n && content[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < n && content[i+1] == '*': // 블록 주석
+			i += 2
+			for i+1 < n && !(content[i] == '*' && content[i+1] == '/') {
+				i++
+			}
+			i += 2
+		case isIdentStart(content, i) && hasWord(content, i, "path"):
+			if val, next, ok := readProp(content, i+4); ok {
+				if segs, ok := routeSegs(val); ok {
+					abs := append(append([]string{}, prefix[depth]...), segs...)
+					emit(abs)
+					lastAbs[depth] = abs
+				}
+				i = next
+			} else {
+				i += 4
+			}
+		case isIdentStart(content, i) && hasWord(content, i, "children"):
+			// children: [ 를 만나면 다음 '[' 를 children 배열로 표시한다.
+			if j := skipToArray(content, i+8); j >= 0 {
+				pendingChildren = true
+				i = j // '[' 위치 — 아래 '[' 케이스가 처리
+			} else {
+				i += 8
+			}
+		case c == '\'' || c == '"' || c == '`': // 문자열 리터럴은 데이터 — 통째로 건너뛴다
+			i = skipString(content, i)
+		case c == '[':
+			depth++
+			if pendingChildren {
+				prefix[depth] = lastAbs[depth-1]
+				pendingChildren = false
+			} else {
+				prefix[depth] = prefix[depth-1]
+			}
+			delete(lastAbs, depth)
+			i++
+		case c == ']':
+			delete(prefix, depth)
+			delete(lastAbs, depth)
+			if depth > 0 {
+				depth--
+			}
+			i++
+		default:
+			i++
+		}
+	}
 	return out
+}
+
+// readProp — content[i:] 가 [따옴표]? \s* [:=] \s* "값" 형태면 값과 다음 위치를 돌려준다.
+func readProp(content string, i int) (val string, next int, ok bool) {
+	n := len(content)
+	if i < n && (content[i] == '\'' || content[i] == '"' || content[i] == '`') {
+		i++ // 따옴표 키의 닫는 따옴표 (예: "path":)
+	}
+	i = skipWS(content, i)
+	if i >= n || (content[i] != ':' && content[i] != '=') {
+		return "", 0, false
+	}
+	i = skipWS(content, i+1)
+	if i >= n || (content[i] != '\'' && content[i] != '"' && content[i] != '`') {
+		return "", 0, false
+	}
+	q := content[i]
+	i++
+	start := i
+	for i < n && content[i] != q {
+		if content[i] == '\\' {
+			i++
+		}
+		i++
+	}
+	return content[start:i], i + 1, true
+}
+
+// skipToArray — content[i:] 가 [따옴표]? \s* [:=] \s* [ 로 이어지면 '[' 위치를, 아니면 -1.
+func skipToArray(content string, i int) int {
+	n := len(content)
+	if i < n && (content[i] == '\'' || content[i] == '"' || content[i] == '`') {
+		i++
+	}
+	i = skipWS(content, i)
+	if i >= n || (content[i] != ':' && content[i] != '=') {
+		return -1
+	}
+	i = skipWS(content, i+1)
+	if i < n && content[i] == '[' {
+		return i
+	}
+	return -1
+}
+
+func skipString(content string, i int) int {
+	n := len(content)
+	q := content[i]
+	i++
+	for i < n && content[i] != q {
+		if content[i] == '\\' {
+			i++
+		}
+		i++
+	}
+	return i + 1
+}
+
+func skipWS(content string, i int) int {
+	for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+		i++
+	}
+	return i
+}
+
+func isWordChar(b byte) bool {
+	return b == '_' || b == '$' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+// isIdentStart — content[i] 앞이 식별자 문자가 아니어야 키워드 시작이다(filepath 의 path 배제).
+func isIdentStart(content string, i int) bool {
+	return i == 0 || !isWordChar(content[i-1])
+}
+
+// hasWord — content[i:] 가 word 로 시작하고 그 뒤가 식별자 문자가 아닌가(pathname 배제는 readProp 이 담당).
+func hasWord(content string, i int, word string) bool {
+	return i+len(word) <= len(content) && strings.EqualFold(content[i:i+len(word)], word)
+}
+
+// routeSegs — 라우트 값 하나를 정규화된 세그먼트로 쪼갠다. 정적 경로가 아니면 (nil,false).
+// 빈 값("")은 (빈 슬라이스,true) — 자식 라우트의 기본 경로(부모와 동일)를 뜻한다.
+//
+//	· 외부 URL·프로토콜 상대·보간식(${}·표현식)은 정적 경로가 아니다 → 버린다
+//	· :id → {id} (트리의 변수 자리 규칙과 맞춘다) · 후행 ? (optional) 제거
+//	· 와일드카드(* · **) 자리에서 멈춘다 — 뒤 세그먼트는 의미가 없다
+func routeSegs(v string) ([]string, bool) {
+	v = strings.TrimSpace(v)
+	if strings.Contains(v, "://") || strings.HasPrefix(v, "//") {
+		return nil, false
+	}
+	if strings.ContainsAny(v, " \t<>(){}$|\\") {
+		return nil, false // 표현식·보간·JSX 는 정적 경로가 아니다
+	}
+	var segs []string
+	for _, s := range strings.Split(v, "/") {
+		if s == "" {
+			continue
+		}
+		if s == "*" || s == "**" {
+			break
+		}
+		if strings.HasPrefix(s, ":") {
+			name := strings.TrimRight(s[1:], "?")
+			if name == "" {
+				name = "param"
+			}
+			s = "{" + name + "}"
+		}
+		segs = append(segs, s)
+	}
+	return segs, true
+}
+
+// cleanRoute — 라우트 값 하나를 등록 가능한 절대 경로로. 비거나 라우트가 아니면 (,false).
+// 앞에 / 를 붙인다(Angular 자식 라우트는 상대 경로라 슬래시가 없다).
+func cleanRoute(v string) (string, bool) {
+	segs, ok := routeSegs(v)
+	if !ok || len(segs) == 0 {
+		return "", false
+	}
+	return "/" + strings.Join(segs, "/"), true
+}
+
+// isVendorSource — 소스맵 원본 경로가 서드파티(node_modules)·번들러 런타임인가.
+// 프레임워크 라우트 추출에서 제외한다(라이브러리 내부 path: 가 오탐을 만든다).
+func isVendorSource(path string) bool {
+	p := strings.ToLower(path)
+	return strings.Contains(p, "node_modules") ||
+		strings.Contains(p, "/webpack/") ||
+		strings.HasPrefix(p, "webpack/") ||
+		strings.Contains(p, "/vendor")
 }
 
 func dirOf(p string) string {

@@ -1,0 +1,240 @@
+package ingest
+
+import (
+	"reflect"
+	"sort"
+	"testing"
+)
+
+// TestCleanRoute — 프레임워크 라우트 값 정규화 (이슈 #39).
+func TestCleanRoute(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"/users", "/users", true},
+		{"users", "/users", true},          // Angular 자식 라우트는 상대 경로
+		{"score-board", "/score-board", true},
+		{":id", "/{id}", true},             // React/Vue/Angular 파라미터
+		{"users/:userId/edit", "/users/{userId}/edit", true},
+		{"list/:id?", "/list/{id}", true},  // optional 파라미터
+		{"product/:id/**", "/product/{id}", true}, // 와일드카드 자리에서 멈춘다
+		{"", "", false},                    // 인덱스 라우트(빈 path)
+		{"/", "", false},                   // 루트만
+		{"*", "", false},
+		{"**", "", false},
+		{"https://cdn.example.com/a", "", false}, // 외부 URL
+		{"//cdn/a", "", false},                   // 프로토콜 상대
+		{"${base}/x", "", false},                 // 템플릿 보간
+		{"a/${id}", "", false},                   // 보간 세그먼트
+		{"a b", "", false},                       // 공백 = 경로 아님
+	}
+	for _, c := range cases {
+		got, ok := cleanRoute(c.in)
+		if ok != c.ok || (ok && got != c.want) {
+			t.Errorf("cleanRoute(%q) = (%q,%v), want (%q,%v)", c.in, got, ok, c.want, c.ok)
+		}
+	}
+}
+
+// TestIsVendorSource — node_modules·번들러 런타임은 라우트 추출에서 제외한다.
+func TestIsVendorSource(t *testing.T) {
+	vendor := []string{
+		"webpack:///./node_modules/@angular/router/router.mjs",
+		"webpack:///webpack/bootstrap",
+		"webpack:///./vendor/lib.js",
+	}
+	app := []string{
+		"webpack:///./src/app/app-routing.module.ts",
+		"webpack:///./src/app/pages/login/login.component.ts",
+	}
+	for _, p := range vendor {
+		if !isVendorSource(p) {
+			t.Errorf("%q 를 앱 소스로 봤다 (벤더여야 한다)", p)
+		}
+	}
+	for _, p := range app {
+		if isVendorSource(p) {
+			t.Errorf("%q 를 벤더로 봤다 (앱 소스여야 한다)", p)
+		}
+	}
+}
+
+// TestExtractFromSources — ★ 완료기준: 파일 단위로 프레임워크 라우트·API 경로를 뽑고
+// 벤더 파일의 path: 는 제외한다.
+func TestExtractFromSources(t *testing.T) {
+	files := []SourceFile{
+		{ // Angular 라우팅 모듈
+			Path:    "webpack:///./src/app/app-routing.module.ts",
+			Content: "const routes=[{path:'',component:H},{path:'administration',component:A},{path:'score-board',component:S},{path:'product/:id',component:P}];",
+		},
+		{ // Vue 라우터
+			Path:    "webpack:///./src/router/index.ts",
+			Content: "export default [{ path: '/about', component: About }, { path: '/cart', component: Cart }]",
+		},
+		{ // React Router (JSX)
+			Path:    "webpack:///./src/App.tsx",
+			Content: `<Routes><Route path="/login" element={<Login/>} /><Route path="/dashboard" element={<Dash/>} /></Routes>`,
+		},
+		{ // API 호출 — 프리픽스 앵커
+			Path:    "webpack:///./src/app/services/api.service.ts",
+			Content: "this.http.get('/rest/products/search'); this.http.post('/api/v1/orders');",
+		},
+		{ // 벤더 — path: 가 있어도 뽑으면 안 된다
+			Path:    "webpack:///./node_modules/@angular/router/router.mjs",
+			Content: "const x={path:'vendor-internal-route',outlet:'x'};",
+		},
+		{Path: "webpack:///./src/empty.ts", Content: ""}, // 본문 없음 — 건너뛴다
+	}
+
+	got := extractFromSources(files, "")
+	sort.Strings(got)
+
+	want := []string{
+		"/about", "/administration", "/api/v1/orders", "/cart",
+		"/dashboard", "/login", "/product/{id}", "/rest/products/search",
+		"/score-board",
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("추출 결과 불일치\n got=%v\nwant=%v", got, want)
+	}
+	for _, bad := range got {
+		if bad == "/vendor-internal-route" {
+			t.Error("벤더 파일의 path: 를 라우트로 등록했다")
+		}
+		if bad == "/" {
+			t.Error("빈 path(인덱스 라우트)를 / 로 등록했다")
+		}
+	}
+}
+
+// TestComposeNestedRoutes — ★ 이슈 #39: children 배열의 자식 라우트를 부모 경로와 합성한다.
+func TestComposeNestedRoutes(t *testing.T) {
+	content := `const routes = [
+		{ path: 'admin', component: A, children: [
+			{ path: '', component: Dash },            // 기본 자식 = 부모(/admin)
+			{ path: 'users', component: U },
+			{ path: 'roles/:roleId', component: R, children: [
+				{ path: 'edit', component: E }        // 2단 중첩
+			]}
+		]},
+		{ path: 'login', component: L },
+		{ path: '**', redirectTo: '' }                // 와일드카드 — 버린다
+	]`
+	got := composeRoutes(content)
+	sort.Strings(got)
+	want := []string{
+		"/admin", "/admin/roles/{roleId}", "/admin/roles/{roleId}/edit",
+		"/admin/users", "/login",
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("중첩 라우트 합성 불일치\n got=%v\nwant=%v", got, want)
+	}
+}
+
+// TestComposeIgnoresBracketsInStrings — 문자열·주석 안의 [ ] path: 는 깊이·추출을 흔들면 안 된다.
+func TestComposeIgnoresBracketsInStrings(t *testing.T) {
+	content := `const routes = [
+		{ path: 'search', data: { label: 'a[b]c', hint: "path: '/fake'" } },
+		// 주석 속 { path: '/comment-fake' } 도 무시
+		{ path: 'help' }
+	]`
+	got := composeRoutes(content)
+	sort.Strings(got)
+	want := []string{"/help", "/search"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("문자열·주석 격리 실패\n got=%v\nwant=%v", got, want)
+	}
+}
+
+// TestComposeFlatReactRouter — 배열 없는 JSX <Route path> 도 그대로 뽑힌다(깊이 0).
+func TestComposeFlatReactRouter(t *testing.T) {
+	content := `<Routes><Route path="/login" element={<Login/>} /><Route path="/dashboard" element={<Dash/>} /></Routes>`
+	got := composeRoutes(content)
+	sort.Strings(got)
+	want := []string{"/dashboard", "/login"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("JSX 라우트 추출 불일치\n got=%v\nwant=%v", got, want)
+	}
+}
+
+// TestExtractLoosePaths — ★ 이슈 #39: 설정 상수(절대 경로 리터럴)와 내부 URL 을 뽑고,
+// 정적 에셋·외부 호스트는 제외한다.
+func TestExtractLoosePaths(t *testing.T) {
+	content := `
+		const cfg = { apiBase: '/config/v2', uploadDir: '/uploads/tmp' };
+		// 내부: https://app.example.com/internal/metrics
+		// 외부: https://cdn.thirdparty.com/lib/thing  (제외돼야 한다)
+		const style = '/assets/main.css';   // 에셋 — 제외
+		const icon  = '/favicon.ico';        // 에셋 — 제외
+		fetch('https://api.example.com/health/live');  // app.example.com 하위 아님 → 외부
+		fetch('https://app.example.com/v2/orders');    // 내부
+	`
+	got := extractLoosePaths(content, "app.example.com")
+	sort.Strings(got)
+	want := []string{"/config/v2", "/internal/metrics", "/uploads/tmp", "/v2/orders"}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("느슨한 추출 불일치\n got=%v\nwant=%v", got, want)
+	}
+	for _, bad := range got {
+		switch bad {
+		case "/lib/thing", "/health/live":
+			t.Errorf("외부 호스트 경로를 뽑았다: %s", bad)
+		case "/assets/main.css", "/favicon.ico":
+			t.Errorf("정적 에셋을 뽑았다: %s", bad)
+		}
+	}
+}
+
+// TestIsAssetPath — 확장자 기반 에셋 판정.
+func TestIsAssetPath(t *testing.T) {
+	assets := []string{"/a/main.js", "/x.css", "/i/logo.svg", "/f/en.json", "/v/clip.mp4", "/d/doc.pdf"}
+	routes := []string{"/api/v2", "/users/{id}", "/admin", "/v1.0/orders", "/report"}
+	for _, p := range assets {
+		if !isAssetPath(p) {
+			t.Errorf("%s 를 라우트로 봤다(에셋이어야)", p)
+		}
+	}
+	for _, p := range routes {
+		if isAssetPath(p) {
+			t.Errorf("%s 를 에셋으로 봤다(라우트여야)", p)
+		}
+	}
+}
+
+// TestParseSourceMapPairs — sources 와 sourcesContent 를 인덱스로 짝짓는다.
+// sourcesContent 가 짧으면 나머지 파일은 본문이 빈 채로 경로만 남는다.
+func TestParseSourceMapPairs(t *testing.T) {
+	const smap = `{"version":3,"sources":["a.ts","b.ts","c.ts"],"sourcesContent":["AAA","BBB"]}`
+	files, err := parseSourceMap(smap, "application/json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 3 {
+		t.Fatalf("파일 %d개 (want 3)", len(files))
+	}
+	if files[0].Path != "a.ts" || files[0].Content != "AAA" {
+		t.Errorf("files[0] = %+v", files[0])
+	}
+	if files[2].Path != "c.ts" || files[2].Content != "" {
+		t.Errorf("본문 없는 파일이 짝을 잘못 잡았다: %+v", files[2])
+	}
+}
+
+// TestParseSourceMapRejectsNonMap — 소스맵이 아니면 거부한다(SPA HTML·비JSON·version 0).
+func TestParseSourceMapRejectsNonMap(t *testing.T) {
+	for _, body := range []string{
+		"<!DOCTYPE html><html></html>",
+		"not json at all",
+		`{"sources":["a.ts"]}`,                      // version 없음
+		`{"version":3,"sources":[]}`,                // sources 비어 있음
+	} {
+		if _, err := parseSourceMap(body, "application/json"); err == nil {
+			t.Errorf("소스맵이 아닌데 통과: %q", body)
+		}
+	}
+}

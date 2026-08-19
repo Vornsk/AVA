@@ -255,6 +255,95 @@ func TestIngestSourceMapByConvention(t *testing.T) {
 	}
 }
 
+// TestIngestSourceMapFrameworkRoutes — ★ 이슈 #39 완료기준: 소스맵 원본에서 프레임워크
+// 라우트를 복원하고 static-regex 로 태깅한다(라이브니스 검증 대상).
+func TestIngestSourceMapFrameworkRoutes(t *testing.T) {
+	// Angular 라우팅 모듈 + 벤더 파일. 벤더의 path: 는 뽑히면 안 된다.
+	const smap = `{"version":3,` +
+		`"sources":["webpack:///./src/app/app-routing.module.ts","webpack:///./node_modules/@angular/router/router.mjs"],` +
+		`"sourcesContent":[` +
+		`"const routes=[{path:'',component:H},{path:'administration',component:A},{path:'score-board',component:S},{path:'product/:id',component:P}];this.http.get('/rest/products/search');",` +
+		`"const x={path:'vendor-internal',outlet:'y'};"]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(spaIndex))
+		case "/main.js":
+			w.Header().Set("Content-Type", "application/javascript")
+			_, _ = w.Write([]byte("console.log(1)"))
+		case "/main.js.map":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(smap))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	setup(t, srv)
+
+	Run(context.Background(), srv.URL, srv.Client())
+	got := discovered()
+	for _, want := range []string{
+		"GET /administration", "GET /score-board", "GET /product/{id}", "GET /rest/products/search",
+	} {
+		if !got[want] {
+			t.Errorf("소스맵에서 %s 미복원\n등록됨=%v", want, keys(got))
+		}
+	}
+	// 빈 path(인덱스 라우트)와 벤더 path: 는 등록하지 않는다.
+	for _, bad := range []string{"GET /", "GET /vendor-internal"} {
+		if got[bad] {
+			t.Errorf("%s 를 등록했다 (오탐)", bad)
+		}
+	}
+	// ★ 소스맵 추출물은 static-regex — 라이브니스 프로브 대상이어야 한다.
+	tg, ok := endpoints.Find(hostOf(srv), "/administration")
+	if !ok {
+		t.Fatal("/administration 노드 없음")
+	}
+	if tg.Source != endpoints.SrcStaticRegex {
+		t.Errorf("소스맵 추출물 출처 = %q, want %q (라이브니스 검증 대상)", tg.Source, endpoints.SrcStaticRegex)
+	}
+}
+
+// TestIngestSourceMapLazyChunks — ★ 이슈 #39: 진입 번들이 참조하는 지연 로딩 청크의
+// 소스맵까지 따라가 라우트를 복원한다. /administration 은 오직 지연 청크에만 있다.
+func TestIngestSourceMapLazyChunks(t *testing.T) {
+	// main.js 는 lazy 청크 admin.module.js 를 문자열로 참조한다(sourceMappingURL·main.js.map 없음).
+	const adminMap = `{"version":3,"sources":["webpack:///./src/app/admin/admin-routing.module.ts"],` +
+		`"sourcesContent":["const routes=[{path:'administration',children:[{path:'users',component:U}]}];"]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/":
+			w.Header().Set("Content-Type", "text/html")
+			_, _ = w.Write([]byte(spaIndex))
+		case "/main.js":
+			w.Header().Set("Content-Type", "application/javascript")
+			// webpack 런타임이 lazy 청크를 문자열로 참조하는 형태.
+			_, _ = w.Write([]byte(`__webpack_require__.e("admin"); var c="admin.module.js";`))
+		case "/admin.module.js":
+			w.Header().Set("Content-Type", "application/javascript")
+			_, _ = w.Write([]byte("console.log('admin chunk')"))
+		case "/admin.module.js.map":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(adminMap))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	setup(t, srv)
+
+	Run(context.Background(), srv.URL, srv.Client())
+	got := discovered()
+	for _, want := range []string{"GET /administration", "GET /administration/users"} {
+		if !got[want] {
+			t.Errorf("지연 청크의 %s 미복원\n등록됨=%v", want, keys(got))
+		}
+	}
+}
+
 // TestIngestSpecThenCrawlSingleNode — ★ 완료기준: 명세 경로와 크롤 경로가 한 노드로 합쳐진다.
 func TestIngestSpecThenCrawlSingleNode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

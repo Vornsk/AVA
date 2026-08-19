@@ -60,6 +60,7 @@
 | #27 | 능동 콘텐츠 발견 — embed wordlist + soft-404 재사용 | `backend/internal/recon/discover/` · `probe/` |
 | #28 | 정찰 UI — 소스 배지·verified 필터·출처 분포 + UX 개선 | `frontend/src/pages/Recon.tsx` |
 | **#38** | **인증 델타 크롤** — 인증 뒤에만 보이는 표면 = 접근통제 진단 후보 | `crawler.runAuthDelta`, `endpoints.authOnly` |
+| **#39** | **소스맵 완전 복원** — 파일 단위 프레임워크 라우트 추출 + static-regex 검증 | `ingest.extractFromSources`, `parseSourceMap` |
 
 **#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
 값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
@@ -79,6 +80,27 @@
 측정(vulnapp 실측): `/orders`·`/profile`·`/dashboard`(비인증 401·인증 200)가 auth-only 로 잡히고,
 `/admin`(비인증에도 200, 접근통제 취약)은 auth-only 아님으로 구분됐다. 이 구분이 핵심 —
 "숨겨진 표면"과 "인증 없이 뚫리는 표면"은 다르다. 벤치는 `auth-delta` 프로파일(로그인 설정 대상만).
+
+**#39 가 무엇을 바꿨나 (확장 로드맵 2번).** 인제스터는 소스맵을 모으면서 `sourcesContent`를 전부
+이어 붙여 `/api·/rest` 정규식 하나만 돌려, 클라이언트 라우트 정의(React/Vue/Angular)를 놓쳤다.
+`parseSourceMap`이 이제 `sources`(파일명)와 `sourcesContent`(본문)를 인덱스로 짝지어 파일 단위로
+분석한다. 이 위에 네 가지가 올라간다:
+
+- **프레임워크 라우트 추출** — `path:`/`path=` 프로퍼티(`:id`→`{id}`, 상대경로 슬래시 보정,
+  와일드카드 절단, 외부URL·보간 제외). 벤더(`node_modules`) 파일은 제외해 라이브러리 `path:` 오탐 차단.
+- **자식 라우트 경로 합성**(`composeRoutes`) — 문자열·주석을 건너뛰며 `[`/`]` 깊이와 `children:`
+  프리픽스를 추적하는 경량 렉서. `{path:'admin',children:[{path:'users'}]}` → `/admin/users`. 평면
+  정규식이면 루트급 `/users`가 돼 라이브니스가 강등하던 재현율 손실을 막는다.
+- **설정 상수·내부 URL 추출**(`extractLoosePaths`) — 절대 경로 리터럴과 같은 호스트 URL 경로부.
+  정적 에셋(확장자)·외부 호스트는 제외.
+- **지연 로딩 청크 추적** — 라우트는 흔히 lazy 모듈(`admin.module.js`)에 있고 index.html 이 아니라
+  런타임 번들에서만 참조된다. `sourceMaps`를 워크리스트로 바꿔 번들 JS가 참조하는 `.js` 청크의 `.map`
+  까지 따라간다(`maxBundles=40`). 한계: 콘텐츠 해시로 런타임 조립되는 청크명은 못 잡는다(후속).
+
+소스맵 추출물은 정규식 추측이라 `RecordSpec`(면제)이 아니라 `RecordFrom(static-regex)`로 등록해
+**라이브니스(#26) 검증 대상**으로 만든다(Juice Shop static 정규식 추출 오탐률 81%를 이 등급 지정이
+걸러낸다). 검증은 단위 테스트 위주 — `composeRoutes` 중첩·문자열격리, `extractLoosePaths` 내부/외부
+구분, lazy 청크 복원 Run 통합 등. 기존 벤치 3종 무회귀.
 
 **#25 가 무엇을 바꿨나.** 링크를 따라가는 크롤만으로는 링크 없는 API 를 찾을 수 없어 VAmPI 재현율이
 0% 였다. 인제스터는 대상이 스스로 공개하는 명세를 읽는다 — `/openapi.json` 한 파일이 VAmPI 정답셋
