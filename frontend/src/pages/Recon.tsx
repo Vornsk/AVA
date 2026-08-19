@@ -113,6 +113,7 @@ function CrawlExplore() {
   const [seed, setSeed] = useState('')
   const [busy, setBusy] = useState(false)
   const [headless, setHeadless] = useState(false)
+  const [paramMine, setParamMine] = useState(false) // 파라미터 마이닝 옵트인 (#40)
   const { data: runs } = usePoll<CrawlResult[]>('/api/crawl', 2000)
   const { data: modes } = usePoll<{ headless_available: boolean }>('/api/crawl-modes', 30000)
   const hlOK = modes?.headless_available === true
@@ -122,7 +123,7 @@ function CrawlExplore() {
   async function start() {
     if (!seed.trim()) return
     setBusy(true)
-    try { await apiPost('/api/crawl', { seed: seed.trim(), mode: headless ? 'headless' : 'static' }) }
+    try { await apiPost('/api/crawl', { seed: seed.trim(), mode: headless ? 'headless' : 'static', param_mine: paramMine }) }
     catch (e) { alert(t('recon.crawl.startFail') + ': ' + e) } finally { setBusy(false) }
   }
 
@@ -146,6 +147,11 @@ function CrawlExplore() {
         <input type="checkbox" checked={headless && hlOK} disabled={!hlOK} onChange={(e) => setHeadless(e.target.checked)} />
         {t('recon.crawl.headless')} {hlOK ? <span style={{ color: 'var(--green)' }}>{t('recon.crawl.available')}</span> : <span>{t('recon.crawl.noChrome')}</span>}
       </label>
+      <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
+             title={t('recon.crawl.paramMineTitle')}>
+        <input type="checkbox" checked={paramMine} onChange={(e) => setParamMine(e.target.checked)} />
+        {t('recon.crawl.paramMine')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
+      </label>
       {latest && (
         <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs">
           <Dot text={latest.status} color={latest.status === '진행' ? 'var(--amber)' : latest.status === '완료' ? 'var(--green)' : 'var(--muted)'} />
@@ -153,6 +159,7 @@ function CrawlExplore() {
           <span className="text-[var(--muted)]"><b className="text-[var(--text)]">{latest.pages}</b> {t('recon.crawl.pages')}</span>
           <span className="text-[var(--muted)]">{t('recon.crawl.found')} <b className="text-[var(--text)]">{latest.found}</b></span>
           {latest.js > 0 && <span className="text-[var(--muted)]">JS <b className="text-[var(--text)]">{latest.js}</b></span>}
+          {!!latest.mined && latest.mined > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.mined')} <b>{latest.mined}</b></span>}
           <span className="text-[var(--muted)]">{t('recon.crawl.queued')} {latest.queued}</span>
           {latest.errors > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.errors')} {latest.errors}</span>}
           <span className="font-mono text-[10px] text-[var(--muted)]">{latest.seed}</span>
@@ -355,7 +362,10 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                                   {t.params.map((p) => (
                                     <tr key={p.in + p.name} className="border-t border-[var(--border)]">
                                       <td className="py-1 pr-3 text-[var(--muted)]">{p.in}</td>
-                                      <td className="py-1 pr-3">{p.name}</td>
+                                      <td className="py-1 pr-3">
+                                        {p.name}
+                                        {p.mined && <span className="ml-1.5 rounded px-1 py-0.5 text-[9px] font-semibold" style={{ background: 'var(--amber)', color: '#000' }} title={tr('recon.tree.minedHint')}>{tr('recon.tree.mined')}</span>}
+                                      </td>
                                       <td className="py-1 pr-3 text-[var(--muted)]">{p.type ?? '—'}</td>
                                       <td className="py-1 pr-3">{p.required ? <span className="text-[var(--red)]">{tr('recon.tree.required')}</span> : '—'}</td>
                                       <td className="py-1 text-[var(--muted)]">{p.sample ?? '—'}</td>

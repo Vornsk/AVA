@@ -35,13 +35,15 @@ type Param struct {
 	Type     string `json:"type,omitempty"`     // int | bool | uuid | email | string
 	Sample   string `json:"sample,omitempty"`   // 마스킹된 샘플값
 	Required bool   `json:"required,omitempty"` // 해당 엔드포인트의 모든 요청에 등장했는가
+	Mined    bool   `json:"mined,omitempty"`    // 파라미터 마이닝으로 발견 — 관측이 아님 (이슈 #40)
 }
 
 type paramAgg struct {
 	ins    map[string]bool
 	typ    string
 	sample string
-	seen   int // 이 파라미터가 등장한 요청 수
+	seen   int  // 이 파라미터가 등장한 요청 수
+	mined  bool // 파라미터 마이닝(#40)이 발견 — 트래픽 관측이 아님
 }
 
 type node struct {
@@ -526,6 +528,37 @@ func (t *Tree) MarkAuthOnly(host, path string) bool {
 // MarkAuthOnly — 기본(전역) 트리에 위임.
 func MarkAuthOnly(host, path string) bool { return def.MarkAuthOnly(host, path) }
 
+// AddMinedParam — 파라미터 마이닝(#40)이 발견한 hidden 파라미터를 노드에 붙인다.
+// 관측이 아니므로 seen 을 올리지 않고(Required=false) mined 로 표시한다. 노드가 없으면 false.
+// In 이 "" 면 query 로 본다. detector.injectable 이 query 를 자동으로 스캔 대상에 포함한다.
+func (t *Tree) AddMinedParam(host, path, name, in, typ string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := t.lookup(host, NormalizePath(path))
+	if n == nil {
+		return false
+	}
+	if in == "" {
+		in = "query"
+	}
+	agg, ok := n.params[name]
+	if !ok {
+		agg = &paramAgg{ins: map[string]bool{}}
+		n.params[name] = agg
+	}
+	agg.ins[in] = true
+	if agg.typ == "" {
+		agg.typ = typ
+	}
+	agg.mined = true
+	return true
+}
+
+// AddMinedParam — 기본(전역) 트리에 위임.
+func AddMinedParam(host, path, name, in, typ string) bool {
+	return def.AddMinedParam(host, path, name, in, typ)
+}
+
 // lookup — host+정규화 경로로 노드를 찾는다(호출자가 t.mu 보유). 없으면 nil.
 func (t *Tree) lookup(host, path string) *node {
 	cur, ok := t.roots[host]
@@ -562,7 +595,8 @@ func outParams(n *node) []Param {
 			In:       strings.Join(sortedKeys(agg.ins), ","),
 			Type:     agg.typ,
 			Sample:   agg.sample,
-			Required: agg.seen == n.count,
+			Required: agg.seen == n.count && !agg.mined, // 마이닝분은 관측이 아니라 Required 판정 제외
+			Mined:    agg.mined,
 		})
 	}
 	return out
@@ -606,6 +640,7 @@ type storeParam struct {
 	Type   string   `json:"type,omitempty"`
 	Sample string   `json:"sample,omitempty"`
 	Seen   int      `json:"seen,omitempty"`
+	Mined  bool     `json:"mined,omitempty"` // 파라미터 마이닝 발견 (이슈 #40)
 }
 
 type storeNode struct {
@@ -643,7 +678,7 @@ func toStore(n *node) storeNode {
 	sort.Strings(pnames)
 	for _, name := range pnames {
 		agg := n.params[name]
-		s.Params = append(s.Params, storeParam{Name: name, Ins: sortedKeys(agg.ins), Type: agg.typ, Sample: agg.sample, Seen: agg.seen})
+		s.Params = append(s.Params, storeParam{Name: name, Ins: sortedKeys(agg.ins), Type: agg.typ, Sample: agg.sample, Seen: agg.seen, Mined: agg.mined})
 	}
 	ckeys := make([]string, 0, len(n.children))
 	for k := range n.children {
@@ -669,7 +704,7 @@ func fromStore(s storeNode) *node {
 		n.methods[m] = true
 	}
 	for _, p := range s.Params {
-		agg := &paramAgg{ins: map[string]bool{}, typ: p.Type, sample: p.Sample, seen: p.Seen}
+		agg := &paramAgg{ins: map[string]bool{}, typ: p.Type, sample: p.Sample, seen: p.Seen, mined: p.Mined}
 		for _, in := range p.Ins {
 			agg.ins[in] = true
 		}

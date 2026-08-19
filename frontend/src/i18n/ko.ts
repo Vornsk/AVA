@@ -153,6 +153,10 @@ export const ko = {
   'recon.crawl.found': '발견',
   'recon.crawl.queued': '대기',
   'recon.crawl.errors': '오류',
+  'recon.crawl.paramMine': '파라미터 마이닝',
+  'recon.crawl.paramMineTitle': '검증된 엔드포인트에 hidden 파라미터 워드리스트를 주입해, 서버가 처리하지만 노출하지 않는 debug·권한우회·레거시 필드를 찾는다. 능동 주입 — GET 전용·예산 제한·감사 기록.',
+  'recon.crawl.optIn': '· 옵트인',
+  'recon.crawl.mined': '마이닝',
 
   // 정찰 — 워크플로 단계 (#28)
   'recon.steps.scope.title': '스코프',
@@ -183,6 +187,8 @@ export const ko = {
   'recon.tree.authLabel': '인증',
   'recon.tree.needed': '필요',
   'recon.tree.verdictLabel': '판정',
+  'recon.tree.mined': '마이닝',
+  'recon.tree.minedHint': '능동 파라미터 마이닝으로 발견한 hidden 파라미터 — 관측된 트래픽이 아니다 (#40).',
   'recon.tree.authOnly': '인증 뒤',
   'recon.tree.authOnlyHint': '로그인 뒤에만 보이는 표면 — 접근통제 진단 후보(인증 델타, #38).',
   'recon.tree.showUnverified': '미검증',
