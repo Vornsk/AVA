@@ -141,3 +141,57 @@ func contains(list []string, s string) bool {
 	}
 	return false
 }
+
+// TestEndpointsSourceAndVerifiedFilter — 소스 필터와 unverified 노출 토글 (이슈 #28).
+func TestEndpointsSourceAndVerifiedFilter(t *testing.T) {
+	endpoints.Reset()
+	// spec 1건, 크롤(static-regex) 1건 → 크롤 것을 강등(unverified).
+	endpoints.RecordSpec("http", "hv:80", "GET", "/api/spec", nil, false, "")
+	endpoints.RecordFrom(endpoints.SrcStaticRegex, "http", "hv:80", "GET", "/guessed", nil, false, "")
+	endpoints.MarkUnverified("hv:80", "/guessed")
+
+	// 기본(무파라미터): unverified 제외 → /guessed 안 보임.
+	base, _ := listEndpoints(t, "host=hv")
+	for _, tg := range base {
+		if tg.Path == "/guessed" {
+			t.Error("기본 조회에 unverified /guessed 가 보인다 — verified 만 나와야 한다")
+		}
+	}
+	if !hasPath(base, "/api/spec") {
+		t.Error("verified /api/spec 이 안 보인다")
+	}
+
+	// include_unverified=true → /guessed 노출.
+	all, _ := listEndpoints(t, "host=hv&include_unverified=true")
+	if !hasPath(all, "/guessed") {
+		t.Error("include_unverified=true 인데 /guessed 가 안 보인다")
+	}
+
+	// source 필터: spec 만.
+	specOnly, _ := listEndpoints(t, "host=hv&include_unverified=true&source=spec")
+	if !hasPath(specOnly, "/api/spec") || hasPath(specOnly, "/guessed") {
+		t.Errorf("source=spec 필터 오작동: %v", pathsOf(specOnly))
+	}
+	for _, tg := range specOnly {
+		if tg.Source != "spec" {
+			t.Errorf("source=spec 필터에 %q 가 섞임", tg.Source)
+		}
+	}
+}
+
+func hasPath(ts []endpoints.Target, p string) bool {
+	for _, t := range ts {
+		if t.Path == p {
+			return true
+		}
+	}
+	return false
+}
+
+func pathsOf(ts []endpoints.Target) []string {
+	out := make([]string, 0, len(ts))
+	for _, t := range ts {
+		out = append(out, t.Path)
+	}
+	return out
+}

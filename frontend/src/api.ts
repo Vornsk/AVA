@@ -108,6 +108,8 @@ export interface Target {
   count?: number
   first_seen?: string
   last_seen?: string
+  source?: string     // 출처 신뢰도 등급 spec|traffic|headless-xhr|discover|crawl-link|static-regex (#25·#26·#27)
+  unverified?: boolean // 라이브니스 프로브 미통과 — 기본 숨김 (#26·#28)
 }
 export interface Rule {
   name: string

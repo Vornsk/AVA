@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power } from 'lucide-react'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me } from '../api'
-import { Card, Badge, Dot, Empty } from '../components/ui'
+import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
 
 // CopyLine — 복사 가능한 명령/코드 한 줄.
@@ -134,8 +134,9 @@ function CrawlExplore() {
                onKeyDown={(e) => e.key === 'Enter' && start()}
                placeholder={t('recon.crawl.seedPlaceholder')}
                className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1.5 font-mono text-xs" />
-        <button onClick={start} disabled={busy || running}
-                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+        <button onClick={start} disabled={busy || running || !seed.trim()}
+                title={!seed.trim() ? t('recon.crawl.needSeed') : undefined}
+                className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
           <Play size={13} /> {busy ? t('recon.crawl.starting') : running ? t('recon.crawl.running') : t('recon.crawl.start')}
         </button>
@@ -162,25 +163,54 @@ function CrawlExplore() {
 }
 
 // EndpointTree — 캡처된 공격면 조회 (이슈 #7): 검색·메서드·인증·판정 필터 + 행 클릭 상세 드릴다운.
+// SOURCE_META — 출처 신뢰도 등급별 라벨·색 (#28). 위에서부터 신뢰도 높음.
+const SOURCE_META: Record<string, { label: string; color: string; key: string }> = {
+  'spec': { label: 'spec', color: 'var(--green)', key: 'spec' },
+  'traffic': { label: 'traffic', color: 'var(--accent)', key: 'traffic' },
+  'headless-xhr': { label: 'xhr', color: 'var(--blue)', key: 'xhr' },
+  'discover': { label: 'discover', color: '#a78bfa', key: 'discover' },
+  'crawl-link': { label: 'crawl', color: 'var(--muted)', key: 'crawl' },
+  'static-regex': { label: 'regex', color: 'var(--muted)', key: 'regex' },
+}
+// sourceMeta — 빈 문자열(레거시 프록시 캡처)은 traffic 으로 본다 (#26 등급 규칙과 정합).
+// methodColor — HTTP 메서드 색. 읽기(GET/HEAD)는 차분하게, 쓰기·삭제는 경고색으로 (#28 가독성).
+function methodColor(m: string): string {
+  const u = m.toUpperCase()
+  if (u === 'DELETE') return 'var(--red)'
+  if (u === 'POST' || u === 'PUT' || u === 'PATCH') return 'var(--amber)'
+  return 'var(--accent)' // GET·HEAD·OPTIONS
+}
+
+function sourceMeta(src?: string) {
+  return SOURCE_META[src || 'traffic'] ?? SOURCE_META['traffic']
+}
+
 function EndpointTree({ targets }: { targets: Target[] | null }) {
   const tr = useT() // 콜백 파라미터 t(Target)와의 섀도잉 회피
   const [q, setQ] = useState('')
   const [method, setMethod] = useState('')
   const [authOnly, setAuthOnly] = useState(false)
   const [verdictOnly, setVerdictOnly] = useState(false)
+  const [showUnverified, setShowUnverified] = useState(false) // 기본 verified 만 (#28)
   const [open, setOpen] = useState<string | null>(null)
 
   const all = targets ?? []
   const methods = Array.from(new Set(all.flatMap((t) => t.methods ?? []))).sort()
-  const hasFilter = !!(q || method || authOnly || verdictOnly)
+  const unverifiedCount = all.filter((t) => t.unverified).length
+  const hasFilter = !!(q || method || authOnly || verdictOnly || showUnverified)
 
   const filtered = all.filter((t) => {
+    if (!showUnverified && t.unverified) return false // 라이브니스 미통과 기본 숨김 (#28)
     if (q && !`${t.host}${t.path}`.toLowerCase().includes(q.toLowerCase())) return false
     if (method && !(t.methods ?? []).includes(method)) return false
     if (authOnly && !t.auth_required) return false
     if (verdictOnly && !t.verdict) return false
     return true
   })
+
+  // 출처 분포 — verified 만 대상(표시 기준과 일치). #28 요약 지표.
+  const dist: Record<string, number> = {}
+  for (const t of all) if (!t.unverified) dist[t.source || 'traffic'] = (dist[t.source || 'traffic'] ?? 0) + 1
 
   const byHost: Record<string, Target[]> = {}
   for (const t of filtered) (byHost[t.host] ??= []).push(t)
@@ -209,7 +239,29 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                 className={`rounded-lg border px-2 py-1.5 text-xs ${verdictOnly ? 'border-[var(--red)] text-[var(--red)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
           {tr('recon.tree.verdict')}
         </button>
+        {unverifiedCount > 0 && (
+          <button onClick={() => setShowUnverified((v) => !v)}
+                  title={tr('recon.tree.unverifiedHint')}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${showUnverified ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
+            <ShieldCheck size={12} /> {tr('recon.tree.showUnverified')} ({unverifiedCount})
+          </button>
+        )}
       </div>
+
+      {/* 출처 분포 — verified 기준 (#28) */}
+      {Object.keys(dist).length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--muted)]">
+          <span className="inline-flex items-center gap-1">{tr('recon.tree.sources')}: <InfoTip label={tr('recon.source.help')} /></span>
+          {Object.entries(dist).sort((a, b) => b[1] - a[1]).map(([src, n]) => {
+            const m = sourceMeta(src)
+            return <Tooltip key={src} label={tr(`recon.source.${m.key}`)}>
+                     <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5"
+                           style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 12%, transparent)` }}>{m.label} {n}</span>
+                   </Tooltip>
+          })}
+          {unverifiedCount > 0 && <Tooltip label={tr('recon.tree.unverifiedHint')}><span className="text-[var(--muted)]">· {tr('recon.tree.unverifiedCount')} {unverifiedCount}</span></Tooltip>}
+        </div>
+      )}
 
       {!targets || all.length === 0 ? (
         <Empty icon={Network}>{tr('recon.tree.emptyNone')}</Empty>
@@ -229,21 +281,38 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                   return (
                     <div key={key} className="border-t border-[var(--border)] first:border-t-0">
                       <button onClick={() => setOpen(isOpen ? null : key)}
-                              className="flex w-full items-center gap-2 px-3 py-2.5 text-left hover:bg-[var(--panel-2)]">
+                              className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-[var(--panel-2)]">
                         <ChevronRight size={13} className={`shrink-0 text-[var(--muted)] transition-transform ${isOpen ? 'rotate-90' : ''}`} />
-                        {(t.methods ?? []).map((m) => (
-                          <span key={m} className="rounded px-1.5 py-0.5 text-[10px] font-bold"
-                                style={{ color: 'var(--accent)', background: 'color-mix(in srgb, var(--accent) 14%, transparent)' }}>{m}</span>
-                        ))}
-                        <span className="font-mono text-sm">{t.path}</span>
-                        {t.auth_required && <KeyRound size={12} className="text-[var(--amber)]" />}
-                        {t.verdict && <Badge text={t.verdict} color="var(--red)" />}
-                        {t.params && t.params.length > 0 && (
-                          <span className="text-[10px] text-[var(--muted)]">· {t.params.length}p</span>
-                        )}
-                        {typeof t.count === 'number' && t.count > 0 && (
-                          <span className="ml-auto shrink-0 text-[11px] text-[var(--muted)]">{t.count} hits</span>
-                        )}
+                        {/* 메서드 — 고정폭 컬럼(경로 시작을 일렬로) */}
+                        <span className="flex shrink-0 flex-wrap justify-end gap-1" style={{ minWidth: '3rem' }}>
+                          {(t.methods ?? []).map((m) => (
+                            <span key={m} className="rounded px-1.5 py-0.5 text-[10px] font-bold"
+                                  style={{ color: methodColor(m), background: `color-mix(in srgb, ${methodColor(m)} 14%, transparent)` }}>{m}</span>
+                          ))}
+                        </span>
+                        {/* 경로 + 출처 — 남는 폭을 채우고 경로는 잘림 처리 */}
+                        <span className="flex min-w-0 flex-1 items-center gap-2">
+                          <span className="truncate font-mono text-sm">{t.path}</span>
+                          {(() => { const m = sourceMeta(t.source); return (
+                            <Tooltip label={tr(`recon.source.${m.key}`)}>
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                    style={{ color: m.color, background: `color-mix(in srgb, ${m.color} 14%, transparent)` }}>{m.label}</span>
+                            </Tooltip>
+                          ) })()}
+                          {t.unverified && (
+                            <Tooltip label={tr('recon.tree.unverifiedHint')}>
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--amber)]"
+                                    style={{ background: 'color-mix(in srgb, var(--amber) 14%, transparent)' }}>unverified</span>
+                            </Tooltip>
+                          )}
+                        </span>
+                        {/* 메타 — 우측 정렬로 모음 */}
+                        <span className="flex shrink-0 items-center gap-2.5 text-[11px] text-[var(--muted)]">
+                          {t.auth_required && <KeyRound size={12} className="text-[var(--amber)]" />}
+                          {t.verdict && <Badge text={t.verdict} color="var(--red)" />}
+                          {t.params && t.params.length > 0 && <span>{t.params.length}p</span>}
+                          {typeof t.count === 'number' && t.count > 0 && <span className="tabular-nums">{t.count} hits</span>}
+                        </span>
                       </button>
                       {isOpen && (
                         <div className="border-t border-[var(--border)] bg-[var(--panel-2)] px-3 py-2.5 pl-8 text-xs">
@@ -294,34 +363,77 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
   )
 }
 
+// ReconSteps — 정찰 워크플로 안내 (#28 UX). 처음 사용자가 "무엇을 먼저 하는지" 를 4단계로 본다.
+// 각 단계는 현재 상태를 반영한다(스코프 N · 엔드포인트 N) — 지금 어디쯤인지 감이 잡힌다.
+function ReconSteps({ stats, targets }: { stats: Stats | null; targets: Target[] | null }) {
+  const t = useT()
+  const scopeN = stats?.scope?.length ?? 0
+  const epN = targets?.length ?? 0
+  const steps = [
+    { icon: Globe, key: 'scope', done: scopeN > 0, meta: `${scopeN} host` },
+    { icon: Radar, key: 'traffic', done: epN > 0, meta: '' },
+    { icon: Crosshair, key: 'endpoints', done: epN > 0, meta: epN > 0 ? `${epN} eps` : '' },
+    { icon: ScanLine, key: 'scan', done: (stats?.scanruns ?? 0) > 0, meta: '' },
+  ]
+  return (
+    <Card pad={false} className="overflow-hidden">
+      <div className="flex flex-col divide-y divide-[var(--border)] sm:flex-row sm:divide-x sm:divide-y-0">
+        {steps.map((st, i) => {
+          const Icon = st.icon
+          return (
+            <div key={st.key} className="flex flex-1 items-center gap-3 px-4 py-3">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                   style={{ color: st.done ? 'var(--green)' : 'var(--muted)',
+                            background: st.done ? 'color-mix(in srgb, var(--green) 16%, transparent)' : 'var(--panel-2)' }}>
+                {st.done ? <Check size={15} /> : i + 1}
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 text-sm font-medium">
+                  <Icon size={13} className="text-[var(--muted)]" /> {t(`recon.steps.${st.key}.title`)}
+                  {st.meta && <span className="text-[11px] text-[var(--muted)]">· {st.meta}</span>}
+                </div>
+                <div className="truncate text-[11px] text-[var(--muted)]">{t(`recon.steps.${st.key}.desc`)}</div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Card>
+  )
+}
+
 export function Recon() {
   const t = useT()
-  const { data: targets } = usePoll<Target[]>('/api/endpoints', 4000)
+  const { data: targets } = usePoll<Target[]>('/api/endpoints?include_unverified=true', 4000)
   const { data: rules } = usePoll<Rule[]>('/api/rules', 8000)
   const { data: stats } = usePoll<Stats>('/api/stats', 5000)
   const { data: auth } = usePoll<AuthSummary>('/api/auth', 8000)
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
-      {/* 엔드포인트 트리 (FR-2.4) */}
+    <div className="space-y-5">
+      {/* 워크플로 안내 (#28) — 전체 너비 */}
+      <ReconSteps stats={stats} targets={targets} />
+
+      <div className="grid gap-5 lg:grid-cols-[2fr_1fr]">
+      {/* 좌측: 액션 — 트래픽 수집·엔드포인트 (FR-2.4) */}
       <div className="space-y-5">
         <ProxyTool stats={stats} />
         <CrawlExplore />
         <EndpointTree targets={targets} />
       </div>
 
-      {/* 우측: 파이프라인·스코프·인증 */}
+      {/* 우측: 참고 — 파이프라인·스코프·인증 (#28: 기본 접힘, 필요 시 펼침) */}
       <div className="space-y-5">
         {/* 판단 파이프라인 (FR-2.2) */}
-        <Card title={t('recon.pipe.title')} icon={Filter}>
+        <Card title={t('recon.pipe.title')} icon={Filter} collapsible defaultOpen muted>
           <div className="mb-3 flex items-center gap-2 text-xs">
-            <Stage label={t('recon.pipe.scope')} sub="hard" />
+            <Stage label={t('recon.pipe.scope')} sub="hard" tip={t('recon.pipe.scopeTip')} />
             <Arrow />
-            <Stage label={t('recon.pipe.rule')} sub={`${rules?.length ?? 0} rules`} />
+            <Stage label={t('recon.pipe.rule')} sub={`${rules?.length ?? 0} rules`} tip={t('recon.pipe.ruleTip')} />
             <Arrow />
-            <Stage label="LLM" sub={stats?.llm_provider ?? '—'} />
+            <Stage label="LLM" sub={stats?.llm_provider ?? '—'} tip={t('recon.pipe.llmTip')} />
             <Arrow />
-            <Stage label={t('recon.pipe.forward')} sub="capture" />
+            <Stage label={t('recon.pipe.forward')} sub="capture" tip={t('recon.pipe.forwardTip')} />
           </div>
           <div className="space-y-1">
             {(rules ?? []).map((r, i) => (
@@ -336,7 +448,7 @@ export function Recon() {
         </Card>
 
         {/* 스코프 (FR-2.1) */}
-        <Card title={t('recon.scope.title')} icon={Globe}>
+        <Card title={t('recon.scope.title')} icon={Globe} collapsible defaultOpen={false} muted>
           <div className="flex flex-wrap gap-1.5">
             {(stats?.scope ?? []).map((s) => (
               <span key={s} className="rounded-md border border-[var(--border)] px-2 py-0.5 font-mono text-xs">{s}</span>
@@ -345,7 +457,7 @@ export function Recon() {
         </Card>
 
         {/* 인증·신원 (FR-2.5 / FR-3.6) */}
-        <Card title={t('recon.authid.title')} icon={KeyRound}>
+        <Card title={t('recon.authid.title')} icon={KeyRound} collapsible defaultOpen={false} muted>
           <div className="flex items-center justify-between text-sm">
             <span className="text-[var(--muted)]">{t('recon.authid.sessionInjection')}</span>
             <Dot text={auth?.enabled ? t('common.enabled') : t('common.off')} color={auth?.enabled ? 'var(--green)' : 'var(--muted)'} />
@@ -372,6 +484,7 @@ export function Recon() {
         </Card>
 
         <LoginSeqCard />
+      </div>
       </div>
     </div>
   )
@@ -485,12 +598,13 @@ function Row2({ k, v }: { k: string; v: string }) {
   )
 }
 
-function Stage({ label, sub }: { label: string; sub: string }) {
-  return (
+function Stage({ label, sub, tip }: { label: string; sub: string; tip?: string }) {
+  const body = (
     <div className="flex-1 rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1.5 text-center">
       <div className="text-[11px] font-semibold">{label}</div>
       <div className="text-[9px] text-[var(--muted)]">{sub}</div>
     </div>
   )
+  return tip ? <Tooltip label={tip} className="flex-1">{body}</Tooltip> : body
 }
 function Arrow() { return <span className="text-[var(--muted)]">→</span> }

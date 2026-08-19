@@ -457,8 +457,12 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <p>  엔드포인트/호스트·스코프 호스트)와 <strong>캡처 토글</strong>(리더 <code>proxy:control</code>, 무권한 시 비활성),   <strong>CA 신뢰 상태</strong>(미신뢰 시 <code>-cert-install</code> 명령 안내)·브라우저 프록시·<strong>트래픽 유도 <code>curl</code></strong>   가이드를 한 카드에 모음. 캡처가 꺼져 있으면 "Endpoint Tree가 안 채워짐" 경고. 기존 API만 사용(이슈 #9)</p>
 <ul><li><strong>자동 크롤 (Explore)</strong> — 시작 URL에서 링크·폼·JS 번들을 따라 스코프 내를 BFS 크롤(AppScan</li></ul>
 <p>  Explore 대응). 비파괴(GET·폼 등록만). 정적 추출 기본, <strong>헤드리스(Chrome, JS 실행) 옵트인</strong>   (서버에 Chrome 없으면 비활성). 실행 상태·발견 수·JS 번들 수 표시</p>
-<ul><li><strong>Endpoint Tree</strong> — 호스트별로 그룹된 캡처 엔드포인트. 메서드·경로·인증 필요 표식·판정 배지·히트 수.</li></ul>
-<p>  <strong>검색(호스트·경로)·메서드·인증·판정 필터</strong>로 좁히고, 행을 클릭하면 <strong>상세</strong>가 펼쳐진다 —   파라미터 표(위치 <code>query/body/json/file</code> · 이름 · 타입 · 필수 · 샘플[마스킹]) · 히트 수 ·   <strong>최초/최근 발견 시각</strong>. 프록시(:8080) 경유 트래픽으로도 채워짐(캡처는 런타임에 on/off 가능   — 아래 <strong>프록시 캡처 제어</strong>)</p>
+<ul><li><strong>Endpoint Tree</strong> — 호스트별로 그룹된 캡처 엔드포인트. 메서드·경로·<strong>소스 배지</strong>·인증 필요 표식·판정 배지·히트 수.</li></ul>
+<p>  <strong>검색(호스트·경로)·메서드·인증·판정·미검증 필터</strong>로 좁히고, 행을 클릭하면 <strong>상세</strong>가 펼쳐진다 —   파라미터 표(위치 <code>query/body/json/file</code> · 이름 · 타입 · 필수 · 샘플[마스킹]) · 히트 수 ·   <strong>최초/최근 발견 시각</strong>. 프록시(:8080) 경유 트래픽으로도 채워짐(캡처는 런타임에 on/off 가능   — 아래 <strong>프록시 캡처 제어</strong>)</p>
+<ul><li><strong>소스 배지</strong>(이슈 #28) — 각 엔드포인트를 <strong>어디서 알게 됐는지</strong>를 신뢰도 색으로 표시한다:</li></ul>
+<p>    <code>spec</code>(명세, 녹색) · <code>traffic</code>(실캡처) · <code>xhr</code>(헤드리스) · <code>discover</code>(능동 발견, 보라) ·     <code>crawl</code>(링크 추종) · <code>regex</code>(정규식 추출, 회색). 필터 바 아래에 <strong>출처 분포</strong>(등급별 카운트)와     <strong>미검증 수</strong>를 요약한다. 실운영엔 정답셋이 없어 P/R/F1 대신 이 분포로 커버리지를 가늠한다.</p>
+<ul><li><strong>미검증 필터</strong>(이슈 #26·#28) — 라이브니스 프로브(soft-404)를 통과하지 못한 엔드포인트는</li></ul>
+<p>    <strong>기본 숨김</strong>이다. 미검증이 있을 때만 <code>미검증 (N)</code> 토글이 나오고, 켜면 <code>unverified</code> 배지와 함께     노출된다. API 는 <code>GET /api/endpoints?include_unverified=true</code> 로 전체를 받는다(무파라미터는     verified 만 — 하위호환).</p>
 <p><strong>우측 (1/3)</strong></p>
 <ul><li><strong>Judgment Pipeline</strong> — 스코프 → Rule → LLM → Forward 단계 시각화 + 활성 룰 목록(block/allow)</li><li><strong>Scope (whitelist)</strong> — 허용 스코프 목록</li><li><strong>Auth &amp; Identities</strong> — 세션 주입 On/Off, 주입 쿠키/헤더, 등록된 진단 신원(수평/수직 접근통제 대조용)</li><li><strong>로그인 시퀀스 (세션 지속성, FR-2.5)</strong> — 긴 스캔 중 세션 만료 시 자동 재로그인 절차 설정.</li></ul>
 <p>  로그인 URL·<strong>만료 표식(정규식, 있어야 활성화)</strong>·폼 필드·CSRF 토큰. 값은 마스킹, 저장은 리더 전용,   비밀번호는 응답 미노출·인메모리 주입기에만 반영</p>
@@ -467,7 +471,7 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <p>조회: <code>/api/endpoints</code> · <code>/api/proxy</code> · <code>/api/rules</code> · <code>/api/stats</code> · <code>/api/auth</code> · <code>/api/login-seq</code> · <code>/api/crawl</code></p>
 <h4>엔드포인트 조회 API (이슈 #7)</h4>
 <ul><li><code>GET /api/endpoints</code> — 필터·검색·페이징: <code>host</code>(부분일치)·<code>method</code>·<code>verdict</code>(부분일치)·</li></ul>
-<p>  <code>auth</code>(true/false)·<code>q</code>(host+path 검색)·<code>limit</code>/<code>offset</code>. 전체 개수는 <strong><code>X-Total-Count</code></strong> 헤더.   <strong>무필터·무페이징이면 기존과 동일한 전체 배열</strong>(하위호환)</p>
+<p>  <code>auth</code>(true/false)·<code>source</code>(등급 부분일치, 이슈 #28)·<code>q</code>(host+path 검색)·<code>limit</code>/<code>offset</code>.   <code>include_unverified=true</code>(이슈 #28)면 라이브니스 미통과 노드까지 포함(기본은 verified 만).   전체 개수는 <strong><code>X-Total-Count</code></strong> 헤더. <strong>무필터·무페이징이면 기존과 동일한 전체 배열</strong>(하위호환)</p>
 <ul><li><code>GET /api/endpoints/tree</code> — 풍부한 트리(<code>Snapshot</code>): verdict·hit count·children·params</li><li><code>GET /api/endpoints/detail?host=&amp;path=</code> — 단일 엔드포인트 상세(concrete path 도 정규화해 조회):</li></ul>
 <p>  메서드·파라미터·히트 수·판정·<strong>최초/최근 발견 시각</strong></p>
 <div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p>발견 시각(<code>first_seen</code>/<code>last_seen</code>)은 엔드포인트 모델에 저장되고 <code>endpoints.json</code>에 영속화된다 (재시작 후에도 유지). 현재 UI 필터는 클라이언트 측에서 즉시 반영되며, 위 서버측 필터는 API·프로그램틱 조회용이다.</p></div>
