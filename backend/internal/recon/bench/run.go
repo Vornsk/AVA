@@ -84,6 +84,9 @@ func RunProfile(seed, mode string, maxPages int, timeout time.Duration) (disc []
 	if mode == "discover" {
 		opts.Mode, opts.Discover = "static", true
 	}
+	if mode == "auth-delta" { // 비인증→인증 두 패스로 auth-only 식별 (#38)
+		opts.Mode, opts.AuthDelta = "static", true
+	}
 	res := crawler.Start(seed, opts)
 
 	deadline := time.Now().Add(timeout)

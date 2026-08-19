@@ -131,6 +131,10 @@ func benchOne(t *testing.T, gt GroundTruth) {
 	// ingest 는 명세만으로 얼마나 찾는지를 재는 프로파일이다 (이슈 #25). 크롤을 돌리지 않는다.
 	// discover 는 능동 발견을 켠 static 크롤이다 (이슈 #27). 기본 크롤과의 차이가 곧 발견분이다.
 	profiles := []string{"ingest", "static", "discover"}
+	// auth-delta 는 로그인 시퀀스가 있는 대상에서만 의미가 있다 (#38). 없으면 static 과 동일.
+	if gt.Auth != nil {
+		profiles = append(profiles, "auth-delta")
+	}
 	if crawler.HeadlessAvailable() {
 		profiles = append(profiles, "headless")
 	} else {
@@ -140,7 +144,11 @@ func benchOne(t *testing.T, gt GroundTruth) {
 	t.Logf("정찰 벤치마크 — app=%s base=%s (GT %d개)", gt.App, gt.Base, len(gt.Endpoints))
 	t.Logf("%s", TableHeader())
 	for _, p := range profiles {
-		disc, raw, pages, dur, err := RunProfile(gt.Base, p, 400, 120*time.Second)
+		timeout := 120 * time.Second
+		if p == "auth-delta" { // 두 패스라 시간이 더 필요하다
+			timeout = 240 * time.Second
+		}
+		disc, raw, pages, dur, err := RunProfile(gt.Base, p, 400, timeout)
 		if err != nil {
 			t.Errorf("[%s] 실행 실패: %v", p, err)
 			continue

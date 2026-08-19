@@ -58,6 +58,7 @@ type node struct {
 	lastSeen   string // 최근 캡처 시각 (RFC3339)
 	source     string // 출처 신뢰도 등급 (SrcSpec … SrcStaticRegex) — 이슈 #25·#26
 	unverified bool   // 라이브니스 프로브에서 실재가 확인되지 않음 — 삭제 대신 강등 (이슈 #26)
+	authOnly   bool   // 인증 뒤에만 나타난 표면 (비인증 크롤엔 없던 것) — 접근통제 진단 후보 (이슈 #38)
 	varChild   string // 이 자리의 변수 자식 세그먼트 ("{slug}" 또는 명세 플레이스홀더 "{username}")
 	varSpec    bool   // varChild 가 명세 선언인가 (true 면 값 모양과 무관하게 흡수) — 이슈 #25
 	children   map[string]*node
@@ -370,6 +371,7 @@ type OutNode struct {
 	LastSeen   string    `json:"last_seen,omitempty"`  // 최근 캡처 시각
 	Source     string    `json:"source,omitempty"`     // 출처 신뢰도 등급 (이슈 #25·#26)
 	Unverified bool      `json:"unverified,omitempty"` // 라이브니스 프로브 미통과 (이슈 #26)
+	AuthOnly   bool      `json:"auth_only,omitempty"`  // 인증 뒤에만 보이는 표면 (이슈 #38)
 	Children   []OutNode `json:"children,omitempty"`
 }
 
@@ -386,6 +388,7 @@ func toOut(n *node) OutNode {
 		LastSeen:   n.lastSeen,
 		Source:     n.source,
 		Unverified: n.unverified,
+		AuthOnly:   n.authOnly,
 	}
 	keys := make([]string, 0, len(n.children))
 	for k := range n.children {
@@ -441,6 +444,7 @@ type Target struct {
 	LastSeen   string   `json:"last_seen,omitempty"`  // 최근 캡처 시각 (RFC3339)
 	Source     string   `json:"source,omitempty"`     // 출처 신뢰도 등급 (이슈 #25·#26)
 	Unverified bool     `json:"unverified,omitempty"` // 라이브니스 프로브 미통과 (이슈 #26)
+	AuthOnly   bool     `json:"auth_only,omitempty"`  // 인증 뒤에만 보이는 표면 (이슈 #38)
 }
 
 // Interesting — 공격면이 넓은 대상인가 (파라미터/인증/위험판단 존재). FR-3.9 자동선정용.
@@ -476,6 +480,7 @@ func (t *Tree) targets(includeUnverified bool) []Target {
 				LastSeen:   n.lastSeen,
 				Source:     n.source,
 				Unverified: n.unverified,
+				AuthOnly:   n.authOnly,
 			})
 		}
 		for _, c := range n.children {
@@ -504,6 +509,22 @@ func (t *Tree) MarkUnverified(host, path string) bool {
 
 // MarkUnverified — 기본(전역) 트리에 위임.
 func MarkUnverified(host, path string) bool { return def.MarkUnverified(host, path) }
+
+// MarkAuthOnly — 인증 뒤에만 나타난 노드를 접근통제 진단 후보로 표시한다 (이슈 #38).
+// 인증 델타 크롤이 "비인증엔 없고 인증엔 있는" 경로에 붙인다. path 는 구체·템플릿 무관.
+func (t *Tree) MarkAuthOnly(host, path string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := t.lookup(host, NormalizePath(path))
+	if n == nil {
+		return false
+	}
+	n.authOnly = true
+	return true
+}
+
+// MarkAuthOnly — 기본(전역) 트리에 위임.
+func MarkAuthOnly(host, path string) bool { return def.MarkAuthOnly(host, path) }
 
 // lookup — host+정규화 경로로 노드를 찾는다(호출자가 t.mu 보유). 없으면 nil.
 func (t *Tree) lookup(host, path string) *node {
@@ -602,6 +623,7 @@ type storeNode struct {
 	Slugged    bool         `json:"slugged,omitempty"`    // (v1 호환) 형제 클러스터링 상태 — 이슈 #24
 	Source     string       `json:"source,omitempty"`     // 출처 신뢰도 등급 (이슈 #25·#26)
 	Unverified bool         `json:"unverified,omitempty"` // 라이브니스 프로브 미통과 (이슈 #26)
+	AuthOnly   bool         `json:"auth_only,omitempty"`  // 인증 뒤에만 보이는 표면 (이슈 #38)
 	VarChild   string       `json:"var_child,omitempty"`  // 이 자리의 변수 자식 세그먼트 (이슈 #25)
 	VarSpec    bool         `json:"var_spec,omitempty"`   // varChild 가 명세 선언인가
 	Children   []storeNode  `json:"children,omitempty"`
@@ -612,7 +634,7 @@ func toStore(n *node) storeNode {
 		Segment: n.segment, Path: n.path, LastPath: n.lastPath, Scheme: n.scheme,
 		Methods: sortedKeys(n.methods), Count: n.count, Auth: n.auth, Verdict: n.verdict,
 		FirstSeen: n.firstSeen, LastSeen: n.lastSeen,
-		Source: n.source, Unverified: n.unverified, VarChild: n.varChild, VarSpec: n.varSpec,
+		Source: n.source, Unverified: n.unverified, AuthOnly: n.authOnly, VarChild: n.varChild, VarSpec: n.varSpec,
 	}
 	pnames := make([]string, 0, len(n.params))
 	for name := range n.params {
@@ -638,7 +660,7 @@ func fromStore(s storeNode) *node {
 	n := newNode(s.Segment, s.Path)
 	n.lastPath, n.scheme, n.count, n.auth, n.verdict = s.LastPath, s.Scheme, s.Count, s.Auth, s.Verdict
 	n.firstSeen, n.lastSeen = s.FirstSeen, s.LastSeen
-	n.source, n.unverified = s.Source, s.Unverified
+	n.source, n.unverified, n.authOnly = s.Source, s.Unverified, s.AuthOnly
 	n.varChild, n.varSpec = s.VarChild, s.VarSpec
 	if n.varChild == "" && s.Slugged {
 		n.varChild = tplSlug // v1(#24) 저장물 호환: slugged=true → 변수 자식이 {slug}

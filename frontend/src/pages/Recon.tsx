@@ -192,18 +192,21 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
   const [authOnly, setAuthOnly] = useState(false)
   const [verdictOnly, setVerdictOnly] = useState(false)
   const [showUnverified, setShowUnverified] = useState(false) // 기본 verified 만 (#28)
+  const [behindAuth, setBehindAuth] = useState(false) // 인증 뒤에만 보이는 표면만 (#38)
   const [open, setOpen] = useState<string | null>(null)
 
   const all = targets ?? []
   const methods = Array.from(new Set(all.flatMap((t) => t.methods ?? []))).sort()
   const unverifiedCount = all.filter((t) => t.unverified).length
-  const hasFilter = !!(q || method || authOnly || verdictOnly || showUnverified)
+  const authOnlyCount = all.filter((t) => t.auth_only).length
+  const hasFilter = !!(q || method || authOnly || verdictOnly || showUnverified || behindAuth)
 
   const filtered = all.filter((t) => {
     if (!showUnverified && t.unverified) return false // 라이브니스 미통과 기본 숨김 (#28)
     if (q && !`${t.host}${t.path}`.toLowerCase().includes(q.toLowerCase())) return false
     if (method && !(t.methods ?? []).includes(method)) return false
     if (authOnly && !t.auth_required) return false
+    if (behindAuth && !t.auth_only) return false // 인증 뒤에만 보이는 표면 (#38)
     if (verdictOnly && !t.verdict) return false
     return true
   })
@@ -244,6 +247,13 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                   title={tr('recon.tree.unverifiedHint')}
                   className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${showUnverified ? 'border-[var(--amber)] text-[var(--amber)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
             <ShieldCheck size={12} /> {tr('recon.tree.showUnverified')} ({unverifiedCount})
+          </button>
+        )}
+        {authOnlyCount > 0 && (
+          <button onClick={() => setBehindAuth((v) => !v)}
+                  title={tr('recon.tree.authOnlyHint')}
+                  className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1.5 text-xs ${behindAuth ? 'border-[var(--red)] text-[var(--red)]' : 'border-[var(--border)] text-[var(--muted)]'}`}>
+            <ShieldCheck size={12} /> {tr('recon.tree.authOnly')} ({authOnlyCount})
           </button>
         )}
       </div>
@@ -303,6 +313,12 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                             <Tooltip label={tr('recon.tree.unverifiedHint')}>
                               <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--amber)]"
                                     style={{ background: 'color-mix(in srgb, var(--amber) 14%, transparent)' }}>unverified</span>
+                            </Tooltip>
+                          )}
+                          {t.auth_only && (
+                            <Tooltip label={tr('recon.tree.authOnlyHint')}>
+                              <span className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium text-[var(--red)]"
+                                    style={{ background: 'color-mix(in srgb, var(--red) 14%, transparent)' }}>auth-only</span>
                             </Tooltip>
                           )}
                         </span>

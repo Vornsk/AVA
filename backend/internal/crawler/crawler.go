@@ -11,6 +11,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -31,37 +32,41 @@ import (
 
 // Options — 크롤 상한.
 type Options struct {
-	MaxPages int    // 가져올 최대 페이지 (기본 200)
-	MaxDepth int    // 시작 URL로부터 최대 깊이 (기본 5)
-	Mode     string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
-	NoIngest bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
-	NoVerify bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
-	Discover bool   // 능동 콘텐츠 발견(wordlist 프로브) 옵트인 — 기본 꺼짐 (#27)
-	Budget   int    // 능동 발견 요청 예산 (0 = 기본값 discover.DefaultBudget)
+	MaxPages  int    // 가져올 최대 페이지 (기본 200)
+	MaxDepth  int    // 시작 URL로부터 최대 깊이 (기본 5)
+	Mode      string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
+	NoIngest  bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
+	NoVerify  bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
+	Discover  bool   // 능동 콘텐츠 발견(wordlist 프로브) 옵트인 — 기본 꺼짐 (#27)
+	Budget    int    // 능동 발견 요청 예산 (0 = 기본값 discover.DefaultBudget)
+	AuthDelta bool   // 인증 델타 크롤 — 비인증→인증 두 패스로 "인증 뒤에만 보이는 표면" 식별 (#38)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
 type Result struct {
-	ID      string `json:"id"`
-	Seed    string `json:"seed"`
-	Status  string `json:"status"`     // 진행 | 완료 | 중단
-	Pages   int    `json:"pages"`      // 가져온 페이지 수
-	Found   int    `json:"found"`      // 발견한 고유 엔드포인트 수
-	JS      int    `json:"js"`         // 분석한 JS 번들 수 (SPA 정적 추출)
-	Spec    int    `json:"spec"`       // 명세 인제스트로 등록한 엔드포인트 수 (#25)
-	Demoted int    `json:"demoted"`    // 라이브니스 검증에서 강등한 엔드포인트 수 (#26)
-	Found2  int    `json:"discovered"` // 능동 발견으로 등록한 엔드포인트 수 (#27)
-	Mode    string `json:"mode"`       // static | headless | ingest
-	Queued  int    `json:"queued"`     // 남은 큐
-	Errors  int    `json:"errors"`
-	Started string `json:"started"`
+	ID       string `json:"id"`
+	Seed     string `json:"seed"`
+	Status   string `json:"status"`     // 진행 | 완료 | 중단
+	Pages    int    `json:"pages"`      // 가져온 페이지 수
+	Found    int    `json:"found"`      // 발견한 고유 엔드포인트 수
+	JS       int    `json:"js"`         // 분석한 JS 번들 수 (SPA 정적 추출)
+	Spec     int    `json:"spec"`       // 명세 인제스트로 등록한 엔드포인트 수 (#25)
+	Demoted  int    `json:"demoted"`    // 라이브니스 검증에서 강등한 엔드포인트 수 (#26)
+	Found2   int    `json:"discovered"` // 능동 발견으로 등록한 엔드포인트 수 (#27)
+	AuthOnly int    `json:"auth_only"`  // 인증 뒤에만 보이는 표면 수 (인증 델타, #38)
+	Mode     string `json:"mode"`       // static | headless | ingest
+	Queued   int    `json:"queued"`     // 남은 큐
+	Errors   int    `json:"errors"`
+	Started  string `json:"started"`
 }
 
 type job struct {
-	mu     sync.Mutex
-	res    Result
-	ctx    context.Context
-	cancel context.CancelFunc
+	mu       sync.Mutex
+	res      Result
+	ctx      context.Context
+	cancel   context.CancelFunc
+	authless bool            // 인증 델타의 비인증 패스 동안 true — fetch·record 가 인증을 주입하지 않는다 (#38)
+	reached  map[string]bool // 이번 패스에서 2xx 로 실제 접근한 경로 (host	정규화경로) — 인증 델타용 (#38)
 }
 
 var (
@@ -218,6 +223,23 @@ func (j *job) run(seed string, opts Options) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	j.ingestOnce(seed, opts, client)
 	j.discoverOnce(seed, opts, client) // 옵트인일 때만 (#27)
+
+	// 인증 델타 크롤 (#38): 인증 설정(로그인 시퀀스 또는 정적 쿠키/헤더, #31)이 있을 때만.
+	// 비인증→인증 두 패스로 델타를 마킹한다. 인증 없으면 아래 일반 크롤로 fallback.
+	if opts.AuthDelta && (auth.Default().Enabled() || auth.Default().LoginEnabled()) {
+		if !j.runAuthDelta(seed, opts, client) {
+			return // 중단됨
+		}
+	} else if !j.crawlPass(seed, opts, client) {
+		return // 중단됨
+	}
+	j.verifyOnce(opts, client) // 실재하지 않는 추출물 강등 (#26)
+	j.setStatus("완료")
+}
+
+// crawlPass — 링크 BFS 크롤 1회. 중단되면 false(호출자가 상태 처리). 재크롤을 위해 visited 는 매 패스 새로 시작한다.
+func (j *job) crawlPass(seed string, opts Options, client *http.Client) bool {
+	j.reached = map[string]bool{} // 이번 패스의 2xx 접근 기록 (#38)
 	visited := map[string]bool{}
 	foundEP := map[string]bool{}
 	jsFetched := 0 // 분석한 JS 번들 수(상한 maxJSBundles)
@@ -226,7 +248,7 @@ func (j *job) run(seed string, opts Options) {
 	for len(queue) > 0 {
 		if j.ctx.Err() != nil {
 			j.setStatus("중단")
-			return
+			return false
 		}
 		it := queue[0]
 		queue = queue[1:]
@@ -243,10 +265,13 @@ func (j *job) run(seed string, opts Options) {
 			continue // 스코프 밖 (FR-2.1)
 		}
 
-		body, ct, err := j.fetch(client, u)
+		body, ct, status, err := j.fetch(client, u)
 		j.mu.Lock()
 		j.res.Pages++
 		pages := j.res.Pages
+		if err == nil && status >= 200 && status < 300 {
+			j.reached[u.Host+"	"+endpoints.NormalizePath(u.Path)] = true // 2xx 로 접근됨 (#38)
+		}
 		j.mu.Unlock()
 		if err != nil {
 			j.mu.Lock()
@@ -257,7 +282,7 @@ func (j *job) run(seed string, opts Options) {
 
 		// 엔드포인트 등록 (프록시 캡처와 동일 의미)
 		recordFound := func(eu *url.URL, source string) {
-			recordURL(eu, "GET", source)
+			recordURL(eu, "GET", source, j.authless)
 			epk := eu.Host + eu.Path
 			if !foundEP[epk] {
 				foundEP[epk] = true
@@ -280,7 +305,7 @@ func (j *job) run(seed string, opts Options) {
 				}
 			}
 			for _, f := range forms {
-				recordForm(f, endpoints.SrcCrawlLink)
+				recordForm(f, endpoints.SrcCrawlLink, j.authless)
 			}
 			// SPA 정적 추출: 인라인 JS + 링크된 JS 번들에서 API 엔드포인트 발굴(등록만, 비파괴).
 			for _, ep := range extractAPIEndpoints(body, u) {
@@ -303,7 +328,7 @@ func (j *job) run(seed string, opts Options) {
 				j.mu.Lock()
 				j.res.JS = jsFetched
 				j.mu.Unlock()
-				jsBody, _, err := j.fetch(client, su)
+				jsBody, _, _, err := j.fetch(client, su)
 				if err != nil {
 					continue
 				}
@@ -319,37 +344,78 @@ func (j *job) run(seed string, opts Options) {
 		j.mu.Unlock()
 		time.Sleep(120 * time.Millisecond) // rate limit (FR-3.2)
 	}
-	j.verifyOnce(opts, client) // 실재하지 않는 추출물 강등 (#26)
-	j.setStatus("완료")
+	return true
 }
 
-// fetch — 인증 주입 후 URL 요청, 본문(최대 1MB)+content-type 반환.
-func (j *job) fetch(c *http.Client, u *url.URL) (string, string, error) {
-	req, err := http.NewRequestWithContext(j.ctx, "GET", u.String(), nil)
-	if err != nil {
-		return "", "", err
+// runAuthDelta — 비인증 패스 → 경로 스냅샷 → 재로그인 → 인증 패스 → 새로 나타난 경로에 auth-only 마킹 (#38).
+// 델타 키는 (method, 정규화 경로) — 같은 경로라도 GET(비인증)과 POST(인증 뒤)를 구분한다.
+func (j *job) runAuthDelta(seed string, opts Options, client *http.Client) bool {
+	// 비인증 패스: fetch·record 가 인증을 주입하지 않는다.
+	j.authless = true
+	if !j.crawlPass(seed, opts, client) {
+		return false
 	}
-	auth.Default().Inject(req) // FR-2.5 로그인 상태 크롤
-	resp, err := c.Do(req)
-	if err != nil {
-		return "", "", err
+	before := j.reached // 비인증에서 2xx 로 접근된 경로
+
+	// 재로그인 후 인증 패스.
+	j.authless = false
+	auth.Default().Relogin(client)
+	if !j.crawlPass(seed, opts, client) {
+		return false
+	}
+	after := j.reached // 인증에서 2xx 로 접근된 경로
+
+	// auth-only = 인증에선 접근됐지만(2xx) 비인증에선 접근 못 한(non-2xx) 경로.
+	// "경로 존재"가 아니라 "접근 성공"이 기준이다 — 링크는 양쪽에 있어도 401 이면 접근 못 한 것.
+	n := 0
+	for key := range after {
+		if before[key] {
+			continue
+		}
+		host, path, _ := strings.Cut(key, "	")
+		if endpoints.MarkAuthOnly(host, path) {
+			n++
+		}
+	}
+	j.mu.Lock()
+	j.res.AuthOnly = n
+	j.mu.Unlock()
+	log.Printf("[AUTH] 인증 델타: 비인증 2xx=%d 인증 2xx=%d 인증뒤전용=%d", len(before), len(after), n)
+	return true
+}
+
+// fetch — 인증 주입 후 URL 요청, 본문(최대 1MB)+content-type+상태코드 반환.
+func (j *job) fetch(c *http.Client, u *url.URL) (body, ctype string, status int, err error) {
+	req, e := http.NewRequestWithContext(j.ctx, "GET", u.String(), nil)
+	if e != nil {
+		return "", "", 0, e
+	}
+	if !j.authless { // 인증 델타의 비인증 패스에서는 주입하지 않는다 (#38)
+		auth.Default().Inject(req)
+	}
+	resp, e := c.Do(req)
+	if e != nil {
+		return "", "", 0, e
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return string(b), resp.Header.Get("Content-Type"), nil
+	return string(b), resp.Header.Get("Content-Type"), resp.StatusCode, nil
 }
 
 // recordURL — URL 하나를 엔드포인트 트리에 기록(프록시 DoFunc 과 동일 흐름).
-func recordURL(u *url.URL, method, source string) {
+func recordURL(u *url.URL, method, source string, authless bool) {
 	req, _ := http.NewRequest(method, u.String(), nil)
 	params := endpoints.ExtractParams(req) // 주입 전 원본 파라미터
-	auth.Default().Inject(req)
-	authReq := req.Header.Get("Cookie") != "" || req.Header.Get("Authorization") != ""
+	authReq := false
+	if !authless { // 비인증 패스(#38)에서는 주입하지 않는다
+		auth.Default().Inject(req)
+		authReq = req.Header.Get("Cookie") != "" || req.Header.Get("Authorization") != ""
+	}
 	endpoints.RecordFrom(source, u.Scheme, u.Host, method, u.Path, params, authReq, "")
 }
 
 // recordForm — 발견한 폼을 엔드포인트로 등록(제출하지 않음, 비파괴).
-func recordForm(f form, source string) {
+func recordForm(f form, source string, authless bool) {
 	fu, err := url.Parse(f.action)
 	if err != nil || (fu.Scheme != "http" && fu.Scheme != "https") {
 		return
@@ -365,8 +431,8 @@ func recordForm(f form, source string) {
 	for _, name := range f.fields {
 		params = append(params, endpoints.Param{Name: name, In: in})
 	}
-	// 폼 요청도 인증 동반 여부 반영
-	authReq := auth.Default().Enabled()
+	// 폼 요청도 인증 동반 여부 반영(비인증 패스는 항상 false, #38)
+	authReq := !authless && auth.Default().Enabled()
 	endpoints.RecordFrom(source, fu.Scheme, fu.Host, f.method, fu.Path, params, authReq, "")
 }
 

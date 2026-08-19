@@ -183,6 +183,8 @@ export const ko = {
   'recon.tree.authLabel': '인증',
   'recon.tree.needed': '필요',
   'recon.tree.verdictLabel': '판정',
+  'recon.tree.authOnly': '인증 뒤',
+  'recon.tree.authOnlyHint': '로그인 뒤에만 보이는 표면 — 접근통제 진단 후보(인증 델타, #38).',
   'recon.tree.showUnverified': '미검증',
   'recon.tree.unverifiedHint': '라이브니스 프로브(soft-404)를 통과하지 못한 엔드포인트를 표시합니다. 기본 숨김.',
   'recon.tree.sources': '출처',

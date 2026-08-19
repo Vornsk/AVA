@@ -77,7 +77,7 @@ func (j *job) runHeadless(seed string, opts Options) {
 	queue := []item{{seed, 0}}
 
 	recordFound := func(eu *url.URL, source string) {
-		recordURL(eu, "GET", source)
+		recordURL(eu, "GET", source, j.authless)
 		epk := eu.Host + eu.Path
 		if !foundEP[epk] {
 			foundEP[epk] = true
@@ -151,7 +151,7 @@ func (j *job) runHeadless(seed string, opts Options) {
 			}
 		}
 		for _, f := range forms {
-			recordForm(f, endpoints.SrcCrawlLink)
+			recordForm(f, endpoints.SrcCrawlLink, j.authless)
 		}
 		for _, ep := range extractAPIEndpoints(html, u) {
 			if eu, e := url.Parse(ep); e == nil {
