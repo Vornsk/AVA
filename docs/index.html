@@ -527,6 +527,19 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <p>라벨은 <strong>노드 단위 속성</strong>으로 출처·파라미터와 직교합니다(<code>endpoints.SetLabels</code>). 한 엔드포인트가 <code>crawl-link</code> 이면서 <code>admin</code>·<code>pii</code> 일 수 있습니다. <code>endpoints.json</code> 에 영속화되어 <strong>재시작 후에도 E5(규제 매핑)·E6(커버리지 UI)가 읽습니다</strong>. API 는 <code>GET /api/endpoints?label=payment</code> 로 라벨별 조회하고, Endpoint Tree 행에는 민감 라벨(auth·admin·payment·pii 등)을 배지로 강조합니다.</p>
 <p>재현:</p>
 <pre><code>cd backend &amp;&amp; go test ./internal/recon/classify -v</code></pre>
+<h3>규제 점검항목 자동 매핑 (이슈 #42)</h3>
+<p>AVA 의 핵심 가치는 진단 결과를 <strong>규제 항목표(KII/전자금융)</strong>에 연결하는 것입니다. 지금까지는 취약점이 <strong>발견된 뒤</strong>에야 <code>detector→VulnDef→CheckItem</code> 3계층으로 매핑됐습니다. 정찰 분류(#41)가 붙인 <strong>의미 라벨</strong>을 쓰면, <strong>스캔 전에</strong> "이 엔드포인트에 어떤 규제 점검항목이 적용되는가"를 압니다.</p>
+<h4>같은 허브(VulnDef)를 쓴다 — 기존 매핑과 충돌 없음</h4>
+<p>라벨을 점검항목에 <strong>직접</strong> 잇지 않고, <strong><code>라벨 → VulnDef → CheckItem</code></strong> 으로 잇습니다 — <code>detector → VulnDef → CheckItem</code> 과 <strong>같은 2층 허브</strong>입니다.</p>
+<div class="table-wrap"><table><thead><tr><th>라벨</th><th>VulnDef</th><th>대표 점검항목</th></tr></thead><tbody><tr><td><code>payment</code></td><td><code>vuln.txn-security</code></td><td>전자금융 1~4·18·63 (거래 인증·무결성·재사용 방지)</td></tr><tr><td><code>admin</code></td><td><code>vuln.access-control</code></td><td>KII <code>IN</code>·<code>AE</code> · 전자금융 21·56 (부적절한 인가·관리자 페이지)</td></tr><tr><td><code>upload</code></td><td><code>vuln.file-upload</code></td><td>KII <code>FU</code> · 전자금융 20 (악성파일 업로드)</td></tr><tr><td><code>pii</code></td><td><code>vuln.info-exposure</code>·<code>vuln.plaintext</code></td><td>KII <code>IL</code> · 전자금융 38·59·65</td></tr><tr><td><code>auth</code></td><td><code>vuln.weak-auth</code>·<code>vuln.weak-session</code>·<code>vuln.auth-credential</code></td><td>KII <code>IA</code>·<code>IS</code> · 전자금융 22~24·37·49</td></tr><tr><td><code>search</code></td><td><code>vuln.sqli</code></td><td>KII <code>SI</code> · 전자금융 19</td></tr></tbody></table></div>
+<p>라벨→vuln 은 안정적이라 코드에 두고, <strong>vuln→checkitem 은 <code>current</code> 항목표에서 동적 해석</strong>합니다 — 운영자가 커스텀 항목표(YAML)를 넣어도 그대로 동작하고, 항목표 무결성 검사(<code>Validate</code>)가 라벨이 가리키는 vuln 존재까지 확인합니다. <code>api·static·other</code> 같은 <strong>구조적 라벨은 규제 후보로 매핑하지 않습니다</strong>(노이즈 방지).</p>
+<h4>취약점 기반 커버리지와 다른 축입니다 (합의 ③)</h4>
+<ul><li><strong>정찰 기반(여기)</strong>: "적용 대상(후보)" — 무엇을 점검해야 하는가. 스캔 전.</li><li><strong>취약점 기반(<code>checklist.Coverage</code>)</strong>: "취약/양호/미점검" — 실제 진단 결과. 스캔 후.</li></ul>
+<p>두 결과를 섞지 않습니다. 정찰 매핑은 <code>GET /api/recon/regmap</code> 로 스킴별 적용 점검항목·후보 엔드포인트 수를 냅니다(선택된 스킴만).</p>
+<h4>접근통제 후보 — E1+E4 조합</h4>
+<p><strong>인증 뒤(인증 델타 #38=E1)</strong> 이면서 <strong><code>admin</code> 라벨(#41=E4)</strong> 인 엔드포인트는 "숨겨진 관리 표면"이라 접근통제 점검항목의 <strong>강조 대상</strong>으로 표시합니다. 정찰 페이지 <strong>규제 매핑 카드</strong>가 스킴별 적용 항목을 배지로 보여주고, 접근통제 후보는 빨간 테두리로 강조합니다.</p>
+<p>재현:</p>
+<pre><code>cd backend &amp;&amp; go test ./internal/recon/regmap ./internal/checklist -run 'Label|Build|AccessControl' -v</code></pre>
 <h3>능동 콘텐츠 발견 (이슈 #27)</h3>
 <p>링크·명세·트래픽 어디에도 안 걸리는 <strong>unlinked 공격면</strong>이 있습니다 — 백업 파일·<code>.git</code>·설정·로그 디렉터리·관리 화면. Juice Shop 실측 기준 <code>/support/logs</code>·<code>/encryptionkeys</code> 는 <strong>디렉터리 목록이 그대로 열려 있는데도</strong> 링크가 없어 크롤·인제스트로는 영원히 못 찾습니다. 능동 발견은 알려진 관례 경로 목록(wordlist)을 직접 찔러 실재하는 것만 등록합니다.</p>
 <h4>★ 기본 비활성 (옵트인)</h4>

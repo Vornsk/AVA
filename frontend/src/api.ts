@@ -231,6 +231,24 @@ export interface CrawlResult {
   started: string
 }
 
+// 정찰 규제 매핑 (이슈 #42) — 의미 라벨 → 점검항목 후보.
+export interface RegmapItem {
+  check_item: { id: string; scheme: string; control?: string; label?: string; vuln: string; risk?: number }
+  vuln_name: string
+  labels: string[]
+  count: number
+  endpoints?: string[]
+  access_control?: boolean
+}
+export interface RegmapScheme { scheme: string; applicable: number; items: RegmapItem[] }
+export interface ReconRegmap {
+  endpoints: number
+  labeled: number
+  access_control_candidates: number
+  schemes?: RegmapScheme[]
+  unmapped_sample?: string[]
+}
+
 export interface TenantInfo {
   project_id: string
   port: number

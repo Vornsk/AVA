@@ -158,6 +158,12 @@ export const ko = {
   'recon.crawl.optIn': '· 옵트인',
   'recon.crawl.mined': '마이닝',
   'recon.crawl.labeled': '라벨',
+  'recon.regmap.title': '규제 매핑 (정찰 기준)',
+  'recon.regmap.subtitle': '스캔 전에 — 어떤 점검항목이 적용되는가',
+  'recon.regmap.labeled': '라벨',
+  'recon.regmap.applicable': '적용',
+  'recon.regmap.accessCtl': '접근통제 후보',
+  'recon.regmap.acHint': '인증 뒤(인증 델타 #38)이면서 admin 라벨(#41)인 엔드포인트 — 접근통제 점검 1순위 대상.',
 
   // 정찰 — 워크플로 단계 (#28)
   'recon.steps.scope.title': '스코프',

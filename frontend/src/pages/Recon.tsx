@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight } from 'lucide-react'
-import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me } from '../api'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight, ClipboardCheck } from 'lucide-react'
+import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me, type ReconRegmap } from '../api'
 import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
 
@@ -442,6 +442,49 @@ function ReconSteps({ stats, targets }: { stats: Stats | null; targets: Target[]
   )
 }
 
+// RegMapCard — 정찰 규제 매핑 (이슈 #42): 의미 라벨 → 점검항목 후보. 라벨이 없으면 숨김.
+function RegMapCard() {
+  const t = useT()
+  const { data } = usePoll<ReconRegmap>('/api/recon/regmap', 6000)
+  if (!data || data.labeled === 0) return null
+  return (
+    <Card title={t('recon.regmap.title')} icon={ClipboardCheck} collapsible defaultOpen muted
+          right={<span className="hidden text-[11px] text-[var(--muted)] md:inline">{t('recon.regmap.subtitle')}</span>}>
+      <div className="mb-2.5 flex flex-wrap items-center gap-3 text-xs">
+        <span className="text-[var(--muted)]">{t('recon.regmap.labeled')} <b className="text-[var(--text)]">{data.labeled}</b> / {data.endpoints}</span>
+        {data.access_control_candidates > 0 && (
+          <Tooltip label={t('recon.regmap.acHint')}>
+            <span className="rounded px-1.5 py-0.5 font-medium text-[var(--red)]" style={{ background: 'color-mix(in srgb, var(--red) 14%, transparent)' }}>
+              {t('recon.regmap.accessCtl')} {data.access_control_candidates}
+            </span>
+          </Tooltip>
+        )}
+      </div>
+      <div className="space-y-3">
+        {data.schemes?.map((s) => (
+          <div key={s.scheme}>
+            <div className="mb-1.5 flex items-baseline gap-2 text-xs">
+              <span className="font-semibold">{s.scheme}</span>
+              <span className="text-[var(--muted)]">{t('recon.regmap.applicable')} {s.applicable}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {s.items.map((it) => (
+                <Tooltip key={it.check_item.id} label={`${it.vuln_name} · ${it.labels.join(', ')}`}>
+                  <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+                        style={{ borderColor: it.access_control ? 'var(--red)' : 'var(--border)', color: it.access_control ? 'var(--red)' : 'var(--muted)' }}>
+                    <b className="text-[var(--text)]">{it.check_item.id}</b>
+                    <span className="tabular-nums">{it.count}</span>
+                  </span>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 export function Recon() {
   const t = useT()
   const { data: targets } = usePoll<Target[]>('/api/endpoints?include_unverified=true', 4000)
@@ -460,6 +503,7 @@ export function Recon() {
         <ProxyTool stats={stats} />
         <CrawlExplore />
         <EndpointTree targets={targets} />
+        <RegMapCard />
       </div>
 
       {/* 우측: 참고 — 파이프라인·스코프·인증 (#28: 기본 접힘, 필요 시 펼침) */}

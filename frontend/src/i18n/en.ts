@@ -159,6 +159,12 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.crawl.optIn': '· opt-in',
   'recon.crawl.mined': 'Mined',
   'recon.crawl.labeled': 'Labeled',
+  'recon.regmap.title': 'Regulatory mapping (recon)',
+  'recon.regmap.subtitle': 'Which checklist items apply — before scanning',
+  'recon.regmap.labeled': 'Labeled',
+  'recon.regmap.applicable': 'applicable',
+  'recon.regmap.accessCtl': 'Access-control candidates',
+  'recon.regmap.acHint': 'Endpoints that are both behind auth (auth delta, #38) and admin-labeled (#41) — prime access-control review targets.',
 
   // Recon — 워크플로 단계 (#28)
   'recon.steps.scope.title': 'Scope',

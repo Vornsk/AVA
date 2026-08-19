@@ -36,6 +36,7 @@ import (
 	"proxypoc/internal/proxyengine"
 	"proxypoc/internal/recon/discover"
 	"proxypoc/internal/recon/parammine"
+	"proxypoc/internal/recon/regmap"
 	"proxypoc/internal/report"
 	"proxypoc/internal/retention"
 	"proxypoc/internal/reverify"
@@ -108,12 +109,13 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/findings", jsonHandler(func() any { return finding.ByProject(activePID()) }))
 	mux.HandleFunc("/api/scanruns", jsonHandler(func() any { return scanengine.RunsByProject(activePID()) }))
 	mux.HandleFunc("/api/coverage", jsonHandler(func() any { return coverage.Report() }))
-	mux.HandleFunc("/api/endpoints", endpointsListHandler)                                             // 필터·검색·페이징 (이슈 #7, 무필터=하위호환)
-	mux.HandleFunc("GET /api/endpoints/tree", jsonHandler(func() any { return endpoints.Snapshot() })) // 풍부한 트리 (이슈 #7)
-	mux.HandleFunc("GET /api/endpoints/detail", endpointDetailHandler)                                 // 단일 엔드포인트 상세 (이슈 #7)
-	mux.HandleFunc("GET /api/proxy", jsonHandler(proxyStatus))                                         // 공용 프록시 상태 (이슈 #5)
-	mux.HandleFunc("POST /api/proxy/capture", proxyCaptureHandler)                                     // 캡처 on/off (proxy:control, 리더)
-	mux.HandleFunc("/api/crawl", crawlHandler)                                                         // GET: 크롤 실행목록 / POST: 크롤 시작(Explore)
+	mux.HandleFunc("GET /api/recon/regmap", jsonHandler(func() any { return regmap.Build(endpoints.Targets()) })) // 정찰 규제 매핑 (이슈 #42)
+	mux.HandleFunc("/api/endpoints", endpointsListHandler)                                                        // 필터·검색·페이징 (이슈 #7, 무필터=하위호환)
+	mux.HandleFunc("GET /api/endpoints/tree", jsonHandler(func() any { return endpoints.Snapshot() }))            // 풍부한 트리 (이슈 #7)
+	mux.HandleFunc("GET /api/endpoints/detail", endpointDetailHandler)                                            // 단일 엔드포인트 상세 (이슈 #7)
+	mux.HandleFunc("GET /api/proxy", jsonHandler(proxyStatus))                                                    // 공용 프록시 상태 (이슈 #5)
+	mux.HandleFunc("POST /api/proxy/capture", proxyCaptureHandler)                                                // 캡처 on/off (proxy:control, 리더)
+	mux.HandleFunc("/api/crawl", crawlHandler)                                                                    // GET: 크롤 실행목록 / POST: 크롤 시작(Explore)
 	mux.HandleFunc("/api/crawl-modes", jsonHandler(func() any {
 		return map[string]any{"headless_available": crawler.HeadlessAvailable()}
 	}))

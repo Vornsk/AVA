@@ -63,6 +63,7 @@
 | **#39** | **소스맵 완전 복원** — 파일 단위 프레임워크 라우트 추출 + static-regex 검증 | `ingest.extractFromSources`, `parseSourceMap` |
 | **#40** | **파라미터 마이닝** — hidden 파라미터 주입으로 인젝션 포인트 확대(옵트인) | `backend/internal/recon/parammine/`, `endpoints.AddMinedParam` |
 | **#41** | **의미 분류** — 경로·파라미터를 auth/payment/admin/pii 등으로 라벨링(룰+LLM) | `backend/internal/recon/classify/`, `endpoints.SetLabels` |
+| **#42** | **규제 점검항목 자동 매핑** — 의미 라벨 → KII/전자금융 CheckItem(정찰 기반) | `backend/internal/recon/regmap/`, `checklist.CheckItemsForLabel` |
 
 **#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
 값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
@@ -113,6 +114,16 @@
 플래그와 함께 붙고 `In=query` 라 `detector.injectable` 이 자동으로 스캔에 포함한다(별도 배선 없음).
 검증은 단위 테스트 위주 — 발견·정적 오탐0·반사투성이 방어·예산소진·관측중복 + 크롤러 옵트인. body·header
 주입과 소스맵 JS 파라미터명 채굴은 후속.
+
+**#42 가 무엇을 바꿨나 (확장 로드맵 5번 — 정찰 마무리).** AVA 핵심 가치는 진단을 규제 항목표(KII/
+전자금융)에 잇는 것인데, 지금까지는 취약점 발견 "뒤"에야(detector→VulnDef→CheckItem) 매핑됐다.
+정찰 라벨(#41)로 스캔 "전"에 "이 엔드포인트에 어떤 점검항목이 적용되는가"를 안다. 라벨을 checkitem 에
+직접 잇지 않고 **`라벨→VulnDef→CheckItem`**(detector 와 같은 2층 허브)으로 이어 기존 매핑과 충돌이
+없다. 라벨→vuln 은 코드(안정적), vuln→checkitem 은 `current` 항목표에서 동적 해석(커스텀 YAML 무관).
+`regmap.Build` 가 `GET /api/recon/regmap` 로 스킴별 적용 점검항목·후보 엔드포인트를 낸다 — 취약점
+커버리지(취약/양호)와 **다른 축**(적용 후보). **E1+E4 조합**(인증 뒤 #38 + admin 라벨 #41)은 접근통제
+점검항목 강조 대상으로 표시. UI 는 정찰 페이지 규제 매핑 카드(스킴별 배지, 접근통제 빨강 강조). 검증은
+단위 테스트 — 대표 라벨→항목 매핑, Build 후보 집계, E1+E4 접근통제, 스킴 선택 필터. 실 LLM 평가는 후속.
 
 **#41 이 무엇을 바꿨나 (확장 로드맵 4번).** 정찰은 엔드포인트를 구조(경로·메서드·파라미터)로만 알아,
 "결제·관리자·PII 처리인가"라는 의미를 몰랐다 — 규제 매핑(E5)·스캔 우선순위·위험도의 전제다. 새 `classify`
