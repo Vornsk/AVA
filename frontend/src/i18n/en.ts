@@ -184,6 +184,8 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.tree.authLabel': 'Auth',
   'recon.tree.needed': 'Required',
   'recon.tree.verdictLabel': 'Verdict',
+  'recon.tree.authOnly': 'Auth-only',
+  'recon.tree.authOnlyHint': 'Surfaces visible only after login — access-control review candidates (auth delta, #38).',
   'recon.tree.showUnverified': 'Unverified',
   'recon.tree.unverifiedHint': 'Show endpoints that failed the liveness probe (soft-404). Hidden by default.',
   'recon.tree.sources': 'Sources',
