@@ -65,7 +65,8 @@ type job struct {
 	res      Result
 	ctx      context.Context
 	cancel   context.CancelFunc
-	authless bool // 인증 델타의 비인증 패스 동안 true — fetch·record 가 인증을 주입하지 않는다 (#38)
+	authless bool            // 인증 델타의 비인증 패스 동안 true — fetch·record 가 인증을 주입하지 않는다 (#38)
+	reached  map[string]bool // 이번 패스에서 2xx 로 실제 접근한 경로 (host	정규화경로) — 인증 델타용 (#38)
 }
 
 var (
@@ -223,8 +224,9 @@ func (j *job) run(seed string, opts Options) {
 	j.ingestOnce(seed, opts, client)
 	j.discoverOnce(seed, opts, client) // 옵트인일 때만 (#27)
 
-	// 인증 델타 크롤 (#38): 로그인 시퀀스가 있을 때만. 비인증→인증 두 패스로 델타를 마킹한다.
-	if opts.AuthDelta && auth.Default().LoginEnabled() {
+	// 인증 델타 크롤 (#38): 인증 설정(로그인 시퀀스 또는 정적 쿠키/헤더, #31)이 있을 때만.
+	// 비인증→인증 두 패스로 델타를 마킹한다. 인증 없으면 아래 일반 크롤로 fallback.
+	if opts.AuthDelta && (auth.Default().Enabled() || auth.Default().LoginEnabled()) {
 		if !j.runAuthDelta(seed, opts, client) {
 			return // 중단됨
 		}
@@ -237,6 +239,7 @@ func (j *job) run(seed string, opts Options) {
 
 // crawlPass — 링크 BFS 크롤 1회. 중단되면 false(호출자가 상태 처리). 재크롤을 위해 visited 는 매 패스 새로 시작한다.
 func (j *job) crawlPass(seed string, opts Options, client *http.Client) bool {
+	j.reached = map[string]bool{} // 이번 패스의 2xx 접근 기록 (#38)
 	visited := map[string]bool{}
 	foundEP := map[string]bool{}
 	jsFetched := 0 // 분석한 JS 번들 수(상한 maxJSBundles)
@@ -262,10 +265,13 @@ func (j *job) crawlPass(seed string, opts Options, client *http.Client) bool {
 			continue // 스코프 밖 (FR-2.1)
 		}
 
-		body, ct, err := j.fetch(client, u)
+		body, ct, status, err := j.fetch(client, u)
 		j.mu.Lock()
 		j.res.Pages++
 		pages := j.res.Pages
+		if err == nil && status >= 200 && status < 300 {
+			j.reached[u.Host+"	"+endpoints.NormalizePath(u.Path)] = true // 2xx 로 접근됨 (#38)
+		}
 		j.mu.Unlock()
 		if err != nil {
 			j.mu.Lock()
@@ -322,7 +328,7 @@ func (j *job) crawlPass(seed string, opts Options, client *http.Client) bool {
 				j.mu.Lock()
 				j.res.JS = jsFetched
 				j.mu.Unlock()
-				jsBody, _, err := j.fetch(client, su)
+				jsBody, _, _, err := j.fetch(client, su)
 				if err != nil {
 					continue
 				}
@@ -344,29 +350,12 @@ func (j *job) crawlPass(seed string, opts Options, client *http.Client) bool {
 // runAuthDelta — 비인증 패스 → 경로 스냅샷 → 재로그인 → 인증 패스 → 새로 나타난 경로에 auth-only 마킹 (#38).
 // 델타 키는 (method, 정규화 경로) — 같은 경로라도 GET(비인증)과 POST(인증 뒤)를 구분한다.
 func (j *job) runAuthDelta(seed string, opts Options, client *http.Client) bool {
-	host := ""
-	if u, err := url.Parse(seed); err == nil {
-		host = u.Host
-	}
-	snapshot := func() map[string]bool {
-		m := map[string]bool{}
-		for _, t := range endpoints.Targets() {
-			if t.Host != host {
-				continue
-			}
-			for _, mth := range t.Methods {
-				m[mth+" "+endpoints.NormalizePath(t.Path)] = true
-			}
-		}
-		return m
-	}
-
 	// 비인증 패스: fetch·record 가 인증을 주입하지 않는다.
 	j.authless = true
 	if !j.crawlPass(seed, opts, client) {
 		return false
 	}
-	before := snapshot()
+	before := j.reached // 비인증에서 2xx 로 접근된 경로
 
 	// 재로그인 후 인증 패스.
 	j.authless = false
@@ -374,45 +363,43 @@ func (j *job) runAuthDelta(seed string, opts Options, client *http.Client) bool 
 	if !j.crawlPass(seed, opts, client) {
 		return false
 	}
+	after := j.reached // 인증에서 2xx 로 접근된 경로
 
-	// 델타: 인증 패스에서 새로 등장한 (method, 경로) 를 auth-only 로 마킹.
+	// auth-only = 인증에선 접근됐지만(2xx) 비인증에선 접근 못 한(non-2xx) 경로.
+	// "경로 존재"가 아니라 "접근 성공"이 기준이다 — 링크는 양쪽에 있어도 401 이면 접근 못 한 것.
 	n := 0
-	for _, t := range endpoints.Targets() {
-		if t.Host != host {
+	for key := range after {
+		if before[key] {
 			continue
 		}
-		for _, mth := range t.Methods {
-			if !before[mth+" "+endpoints.NormalizePath(t.Path)] {
-				if endpoints.MarkAuthOnly(host, t.Path) {
-					n++
-				}
-				break // 이 노드는 한 번만 마킹
-			}
+		host, path, _ := strings.Cut(key, "	")
+		if endpoints.MarkAuthOnly(host, path) {
+			n++
 		}
 	}
 	j.mu.Lock()
 	j.res.AuthOnly = n
 	j.mu.Unlock()
-	log.Printf("[AUTH] 인증 델타: %s  비인증=%d 인증뒤신규=%d", host, len(before), n)
+	log.Printf("[AUTH] 인증 델타: 비인증 2xx=%d 인증 2xx=%d 인증뒤전용=%d", len(before), len(after), n)
 	return true
 }
 
-// fetch — 인증 주입 후 URL 요청, 본문(최대 1MB)+content-type 반환.
-func (j *job) fetch(c *http.Client, u *url.URL) (string, string, error) {
-	req, err := http.NewRequestWithContext(j.ctx, "GET", u.String(), nil)
-	if err != nil {
-		return "", "", err
+// fetch — 인증 주입 후 URL 요청, 본문(최대 1MB)+content-type+상태코드 반환.
+func (j *job) fetch(c *http.Client, u *url.URL) (body, ctype string, status int, err error) {
+	req, e := http.NewRequestWithContext(j.ctx, "GET", u.String(), nil)
+	if e != nil {
+		return "", "", 0, e
 	}
 	if !j.authless { // 인증 델타의 비인증 패스에서는 주입하지 않는다 (#38)
 		auth.Default().Inject(req)
 	}
-	resp, err := c.Do(req)
-	if err != nil {
-		return "", "", err
+	resp, e := c.Do(req)
+	if e != nil {
+		return "", "", 0, e
 	}
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	return string(b), resp.Header.Get("Content-Type"), nil
+	return string(b), resp.Header.Get("Content-Type"), resp.StatusCode, nil
 }
 
 // recordURL — URL 하나를 엔드포인트 트리에 기록(프록시 DoFunc 과 동일 흐름).
