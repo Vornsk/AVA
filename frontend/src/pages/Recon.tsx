@@ -160,6 +160,7 @@ function CrawlExplore() {
           <span className="text-[var(--muted)]">{t('recon.crawl.found')} <b className="text-[var(--text)]">{latest.found}</b></span>
           {latest.js > 0 && <span className="text-[var(--muted)]">JS <b className="text-[var(--text)]">{latest.js}</b></span>}
           {!!latest.mined && latest.mined > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.mined')} <b>{latest.mined}</b></span>}
+          {!!latest.labeled && latest.labeled > 0 && <span className="text-[var(--muted)]">{t('recon.crawl.labeled')} <b className="text-[var(--text)]">{latest.labeled}</b></span>}
           <span className="text-[var(--muted)]">{t('recon.crawl.queued')} {latest.queued}</span>
           {latest.errors > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.errors')} {latest.errors}</span>}
           <span className="font-mono text-[10px] text-[var(--muted)]">{latest.seed}</span>
@@ -178,6 +179,15 @@ const SOURCE_META: Record<string, { label: string; color: string; key: string }>
   'discover': { label: 'discover', color: '#a78bfa', key: 'discover' },
   'crawl-link': { label: 'crawl', color: 'var(--muted)', key: 'crawl' },
   'static-regex': { label: 'regex', color: 'var(--muted)', key: 'regex' },
+}
+// LABEL_META — 의미 라벨 색 (#41). 민감·규제 관련(auth·admin·payment·pii)은 경고색으로 강조.
+const LABEL_META: Record<string, string> = {
+  auth: 'var(--red)', admin: 'var(--red)', payment: 'var(--red)', pii: 'var(--red)',
+  upload: 'var(--amber)', search: 'var(--blue)',
+}
+// 행 배지에는 의미 라벨만 보인다(구조적 api·static·other 는 노이즈라 제외).
+function labelBadges(labels?: string[]): string[] {
+  return (labels ?? []).filter((l) => l in LABEL_META)
 }
 // sourceMeta — 빈 문자열(레거시 프록시 캡처)은 traffic 으로 본다 (#26 등급 규칙과 정합).
 // methodColor — HTTP 메서드 색. 읽기(GET/HEAD)는 차분하게, 쓰기·삭제는 경고색으로 (#28 가독성).
@@ -328,6 +338,10 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                                     style={{ background: 'color-mix(in srgb, var(--red) 14%, transparent)' }}>auth-only</span>
                             </Tooltip>
                           )}
+                          {labelBadges(t.labels).map((l) => (
+                            <span key={l} title={tr('recon.tree.labelHint')} className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                  style={{ color: LABEL_META[l], background: `color-mix(in srgb, ${LABEL_META[l]} 14%, transparent)` }}>{l}</span>
+                          ))}
                         </span>
                         {/* 메타 — 우측 정렬로 모음 */}
                         <span className="flex shrink-0 items-center gap-2.5 text-[11px] text-[var(--muted)]">

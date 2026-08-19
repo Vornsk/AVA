@@ -24,6 +24,7 @@ import (
 
 	"proxypoc/internal/auth"
 	"proxypoc/internal/endpoints"
+	"proxypoc/internal/recon/classify"
 	"proxypoc/internal/recon/discover"
 	"proxypoc/internal/recon/ingest"
 	"proxypoc/internal/recon/liveness"
@@ -58,6 +59,7 @@ type Result struct {
 	Found2   int    `json:"discovered"` // 능동 발견으로 등록한 엔드포인트 수 (#27)
 	AuthOnly int    `json:"auth_only"`  // 인증 뒤에만 보이는 표면 수 (인증 델타, #38)
 	Mined    int    `json:"mined"`      // 파라미터 마이닝으로 발견한 hidden 파라미터 수 (#40)
+	Labeled  int    `json:"labeled"`    // 의미 라벨이 붙은 엔드포인트 수 (분류, #41)
 	Mode     string `json:"mode"`       // static | headless | ingest
 	Queued   int    `json:"queued"`     // 남은 큐
 	Errors   int    `json:"errors"`
@@ -218,6 +220,18 @@ func (j *job) paramMineOnce(opts Options, client *http.Client) {
 	j.mu.Unlock()
 }
 
+// classifyOnce — 의미 분류 (이슈 #41). 대상에 요청을 보내지 않는 수동 단계라 옵트인이 아니다.
+// 룰은 항상 돌고, LLM 은 활성 프로바이더가 있을 때 모호한 것만 부른다(비용은 캐시·상한으로 방어).
+func (j *job) classifyOnce() {
+	if j.ctx.Err() != nil {
+		return
+	}
+	rep := classify.Run(j.ctx, endpoints.Default())
+	j.mu.Lock()
+	j.res.Labeled = rep.Labeled
+	j.mu.Unlock()
+}
+
 // runIngest — 명세 인제스트만 수행한다 (이슈 #25, profile=ingest).
 // 링크 크롤을 돌리지 않으므로 "명세만으로 얼마나 찾는가"가 그대로 측정된다.
 func (j *job) runIngest(seed string) {
@@ -252,6 +266,7 @@ func (j *job) run(seed string, opts Options) {
 	}
 	j.verifyOnce(opts, client)    // 실재하지 않는 추출물 강등 (#26)
 	j.paramMineOnce(opts, client) // hidden 파라미터 주입 — 옵트인일 때만 (#40)
+	j.classifyOnce()              // 의미 라벨링 — 룰(+프로바이더 있으면 LLM) (#41)
 	j.setStatus("완료")
 }
 

@@ -150,6 +150,7 @@ func Run(ctx context.Context, tree *endpoints.Tree) Report {
 			rep.Sample = append(rep.Sample, in.Method+" "+t.Path+" → "+strings.Join(res.Labels, ","))
 		}
 	}
+	tree.Persist() // 라벨을 인메모리로 다 붙인 뒤 한 번만 파일에 반영(엔드포인트마다 덤프 방지)
 	rep.Duration = time.Since(start).String()
 	return rep
 }

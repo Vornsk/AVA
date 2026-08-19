@@ -166,6 +166,7 @@ func TestLabelsPersist(t *testing.T) {
 	if tr.SetLabels("h.com", "/nope", []string{"x"}) {
 		t.Error("없는 노드에 SetLabels 가 true 를 반환")
 	}
+	tr.Persist() // 인메모리 라벨을 파일로 한 번 반영
 
 	tr2 := &Tree{roots: map[string]*node{}, name: fn}
 	tr2.Load()

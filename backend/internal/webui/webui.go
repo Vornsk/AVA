@@ -803,6 +803,7 @@ func endpointsListHandler(w http.ResponseWriter, r *http.Request) {
 	sourceFilter := strings.ToLower(q.Get("source"))           // "" | "spec" | "discover" | ... (부분일치)
 	includeUnverified := q.Get("include_unverified") == "true" // 라이브니스 미통과 노출 (#28)
 	authOnly := q.Get("auth_only") == "true"                   // 인증 뒤에만 보이는 표면만 (#38)
+	labelFilter := strings.ToLower(q.Get("label"))             // "" | "auth" | "payment" | ... (의미 라벨, #41)
 
 	// 기본은 verified 만(#26 의 Targets 가 unverified 를 기본 제외). 토글 시 전체 조회로 전환.
 	targets := endpoints.Targets()
@@ -840,6 +841,9 @@ func endpointsListHandler(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if authOnly && !t.AuthOnly {
+			continue
+		}
+		if labelFilter != "" && !containsFold(t.Labels, labelFilter) {
 			continue
 		}
 		out = append(out, t)

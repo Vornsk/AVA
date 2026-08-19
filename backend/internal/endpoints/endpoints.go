@@ -566,21 +566,28 @@ func AddMinedParam(host, path, name, in, typ string) bool {
 
 // SetLabels — 엔드포인트에 의미 라벨을 설정한다 (이슈 #41). 노드가 없으면 false.
 // 라벨은 노드 단위이고 출처·파라미터와 직교한다. 규제 매핑(E5)·커버리지(E6)가 읽는다.
+// 인메모리 설정만 한다(Mark* 와 동일) — 파일 영속화는 호출자가 일괄 Persist 로 한 번만 한다
+// (엔드포인트마다 전체 트리를 덤프하면 O(n) 파일 쓰기가 된다).
 func (t *Tree) SetLabels(host, path string, labels []string) bool {
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	n := t.lookup(host, NormalizePath(path))
 	if n == nil {
-		t.mu.Unlock()
 		return false
 	}
 	n.labels = append(n.labels[:0:0], labels...) // 방어 복사(호출자 슬라이스 공유 방지)
-	t.mu.Unlock()
-	t.dump() // 라벨은 재파생이 아니라 확정 결과다 — E5/E6 가 재시작 후에도 읽도록 영속화(record 와 동일)
 	return true
 }
 
 // SetLabels — 기본(전역) 트리에 위임.
 func SetLabels(host, path string, labels []string) bool { return def.SetLabels(host, path, labels) }
+
+// Persist — 현재 트리를 저장 파일에 한 번 덤프한다(인메모리 트리는 무시).
+// 라벨링(#41)처럼 여러 노드를 인메모리로 갱신한 뒤 마지막에 한 번만 영속화할 때 쓴다.
+func (t *Tree) Persist() { t.dump() }
+
+// Persist — 기본(전역) 트리에 위임.
+func Persist() { def.dump() }
 
 // lookup — host+정규화 경로로 노드를 찾는다(호출자가 t.mu 보유). 없으면 nil.
 func (t *Tree) lookup(host, path string) *node {
