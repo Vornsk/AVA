@@ -110,6 +110,57 @@ func TestExtractFromSources(t *testing.T) {
 	}
 }
 
+// TestComposeNestedRoutes — ★ 이슈 #39: children 배열의 자식 라우트를 부모 경로와 합성한다.
+func TestComposeNestedRoutes(t *testing.T) {
+	content := `const routes = [
+		{ path: 'admin', component: A, children: [
+			{ path: '', component: Dash },            // 기본 자식 = 부모(/admin)
+			{ path: 'users', component: U },
+			{ path: 'roles/:roleId', component: R, children: [
+				{ path: 'edit', component: E }        // 2단 중첩
+			]}
+		]},
+		{ path: 'login', component: L },
+		{ path: '**', redirectTo: '' }                // 와일드카드 — 버린다
+	]`
+	got := composeRoutes(content)
+	sort.Strings(got)
+	want := []string{
+		"/admin", "/admin/roles/{roleId}", "/admin/roles/{roleId}/edit",
+		"/admin/users", "/login",
+	}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("중첩 라우트 합성 불일치\n got=%v\nwant=%v", got, want)
+	}
+}
+
+// TestComposeIgnoresBracketsInStrings — 문자열·주석 안의 [ ] path: 는 깊이·추출을 흔들면 안 된다.
+func TestComposeIgnoresBracketsInStrings(t *testing.T) {
+	content := `const routes = [
+		{ path: 'search', data: { label: 'a[b]c', hint: "path: '/fake'" } },
+		// 주석 속 { path: '/comment-fake' } 도 무시
+		{ path: 'help' }
+	]`
+	got := composeRoutes(content)
+	sort.Strings(got)
+	want := []string{"/help", "/search"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("문자열·주석 격리 실패\n got=%v\nwant=%v", got, want)
+	}
+}
+
+// TestComposeFlatReactRouter — 배열 없는 JSX <Route path> 도 그대로 뽑힌다(깊이 0).
+func TestComposeFlatReactRouter(t *testing.T) {
+	content := `<Routes><Route path="/login" element={<Login/>} /><Route path="/dashboard" element={<Dash/>} /></Routes>`
+	got := composeRoutes(content)
+	sort.Strings(got)
+	want := []string{"/dashboard", "/login"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("JSX 라우트 추출 불일치\n got=%v\nwant=%v", got, want)
+	}
+}
+
 // TestParseSourceMapPairs — sources 와 sourcesContent 를 인덱스로 짝짓는다.
 // sourcesContent 가 짧으면 나머지 파일은 본문이 빈 채로 경로만 남는다.
 func TestParseSourceMapPairs(t *testing.T) {

@@ -375,12 +375,6 @@ var (
 	reScriptSrc = regexp.MustCompile(`(?i)<script[^>]+src\s*=\s*["']([^"']+)["']`)
 	reMapURL    = regexp.MustCompile(`(?m)^//[#@]\s*sourceMappingURL=(\S+)\s*$`)
 	reAPIPath   = regexp.MustCompile(`["'\x60](/(?:api|rest|v\d|graphql)[A-Za-z0-9_\-/.{}]*)["'\x60]`)
-	// reRoutePath — 프레임워크 라우트 정의의 path 프로퍼티. sourcesContent 는 트랜스파일 전
-	// 원본이라 라우트 키가 대부분 따옴표 없는 리터럴이다 (이슈 #39).
-	//   React Router  <Route path="/users"> · { path: "users", element }
-	//   Vue Router    { path: '/about', component }
-	//   Angular       { path: 'admin', component } · RouterModule.forRoot([{ path: '', ... }])
-	reRoutePath = regexp.MustCompile(`(?i)\bpath["'\x60]?\s*[:=]\s*["'\x60]([^"'\x60\n]{1,256})["'\x60]`)
 )
 
 // sourceMaps — 진입 HTML 의 <script src> 를 훑어 소스맵을 수집하고 원본에서 API 경로를 추출한다.
@@ -466,28 +460,189 @@ func extractFromSources(files []SourceFile) []string {
 		if isVendorSource(f.Path) {
 			continue
 		}
-		for _, m := range reRoutePath.FindAllStringSubmatch(f.Content, maxPaths) {
-			if p, ok := cleanRoute(m[1]); ok {
-				add(p)
-			}
+		for _, p := range composeRoutes(f.Content) {
+			add(p)
 		}
 	}
 	return out
 }
 
-// cleanRoute — 라우트 프로퍼티 값을 등록 가능한 경로로 정규화한다. 라우트가 아니면 (,false).
+// composeRoutes — 프레임워크 라우트 정의를 문자열 단위로 훑어 절대 경로를 뽑는다 (이슈 #39).
+//
+// 평면 정규식은 중첩 라우트를 부모와 못 잇는다 — Angular/Vue 의
+//
+//	{ path: 'admin', children: [ { path: 'users' }, { path: '' } ] }
+//
+// 는 /admin/users·/admin 이어야 하는데 정규식만 쓰면 루트급 /users 가 돼 라이브니스가 강등한다.
+// 그래서 문자열·주석을 건너뛰며 `[`/`]` 깊이와 `children:` 프리픽스를 추적하는 경량 렉서로 합성한다.
+// (원본 소스는 트랜스파일 전이라 라우트 키가 따옴표 없는 리터럴 — 따옴표 키는 대상 밖이다.)
+func composeRoutes(content string) []string {
+	var out []string
+	seen := map[string]bool{}
+	emit := func(segs []string) {
+		if len(segs) == 0 {
+			return
+		}
+		p := "/" + strings.Join(segs, "/")
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	prefix := map[int][]string{0: nil} // 배열 깊이별 프리픽스(children 배열이 부모 경로를 물려준다)
+	lastAbs := map[int][]string{}      // 깊이별 최근 라우트의 절대 경로(자식 프리픽스가 된다)
+	depth := 0
+	pendingChildren := false // 다음 '[' 가 children 배열인가
+	n := len(content)
+	for i := 0; i < n; {
+		c := content[i]
+		switch {
+		case c == '/' && i+1 < n && content[i+1] == '/': // 줄 주석
+			i += 2
+			for i < n && content[i] != '\n' {
+				i++
+			}
+		case c == '/' && i+1 < n && content[i+1] == '*': // 블록 주석
+			i += 2
+			for i+1 < n && !(content[i] == '*' && content[i+1] == '/') {
+				i++
+			}
+			i += 2
+		case isIdentStart(content, i) && hasWord(content, i, "path"):
+			if val, next, ok := readProp(content, i+4); ok {
+				if segs, ok := routeSegs(val); ok {
+					abs := append(append([]string{}, prefix[depth]...), segs...)
+					emit(abs)
+					lastAbs[depth] = abs
+				}
+				i = next
+			} else {
+				i += 4
+			}
+		case isIdentStart(content, i) && hasWord(content, i, "children"):
+			// children: [ 를 만나면 다음 '[' 를 children 배열로 표시한다.
+			if j := skipToArray(content, i+8); j >= 0 {
+				pendingChildren = true
+				i = j // '[' 위치 — 아래 '[' 케이스가 처리
+			} else {
+				i += 8
+			}
+		case c == '\'' || c == '"' || c == '`': // 문자열 리터럴은 데이터 — 통째로 건너뛴다
+			i = skipString(content, i)
+		case c == '[':
+			depth++
+			if pendingChildren {
+				prefix[depth] = lastAbs[depth-1]
+				pendingChildren = false
+			} else {
+				prefix[depth] = prefix[depth-1]
+			}
+			delete(lastAbs, depth)
+			i++
+		case c == ']':
+			delete(prefix, depth)
+			delete(lastAbs, depth)
+			if depth > 0 {
+				depth--
+			}
+			i++
+		default:
+			i++
+		}
+	}
+	return out
+}
+
+// readProp — content[i:] 가 [따옴표]? \s* [:=] \s* "값" 형태면 값과 다음 위치를 돌려준다.
+func readProp(content string, i int) (val string, next int, ok bool) {
+	n := len(content)
+	if i < n && (content[i] == '\'' || content[i] == '"' || content[i] == '`') {
+		i++ // 따옴표 키의 닫는 따옴표 (예: "path":)
+	}
+	i = skipWS(content, i)
+	if i >= n || (content[i] != ':' && content[i] != '=') {
+		return "", 0, false
+	}
+	i = skipWS(content, i+1)
+	if i >= n || (content[i] != '\'' && content[i] != '"' && content[i] != '`') {
+		return "", 0, false
+	}
+	q := content[i]
+	i++
+	start := i
+	for i < n && content[i] != q {
+		if content[i] == '\\' {
+			i++
+		}
+		i++
+	}
+	return content[start:i], i + 1, true
+}
+
+// skipToArray — content[i:] 가 [따옴표]? \s* [:=] \s* [ 로 이어지면 '[' 위치를, 아니면 -1.
+func skipToArray(content string, i int) int {
+	n := len(content)
+	if i < n && (content[i] == '\'' || content[i] == '"' || content[i] == '`') {
+		i++
+	}
+	i = skipWS(content, i)
+	if i >= n || (content[i] != ':' && content[i] != '=') {
+		return -1
+	}
+	i = skipWS(content, i+1)
+	if i < n && content[i] == '[' {
+		return i
+	}
+	return -1
+}
+
+func skipString(content string, i int) int {
+	n := len(content)
+	q := content[i]
+	i++
+	for i < n && content[i] != q {
+		if content[i] == '\\' {
+			i++
+		}
+		i++
+	}
+	return i + 1
+}
+
+func skipWS(content string, i int) int {
+	for i < len(content) && (content[i] == ' ' || content[i] == '\t' || content[i] == '\n' || content[i] == '\r') {
+		i++
+	}
+	return i
+}
+
+func isWordChar(b byte) bool {
+	return b == '_' || b == '$' || (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9')
+}
+
+// isIdentStart — content[i] 앞이 식별자 문자가 아니어야 키워드 시작이다(filepath 의 path 배제).
+func isIdentStart(content string, i int) bool {
+	return i == 0 || !isWordChar(content[i-1])
+}
+
+// hasWord — content[i:] 가 word 로 시작하고 그 뒤가 식별자 문자가 아닌가(pathname 배제는 readProp 이 담당).
+func hasWord(content string, i int, word string) bool {
+	return i+len(word) <= len(content) && strings.EqualFold(content[i:i+len(word)], word)
+}
+
+// routeSegs — 라우트 값 하나를 정규화된 세그먼트로 쪼갠다. 정적 경로가 아니면 (nil,false).
+// 빈 값("")은 (빈 슬라이스,true) — 자식 라우트의 기본 경로(부모와 동일)를 뜻한다.
 //
 //	· 외부 URL·프로토콜 상대·보간식(${}·표현식)은 정적 경로가 아니다 → 버린다
 //	· :id → {id} (트리의 변수 자리 규칙과 맞춘다) · 후행 ? (optional) 제거
 //	· 와일드카드(* · **) 자리에서 멈춘다 — 뒤 세그먼트는 의미가 없다
-//	· 앞에 / 를 붙인다 (Angular 자식 라우트는 상대 경로라 슬래시가 없다)
-func cleanRoute(v string) (string, bool) {
+func routeSegs(v string) ([]string, bool) {
 	v = strings.TrimSpace(v)
-	if v == "" || strings.Contains(v, "://") || strings.HasPrefix(v, "//") {
-		return "", false
+	if strings.Contains(v, "://") || strings.HasPrefix(v, "//") {
+		return nil, false
 	}
 	if strings.ContainsAny(v, " \t<>(){}$|\\") {
-		return "", false // 표현식·보간·JSX 는 정적 경로가 아니다
+		return nil, false // 표현식·보간·JSX 는 정적 경로가 아니다
 	}
 	var segs []string
 	for _, s := range strings.Split(v, "/") {
@@ -506,7 +661,14 @@ func cleanRoute(v string) (string, bool) {
 		}
 		segs = append(segs, s)
 	}
-	if len(segs) == 0 {
+	return segs, true
+}
+
+// cleanRoute — 라우트 값 하나를 등록 가능한 절대 경로로. 비거나 라우트가 아니면 (,false).
+// 앞에 / 를 붙인다(Angular 자식 라우트는 상대 경로라 슬래시가 없다).
+func cleanRoute(v string) (string, bool) {
+	segs, ok := routeSegs(v)
+	if !ok || len(segs) == 0 {
 		return "", false
 	}
 	return "/" + strings.Join(segs, "/"), true
