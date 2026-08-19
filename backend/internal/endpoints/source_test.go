@@ -153,6 +153,33 @@ func TestSpecSourcePersistence(t *testing.T) {
 	}
 }
 
+// TestLabelsPersist — 의미 라벨(이슈 #41)이 저장/복원을 왕복한다(E5/E6 가 재시작 후에도 읽는다).
+func TestLabelsPersist(t *testing.T) {
+	const fn = "test_labels_ep.json"
+	defer os.Remove(fn)
+
+	tr := &Tree{roots: map[string]*node{}, name: fn}
+	tr.Record("http", "h.com", "GET", "/admin", nil, false, "")
+	if !tr.SetLabels("h.com", "/admin", []string{"admin", "pii"}) {
+		t.Fatal("SetLabels 실패")
+	}
+	if tr.SetLabels("h.com", "/nope", []string{"x"}) {
+		t.Error("없는 노드에 SetLabels 가 true 를 반환")
+	}
+
+	tr2 := &Tree{roots: map[string]*node{}, name: fn}
+	tr2.Load()
+	var got []string
+	for _, tg := range tr2.Targets() {
+		if tg.Path == "/admin" {
+			got = tg.Labels
+		}
+	}
+	if len(got) != 2 || got[0] != "admin" || got[1] != "pii" {
+		t.Errorf("복원 라벨=%v (want [admin pii])", got)
+	}
+}
+
 // TestSpecNotAbsorbedByHeuristic — 휴리스틱(#24)이 만든 {slug} 자리가 명세 기록을 삼키면 안 된다.
 func TestSpecNotAbsorbedByHeuristic(t *testing.T) {
 	tr := NewTree()

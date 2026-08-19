@@ -56,13 +56,14 @@ type node struct {
 	count      int
 	auth       bool
 	verdict    string
-	firstSeen  string // 최초 캡처 시각 (RFC3339, FR-2.4 조회 강화 — 이슈 #7)
-	lastSeen   string // 최근 캡처 시각 (RFC3339)
-	source     string // 출처 신뢰도 등급 (SrcSpec … SrcStaticRegex) — 이슈 #25·#26
-	unverified bool   // 라이브니스 프로브에서 실재가 확인되지 않음 — 삭제 대신 강등 (이슈 #26)
-	authOnly   bool   // 인증 뒤에만 나타난 표면 (비인증 크롤엔 없던 것) — 접근통제 진단 후보 (이슈 #38)
-	varChild   string // 이 자리의 변수 자식 세그먼트 ("{slug}" 또는 명세 플레이스홀더 "{username}")
-	varSpec    bool   // varChild 가 명세 선언인가 (true 면 값 모양과 무관하게 흡수) — 이슈 #25
+	firstSeen  string   // 최초 캡처 시각 (RFC3339, FR-2.4 조회 강화 — 이슈 #7)
+	lastSeen   string   // 최근 캡처 시각 (RFC3339)
+	source     string   // 출처 신뢰도 등급 (SrcSpec … SrcStaticRegex) — 이슈 #25·#26
+	unverified bool     // 라이브니스 프로브에서 실재가 확인되지 않음 — 삭제 대신 강등 (이슈 #26)
+	authOnly   bool     // 인증 뒤에만 나타난 표면 (비인증 크롤엔 없던 것) — 접근통제 진단 후보 (이슈 #38)
+	labels     []string // 의미 라벨(auth·payment·pii 등) — LLM/룰 분류 (이슈 #41)
+	varChild   string   // 이 자리의 변수 자식 세그먼트 ("{slug}" 또는 명세 플레이스홀더 "{username}")
+	varSpec    bool     // varChild 가 명세 선언인가 (true 면 값 모양과 무관하게 흡수) — 이슈 #25
 	children   map[string]*node
 }
 
@@ -374,6 +375,7 @@ type OutNode struct {
 	Source     string    `json:"source,omitempty"`     // 출처 신뢰도 등급 (이슈 #25·#26)
 	Unverified bool      `json:"unverified,omitempty"` // 라이브니스 프로브 미통과 (이슈 #26)
 	AuthOnly   bool      `json:"auth_only,omitempty"`  // 인증 뒤에만 보이는 표면 (이슈 #38)
+	Labels     []string  `json:"labels,omitempty"`     // 의미 라벨 (이슈 #41)
 	Children   []OutNode `json:"children,omitempty"`
 }
 
@@ -391,6 +393,7 @@ func toOut(n *node) OutNode {
 		Source:     n.source,
 		Unverified: n.unverified,
 		AuthOnly:   n.authOnly,
+		Labels:     n.labels,
 	}
 	keys := make([]string, 0, len(n.children))
 	for k := range n.children {
@@ -447,6 +450,7 @@ type Target struct {
 	Source     string   `json:"source,omitempty"`     // 출처 신뢰도 등급 (이슈 #25·#26)
 	Unverified bool     `json:"unverified,omitempty"` // 라이브니스 프로브 미통과 (이슈 #26)
 	AuthOnly   bool     `json:"auth_only,omitempty"`  // 인증 뒤에만 보이는 표면 (이슈 #38)
+	Labels     []string `json:"labels,omitempty"`     // 의미 라벨 (이슈 #41)
 }
 
 // Interesting — 공격면이 넓은 대상인가 (파라미터/인증/위험판단 존재). FR-3.9 자동선정용.
@@ -483,6 +487,7 @@ func (t *Tree) targets(includeUnverified bool) []Target {
 				Source:     n.source,
 				Unverified: n.unverified,
 				AuthOnly:   n.authOnly,
+				Labels:     n.labels,
 			})
 		}
 		for _, c := range n.children {
@@ -558,6 +563,24 @@ func (t *Tree) AddMinedParam(host, path, name, in, typ string) bool {
 func AddMinedParam(host, path, name, in, typ string) bool {
 	return def.AddMinedParam(host, path, name, in, typ)
 }
+
+// SetLabels — 엔드포인트에 의미 라벨을 설정한다 (이슈 #41). 노드가 없으면 false.
+// 라벨은 노드 단위이고 출처·파라미터와 직교한다. 규제 매핑(E5)·커버리지(E6)가 읽는다.
+func (t *Tree) SetLabels(host, path string, labels []string) bool {
+	t.mu.Lock()
+	n := t.lookup(host, NormalizePath(path))
+	if n == nil {
+		t.mu.Unlock()
+		return false
+	}
+	n.labels = append(n.labels[:0:0], labels...) // 방어 복사(호출자 슬라이스 공유 방지)
+	t.mu.Unlock()
+	t.dump() // 라벨은 재파생이 아니라 확정 결과다 — E5/E6 가 재시작 후에도 읽도록 영속화(record 와 동일)
+	return true
+}
+
+// SetLabels — 기본(전역) 트리에 위임.
+func SetLabels(host, path string, labels []string) bool { return def.SetLabels(host, path, labels) }
 
 // lookup — host+정규화 경로로 노드를 찾는다(호출자가 t.mu 보유). 없으면 nil.
 func (t *Tree) lookup(host, path string) *node {
@@ -659,6 +682,7 @@ type storeNode struct {
 	Source     string       `json:"source,omitempty"`     // 출처 신뢰도 등급 (이슈 #25·#26)
 	Unverified bool         `json:"unverified,omitempty"` // 라이브니스 프로브 미통과 (이슈 #26)
 	AuthOnly   bool         `json:"auth_only,omitempty"`  // 인증 뒤에만 보이는 표면 (이슈 #38)
+	Labels     []string     `json:"labels,omitempty"`     // 의미 라벨 (이슈 #41)
 	VarChild   string       `json:"var_child,omitempty"`  // 이 자리의 변수 자식 세그먼트 (이슈 #25)
 	VarSpec    bool         `json:"var_spec,omitempty"`   // varChild 가 명세 선언인가
 	Children   []storeNode  `json:"children,omitempty"`
@@ -669,7 +693,7 @@ func toStore(n *node) storeNode {
 		Segment: n.segment, Path: n.path, LastPath: n.lastPath, Scheme: n.scheme,
 		Methods: sortedKeys(n.methods), Count: n.count, Auth: n.auth, Verdict: n.verdict,
 		FirstSeen: n.firstSeen, LastSeen: n.lastSeen,
-		Source: n.source, Unverified: n.unverified, AuthOnly: n.authOnly, VarChild: n.varChild, VarSpec: n.varSpec,
+		Source: n.source, Unverified: n.unverified, AuthOnly: n.authOnly, Labels: n.labels, VarChild: n.varChild, VarSpec: n.varSpec,
 	}
 	pnames := make([]string, 0, len(n.params))
 	for name := range n.params {
@@ -696,6 +720,7 @@ func fromStore(s storeNode) *node {
 	n.lastPath, n.scheme, n.count, n.auth, n.verdict = s.LastPath, s.Scheme, s.Count, s.Auth, s.Verdict
 	n.firstSeen, n.lastSeen = s.FirstSeen, s.LastSeen
 	n.source, n.unverified, n.authOnly = s.Source, s.Unverified, s.AuthOnly
+	n.labels = s.Labels
 	n.varChild, n.varSpec = s.VarChild, s.VarSpec
 	if n.varChild == "" && s.Slugged {
 		n.varChild = tplSlug // v1(#24) 저장물 호환: slugged=true → 변수 자식이 {slug}

@@ -9,6 +9,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"sort"
@@ -100,6 +101,28 @@ func ProviderName() string {
 	}
 	return provider.Name()
 }
+
+// Available — 활성 LLM 프로바이더가 있는가. 호출자가 LLM 경로를 탈지 결정할 때 쓴다 (이슈 #41).
+func Available() bool {
+	mu.Lock()
+	defer mu.Unlock()
+	return provider != nil
+}
+
+// Complete — 활성 프로바이더로 범용 완성 요청. 프로바이더가 없으면 ErrNoProvider.
+// Judge/Review 외의 용도(예: 정찰 의미 분류 #41)가 프로바이더를 직접 재사용하기 위한 진입점.
+func Complete(ctx context.Context, system, user string) (string, error) {
+	mu.Lock()
+	p := provider
+	mu.Unlock()
+	if p == nil {
+		return "", ErrNoProvider
+	}
+	return p.Complete(ctx, system, user)
+}
+
+// ErrNoProvider — 활성 LLM 프로바이더가 없다.
+var ErrNoProvider = errors.New("활성 LLM 프로바이더 없음")
 
 func sig(in JudgeInput) string {
 	keys := append([]string(nil), in.ParamKeys...)
