@@ -41,6 +41,9 @@ var wordlistRaw string
 const (
 	// DefaultBudget — 기본 요청 예산. 벌크 이분탐색이라 엔드포인트당 요청이 적다.
 	DefaultBudget = 600
+	// MaxBudget — 요청 예산 상한. 클라이언트가 준 예산을 이 값으로 캡한다 — 능동 주입이라
+	// 무제한 예산은 자기·대상 DoS 증폭기가 된다(스코프 게이트가 있어도 요청 폭주는 남는다).
+	MaxBudget = 20000
 	// bucketSize — 한 번에 주입할 파라미터 수. URL 길이·서버 한도를 고려한 상한.
 	bucketSize = 32
 	// maxEndpoints — 마이닝할 엔드포인트 수 상한(예산·소음 방지).
@@ -85,10 +88,13 @@ func Run(ctx context.Context, tree *endpoints.Tree, client *http.Client, budget 
 	if budget <= 0 {
 		budget = DefaultBudget
 	}
+	if budget > MaxBudget {
+		budget = MaxBudget // 무제한 능동 주입 방지 (자기·대상 DoS 증폭 차단)
+	}
 	base := Words()
 	rep := Report{Words: len(base), Budget: budget}
 
-	m := &miner{p: probe.New(ctx, client), tree: tree, budget: budget, rep: &rep}
+	m := &miner{p: probe.New(ctx, client), ctx: ctx, tree: tree, budget: budget, rep: &rep}
 	for _, t := range tree.Targets() {
 		if ctx.Err() != nil || m.over() {
 			break
@@ -114,6 +120,7 @@ func Run(ctx context.Context, tree *endpoints.Tree, client *http.Client, budget 
 
 type miner struct {
 	p         *probe.Client
+	ctx       context.Context
 	tree      *endpoints.Tree
 	budget    int
 	rep       *Report
@@ -191,7 +198,7 @@ func (m *miner) mineEndpoint(t endpoints.Target, words []string) bool {
 
 // search — 뭉치를 테스트해 반응이 없으면 통째로 버리고, 있으면 절반씩 좁힌다(벌크 이분탐색).
 func (m *miner) search(base url.URL, names []string, ctx baseCtx, t endpoints.Target, found *int) {
-	if len(names) == 0 || *found >= maxPerEndpoint || m.over() {
+	if len(names) == 0 || *found >= maxPerEndpoint || m.stop() {
 		return
 	}
 	if !m.testBucket(base, names, ctx) {
@@ -216,7 +223,7 @@ func (m *miner) search(base url.URL, names []string, ctx baseCtx, t endpoints.Ta
 
 // testBucket — 뭉치를 한 번에 주입해 기준과 다른 반응이 있는가.
 func (m *miner) testBucket(base url.URL, names []string, ctx baseCtx) bool {
-	if m.over() {
+	if m.stop() {
 		return false
 	}
 	q := base.Query()
@@ -250,7 +257,7 @@ func (m *miner) testBucket(base url.URL, names []string, ctx baseCtx) bool {
 
 // confirm — 단일 파라미터를 두 값 차등으로 확정한다. 정적 반사·soft-404 오탐을 거른다.
 func (m *miner) confirm(base url.URL, name string, ctx baseCtx) bool {
-	if m.over() {
+	if m.stop() {
 		return false
 	}
 	va, vb := m.tok(), m.tok()
@@ -287,7 +294,13 @@ func (m *miner) get(base url.URL, name, val string) (probe.Sig, string, bool) {
 	return m.p.ProbeURL(&base)
 }
 
-func (m *miner) tok() string { m.seq++; return "avamn" + strconv.Itoa(m.seq) }
+// tok — 반사 탐지용 토큰. 끝에 'x' 경계를 붙여 "avamn1" 이 "avamn10" 의 부분문자열로
+// 오탐되지 않게 한다(strings.Contains 는 경계를 모른다).
+func (m *miner) tok() string { m.seq++; return "avamn" + strconv.Itoa(m.seq) + "x" }
+
+// stop — 더 프로브하면 안 되는가(컨텍스트 취소 또는 예산 소진). 취소는 즉시 멈춰야 한다.
+func (m *miner) stop() bool { return m.ctx.Err() != nil || m.over() }
+
 func (m *miner) over() bool {
 	if m.p.Probes >= m.budget {
 		m.hitBudget = true

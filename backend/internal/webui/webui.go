@@ -585,14 +585,14 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var in struct {
-			Seed     string `json:"seed"`
-			MaxPages int    `json:"max_pages"`
-			MaxDepth int    `json:"max_depth"`
-			Mode     string `json:"mode"`
-			Discover   bool `json:"discover"`    // 능동 콘텐츠 발견 옵트인 (#27)
-			Budget     int  `json:"budget"`      // 능동 발견 요청 예산 (0 = 기본값)
-			ParamMine  bool `json:"param_mine"`  // 파라미터 마이닝 옵트인 (#40)
-			MineBudget int  `json:"mine_budget"` // 파라미터 마이닝 요청 예산 (0 = 기본값)
+			Seed       string `json:"seed"`
+			MaxPages   int    `json:"max_pages"`
+			MaxDepth   int    `json:"max_depth"`
+			Mode       string `json:"mode"`
+			Discover   bool   `json:"discover"`    // 능동 콘텐츠 발견 옵트인 (#27)
+			Budget     int    `json:"budget"`      // 능동 발견 요청 예산 (0 = 기본값)
+			ParamMine  bool   `json:"param_mine"`  // 파라미터 마이닝 옵트인 (#40)
+			MineBudget int    `json:"mine_budget"` // 파라미터 마이닝 요청 예산 (0 = 기본값)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Seed == "" {
 			http.Error(w, "seed URL 필요", http.StatusBadRequest)

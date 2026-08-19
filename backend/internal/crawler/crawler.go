@@ -33,16 +33,16 @@ import (
 
 // Options — 크롤 상한.
 type Options struct {
-	MaxPages  int    // 가져올 최대 페이지 (기본 200)
-	MaxDepth  int    // 시작 URL로부터 최대 깊이 (기본 5)
-	Mode      string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
-	NoIngest  bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
-	NoVerify  bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
-	Discover  bool   // 능동 콘텐츠 발견(wordlist 프로브) 옵트인 — 기본 꺼짐 (#27)
-	Budget    int    // 능동 발견 요청 예산 (0 = 기본값 discover.DefaultBudget)
-	AuthDelta bool   // 인증 델타 크롤 — 비인증→인증 두 패스로 "인증 뒤에만 보이는 표면" 식별 (#38)
-	ParamMine bool   // 파라미터 마이닝(hidden 파라미터 주입) 옵트인 — 기본 꺼짐 (#40)
-	MineBudget int   // 파라미터 마이닝 요청 예산 (0 = 기본값 parammine.DefaultBudget)
+	MaxPages   int    // 가져올 최대 페이지 (기본 200)
+	MaxDepth   int    // 시작 URL로부터 최대 깊이 (기본 5)
+	Mode       string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
+	NoIngest   bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
+	NoVerify   bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
+	Discover   bool   // 능동 콘텐츠 발견(wordlist 프로브) 옵트인 — 기본 꺼짐 (#27)
+	Budget     int    // 능동 발견 요청 예산 (0 = 기본값 discover.DefaultBudget)
+	AuthDelta  bool   // 인증 델타 크롤 — 비인증→인증 두 패스로 "인증 뒤에만 보이는 표면" 식별 (#38)
+	ParamMine  bool   // 파라미터 마이닝(hidden 파라미터 주입) 옵트인 — 기본 꺼짐 (#40)
+	MineBudget int    // 파라미터 마이닝 요청 예산 (0 = 기본값 parammine.DefaultBudget)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
@@ -250,8 +250,8 @@ func (j *job) run(seed string, opts Options) {
 	} else if !j.crawlPass(seed, opts, client) {
 		return // 중단됨
 	}
-	j.verifyOnce(opts, client)     // 실재하지 않는 추출물 강등 (#26)
-	j.paramMineOnce(opts, client)  // hidden 파라미터 주입 — 옵트인일 때만 (#40)
+	j.verifyOnce(opts, client)    // 실재하지 않는 추출물 강등 (#26)
+	j.paramMineOnce(opts, client) // hidden 파라미터 주입 — 옵트인일 때만 (#40)
 	j.setStatus("완료")
 }
 
