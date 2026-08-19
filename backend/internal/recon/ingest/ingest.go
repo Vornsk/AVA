@@ -375,6 +375,10 @@ var (
 	reScriptSrc = regexp.MustCompile(`(?i)<script[^>]+src\s*=\s*["']([^"']+)["']`)
 	reMapURL    = regexp.MustCompile(`(?m)^//[#@]\s*sourceMappingURL=(\S+)\s*$`)
 	reAPIPath   = regexp.MustCompile(`["'\x60](/(?:api|rest|v\d|graphql)[A-Za-z0-9_\-/.{}]*)["'\x60]`)
+	// reAbsPathLit — 절대 경로 문자열 리터럴(설정 상수: apiBase: '/config/v2' 등) (이슈 #39).
+	reAbsPathLit = regexp.MustCompile(`["'\x60](/[A-Za-z0-9][\w\-./{}:]*)["'\x60]`)
+	// reURLInText — 본문·주석 어디서든 절대 URL. 호스트와 경로를 함께 잡아 내부 URL 만 추린다.
+	reURLInText = regexp.MustCompile(`https?://([\w.\-]+)(?::\d+)?(/[\w\-./{}:%]*)`)
 )
 
 // sourceMaps — 진입 HTML 의 <script src> 를 훑어 소스맵을 수집하고 원본에서 API 경로를 추출한다.
@@ -426,7 +430,7 @@ func (g *ingester) sourceMaps() {
 		g.rep.Sources = append(g.rep.Sources, "sourcemap:"+mapPath)
 		found++
 		// 소스맵 본문은 정규식 추측이라 static-regex 로 등록해 라이브니스 검증을 받게 한다.
-		for _, p := range extractFromSources(files) {
+		for _, p := range extractFromSources(files, g.base.Hostname()) {
 			g.recordAs(endpoints.SrcStaticRegex, "GET", p, nil)
 		}
 	}
@@ -436,11 +440,12 @@ func (g *ingester) sourceMaps() {
 }
 
 // extractFromSources — 복원한 파일들에서 경로 후보를 파일 단위로 뽑는다 (이슈 #39).
+// host 는 base 호스트로, 내부 URL 판정에 쓴다("" 면 모든 URL 경로를 내부로 본다).
 //
 //	· API 경로(/api·/rest·/vN·/graphql) — 프리픽스 앵커라 노이즈가 적어 벤더 포함 전체에서 뽑는다
-//	· 프레임워크 라우트(path: '...') — 앱 소스만. 벤더 라이브러리는 자기 내부 라우터 코드에
-//	  path: 가 많아 통째로 뽑으면 오탐이 쏟아진다. 파일 경로로 걸러낸다.
-func extractFromSources(files []SourceFile) []string {
+//	· 프레임워크 라우트(path: '...') — 앱 소스만(벤더 라이브러리의 path: 는 오탐)
+//	· 설정 상수·내부 URL — 앱 소스만. 절대 경로 리터럴과 같은 호스트 URL 의 경로부.
+func extractFromSources(files []SourceFile, host string) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(p string) {
@@ -463,8 +468,65 @@ func extractFromSources(files []SourceFile) []string {
 		for _, p := range composeRoutes(f.Content) {
 			add(p)
 		}
+		for _, p := range extractLoosePaths(f.Content, host) {
+			add(p)
+		}
 	}
 	return out
+}
+
+// extractLoosePaths — 설정 상수(절대 경로 리터럴)와 내부 URL(같은 호스트)의 경로부를 뽑는다.
+// 정적 에셋(.js·.css·.png·.json 등)과 외부 호스트는 제외한다. static-regex 로 등록되므로
+// 남는 오탐은 라이브니스가 걸러낸다.
+func extractLoosePaths(content, host string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(p string) {
+		p = strings.TrimRight(p, "/")
+		if len(p) < 2 || seen[p] || isAssetPath(p) {
+			return
+		}
+		seen[p] = true
+		out = append(out, p)
+	}
+	for _, m := range reAbsPathLit.FindAllStringSubmatch(content, maxPaths) {
+		add(m[1]) // 설정 상수 — 절대 경로는 본질적으로 같은 오리진
+	}
+	for _, m := range reURLInText.FindAllStringSubmatch(content, maxPaths) {
+		if host != "" && !sameHost(m[1], host) {
+			continue // 외부 URL 은 내부 URL 이 아니다
+		}
+		add(m[2])
+	}
+	return out
+}
+
+// sameHost — u 가 host 와 같거나 그 하위 도메인인가.
+func sameHost(u, host string) bool {
+	u = strings.ToLower(u)
+	host = strings.ToLower(host)
+	return u == host || strings.HasSuffix(u, "."+host)
+}
+
+// isAssetPath — 마지막 세그먼트 확장자가 정적 자원인가(엔드포인트가 아니다).
+func isAssetPath(p string) bool {
+	seg := p
+	if i := strings.LastIndex(seg, "/"); i >= 0 {
+		seg = seg[i+1:]
+	}
+	dot := strings.LastIndex(seg, ".")
+	if dot < 0 {
+		return false
+	}
+	switch strings.ToLower(seg[dot:]) {
+	case ".js", ".mjs", ".cjs", ".css", ".scss", ".sass", ".less", ".map",
+		".png", ".jpg", ".jpeg", ".gif", ".svg", ".ico", ".webp", ".avif", ".bmp",
+		".woff", ".woff2", ".ttf", ".eot", ".otf",
+		".mp4", ".webm", ".mp3", ".wav", ".ogg", ".wasm",
+		".json", ".xml", ".txt", ".html", ".htm", ".md", ".csv", ".pdf":
+		return true
+	}
+	return false
 }
 
 // composeRoutes — 프레임워크 라우트 정의를 문자열 단위로 훑어 절대 경로를 뽑는다 (이슈 #39).

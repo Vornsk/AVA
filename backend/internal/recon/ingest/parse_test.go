@@ -88,7 +88,7 @@ func TestExtractFromSources(t *testing.T) {
 		{Path: "webpack:///./src/empty.ts", Content: ""}, // 본문 없음 — 건너뛴다
 	}
 
-	got := extractFromSources(files)
+	got := extractFromSources(files, "")
 	sort.Strings(got)
 
 	want := []string{
@@ -158,6 +158,51 @@ func TestComposeFlatReactRouter(t *testing.T) {
 	want := []string{"/dashboard", "/login"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("JSX 라우트 추출 불일치\n got=%v\nwant=%v", got, want)
+	}
+}
+
+// TestExtractLoosePaths — ★ 이슈 #39: 설정 상수(절대 경로 리터럴)와 내부 URL 을 뽑고,
+// 정적 에셋·외부 호스트는 제외한다.
+func TestExtractLoosePaths(t *testing.T) {
+	content := `
+		const cfg = { apiBase: '/config/v2', uploadDir: '/uploads/tmp' };
+		// 내부: https://app.example.com/internal/metrics
+		// 외부: https://cdn.thirdparty.com/lib/thing  (제외돼야 한다)
+		const style = '/assets/main.css';   // 에셋 — 제외
+		const icon  = '/favicon.ico';        // 에셋 — 제외
+		fetch('https://api.example.com/health/live');  // app.example.com 하위 아님 → 외부
+		fetch('https://app.example.com/v2/orders');    // 내부
+	`
+	got := extractLoosePaths(content, "app.example.com")
+	sort.Strings(got)
+	want := []string{"/config/v2", "/internal/metrics", "/uploads/tmp", "/v2/orders"}
+	sort.Strings(want)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("느슨한 추출 불일치\n got=%v\nwant=%v", got, want)
+	}
+	for _, bad := range got {
+		switch bad {
+		case "/lib/thing", "/health/live":
+			t.Errorf("외부 호스트 경로를 뽑았다: %s", bad)
+		case "/assets/main.css", "/favicon.ico":
+			t.Errorf("정적 에셋을 뽑았다: %s", bad)
+		}
+	}
+}
+
+// TestIsAssetPath — 확장자 기반 에셋 판정.
+func TestIsAssetPath(t *testing.T) {
+	assets := []string{"/a/main.js", "/x.css", "/i/logo.svg", "/f/en.json", "/v/clip.mp4", "/d/doc.pdf"}
+	routes := []string{"/api/v2", "/users/{id}", "/admin", "/v1.0/orders", "/report"}
+	for _, p := range assets {
+		if !isAssetPath(p) {
+			t.Errorf("%s 를 라우트로 봤다(에셋이어야)", p)
+		}
+	}
+	for _, p := range routes {
+		if isAssetPath(p) {
+			t.Errorf("%s 를 에셋으로 봤다(라우트여야)", p)
+		}
 	}
 }
 
