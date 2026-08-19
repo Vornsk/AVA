@@ -121,17 +121,7 @@ func Run(ctx context.Context, tree *endpoints.Tree) Report {
 			break
 		}
 		in := Input{Method: firstMethod(t.Methods), Path: t.Path, ParamKeys: paramNames(t.Params)}
-
-		// LLM 예산이 없으면 룰만 쓰도록 강제(모호한 것도 룰 결과로 확정).
-		var res Result
-		if _, confident := ruleLabels(in); confident || llmLeft <= 0 || !llm.Available() {
-			res = classifyRuleOnly(in)
-		} else {
-			res = Classify(ctx, in)
-			if res.From == "llm" {
-				llmLeft--
-			}
-		}
+		res := classifyBudgeted(ctx, in, &llmLeft)
 
 		rep.Endpoints++
 		switch res.From {
@@ -155,8 +145,9 @@ func Run(ctx context.Context, tree *endpoints.Tree) Report {
 	return rep
 }
 
-// classifyRuleOnly — 캐시를 쓰되 LLM 은 절대 부르지 않는다(예산 소진·프로바이더 없음).
-func classifyRuleOnly(in Input) Result {
+// classifyBudgeted — Run 내부용. 캐시 우선 → 룰 → (예산·프로바이더 있고 모호하면) LLM.
+// ruleLabels 를 한 번만 계산하고, LLM 을 실제로 부를 때만 예산을 깎는다.
+func classifyBudgeted(ctx context.Context, in Input, llmLeft *int) Result {
 	key := sig(in)
 	cacheMu.Lock()
 	if r, ok := cache[key]; ok {
@@ -164,8 +155,15 @@ func classifyRuleOnly(in Input) Result {
 		return Result{Labels: r.Labels, From: "cache"}
 	}
 	cacheMu.Unlock()
-	ruled, _ := ruleLabels(in)
-	res := Result{Labels: fallback(ruled), From: "rule"}
+
+	ruled, confident := ruleLabels(in)
+	var res Result
+	if confident || *llmLeft <= 0 || !llm.Available() {
+		res = Result{Labels: fallback(ruled), From: "rule"}
+	} else {
+		*llmLeft--
+		res = Result{Labels: mergeLabels(ruled, llmLabels(ctx, in)), From: "llm"}
+	}
 	cacheMu.Lock()
 	cache[key] = res
 	cacheMu.Unlock()
