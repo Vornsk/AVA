@@ -35,6 +35,7 @@ import (
 	"proxypoc/internal/project"
 	"proxypoc/internal/proxyengine"
 	"proxypoc/internal/recon/discover"
+	"proxypoc/internal/recon/parammine"
 	"proxypoc/internal/report"
 	"proxypoc/internal/retention"
 	"proxypoc/internal/reverify"
@@ -588,8 +589,10 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			MaxPages int    `json:"max_pages"`
 			MaxDepth int    `json:"max_depth"`
 			Mode     string `json:"mode"`
-			Discover bool   `json:"discover"` // 능동 콘텐츠 발견 옵트인 (#27)
-			Budget   int    `json:"budget"`   // 능동 발견 요청 예산 (0 = 기본값)
+			Discover   bool `json:"discover"`    // 능동 콘텐츠 발견 옵트인 (#27)
+			Budget     int  `json:"budget"`      // 능동 발견 요청 예산 (0 = 기본값)
+			ParamMine  bool `json:"param_mine"`  // 파라미터 마이닝 옵트인 (#40)
+			MineBudget int  `json:"mine_budget"` // 파라미터 마이닝 요청 예산 (0 = 기본값)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Seed == "" {
 			http.Error(w, "seed URL 필요", http.StatusBadRequest)
@@ -602,6 +605,7 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 		res := crawler.Start(in.Seed, crawler.Options{
 			MaxPages: in.MaxPages, MaxDepth: in.MaxDepth, Mode: in.Mode,
 			Discover: in.Discover, Budget: in.Budget,
+			ParamMine: in.ParamMine, MineBudget: in.MineBudget,
 		})
 		audit.Record(u.Name, string(u.Role), "crawl", in.Seed, "ok", res.ID)
 		// 능동 탐색은 파괴성·소음·법적 경계가 있다. 누가 언제 켰는지 별도로 남긴다 (#27).
@@ -613,6 +617,16 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			audit.Record(u.Name, string(u.Role), "crawl:discover", in.Seed, "ok",
 				fmt.Sprintf("%s wordlist=%d budget=%d", res.ID, len(discover.Words()), budget))
 			log.Printf("[WEB ] %s(%s) crawl:discover %s budget=%d → %s", u.Name, u.Role, in.Seed, budget, res.ID)
+		}
+		// 파라미터 마이닝도 능동 주입이라 별도 감사 (#40).
+		if in.ParamMine {
+			budget := in.MineBudget
+			if budget <= 0 {
+				budget = parammine.DefaultBudget
+			}
+			audit.Record(u.Name, string(u.Role), "crawl:parammine", in.Seed, "ok",
+				fmt.Sprintf("%s wordlist=%d budget=%d", res.ID, len(parammine.Words()), budget))
+			log.Printf("[WEB ] %s(%s) crawl:parammine %s budget=%d → %s", u.Name, u.Role, in.Seed, budget, res.ID)
 		}
 		log.Printf("[WEB ] %s(%s) crawl %s → %s", u.Name, u.Role, in.Seed, res.ID)
 		writeJSON(w, res)

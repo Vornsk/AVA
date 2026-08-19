@@ -163,7 +163,9 @@ func (j *job) runHeadless(seed string, opts Options) {
 		j.mu.Unlock()
 		time.Sleep(120 * time.Millisecond)
 	}
-	j.verifyOnce(opts, &http.Client{Timeout: 15 * time.Second}) // 실재 검증 (#26)
+	client := &http.Client{Timeout: 15 * time.Second}
+	j.verifyOnce(opts, client)    // 실재 검증 (#26)
+	j.paramMineOnce(opts, client) // hidden 파라미터 주입 — 옵트인일 때만 (#40)
 	j.setStatus("완료")
 }
 

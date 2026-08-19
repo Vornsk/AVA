@@ -97,6 +97,7 @@ export interface Param {
   type?: string
   required?: boolean
   sample?: string
+  mined?: boolean     // 파라미터 마이닝으로 발견 — 관측이 아닌 능동 주입 (#40)
 }
 export interface Target {
   host: string
@@ -224,6 +225,7 @@ export interface CrawlResult {
   mode: string
   queued: number
   errors: number
+  mined?: number      // 파라미터 마이닝으로 발견한 hidden 파라미터 수 (#40)
   started: string
 }
 

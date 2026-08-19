@@ -27,6 +27,7 @@ import (
 	"proxypoc/internal/recon/discover"
 	"proxypoc/internal/recon/ingest"
 	"proxypoc/internal/recon/liveness"
+	"proxypoc/internal/recon/parammine"
 	"proxypoc/internal/scope"
 )
 
@@ -40,6 +41,8 @@ type Options struct {
 	Discover  bool   // 능동 콘텐츠 발견(wordlist 프로브) 옵트인 — 기본 꺼짐 (#27)
 	Budget    int    // 능동 발견 요청 예산 (0 = 기본값 discover.DefaultBudget)
 	AuthDelta bool   // 인증 델타 크롤 — 비인증→인증 두 패스로 "인증 뒤에만 보이는 표면" 식별 (#38)
+	ParamMine bool   // 파라미터 마이닝(hidden 파라미터 주입) 옵트인 — 기본 꺼짐 (#40)
+	MineBudget int   // 파라미터 마이닝 요청 예산 (0 = 기본값 parammine.DefaultBudget)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
@@ -54,6 +57,7 @@ type Result struct {
 	Demoted  int    `json:"demoted"`    // 라이브니스 검증에서 강등한 엔드포인트 수 (#26)
 	Found2   int    `json:"discovered"` // 능동 발견으로 등록한 엔드포인트 수 (#27)
 	AuthOnly int    `json:"auth_only"`  // 인증 뒤에만 보이는 표면 수 (인증 델타, #38)
+	Mined    int    `json:"mined"`      // 파라미터 마이닝으로 발견한 hidden 파라미터 수 (#40)
 	Mode     string `json:"mode"`       // static | headless | ingest
 	Queued   int    `json:"queued"`     // 남은 큐
 	Errors   int    `json:"errors"`
@@ -201,6 +205,19 @@ func (j *job) discoverOnce(seed string, opts Options, client *http.Client) {
 	j.mu.Unlock()
 }
 
+// paramMineOnce — 파라미터 마이닝 (이슈 #40). ★ 옵트인이 아니면 요청이 한 건도 나가지 않는다.
+// 검증(#26) 뒤에 돌린다 — 실재하는 엔드포인트에만 주입해야 낭비가 없다.
+func (j *job) paramMineOnce(opts Options, client *http.Client) {
+	if !opts.ParamMine || j.ctx.Err() != nil {
+		return
+	}
+	rep := parammine.Run(j.ctx, endpoints.Default(), client, opts.MineBudget)
+	j.mu.Lock()
+	j.res.Mined = rep.Found
+	j.res.Errors += rep.Errors
+	j.mu.Unlock()
+}
+
 // runIngest — 명세 인제스트만 수행한다 (이슈 #25, profile=ingest).
 // 링크 크롤을 돌리지 않으므로 "명세만으로 얼마나 찾는가"가 그대로 측정된다.
 func (j *job) runIngest(seed string) {
@@ -233,7 +250,8 @@ func (j *job) run(seed string, opts Options) {
 	} else if !j.crawlPass(seed, opts, client) {
 		return // 중단됨
 	}
-	j.verifyOnce(opts, client) // 실재하지 않는 추출물 강등 (#26)
+	j.verifyOnce(opts, client)     // 실재하지 않는 추출물 강등 (#26)
+	j.paramMineOnce(opts, client)  // hidden 파라미터 주입 — 옵트인일 때만 (#40)
 	j.setStatus("완료")
 }
 
