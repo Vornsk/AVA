@@ -98,3 +98,80 @@ func TestSelectedSchemeOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestGaps — ★ 이슈 #43: 라벨로 도달 가능하나 발견 0건인 점검항목이 "공백"으로 나온다.
+func TestGaps(t *testing.T) {
+	checklist.SetSelected([]checklist.Scheme{checklist.SchemeFinance})
+	defer checklist.SetSelected(nil)
+	// payment 하나만 발견 — 나머지 라벨(admin·pii·upload·auth·search)의 항목은 전부 공백이어야 한다.
+	rep := Build([]endpoints.Target{tgt("h.com", "/checkout", []string{"payment"}, false)})
+
+	var fin SchemeReport
+	for _, s := range rep.Schemes {
+		if s.Scheme == checklist.SchemeFinance {
+			fin = s
+		}
+	}
+	if fin.Applicable == 0 || len(fin.Gaps) == 0 {
+		t.Fatalf("커버=%d 공백=%d — 둘 다 나와야 한다", fin.Applicable, len(fin.Gaps))
+	}
+	if fin.Mappable != fin.Applicable+len(fin.Gaps) {
+		t.Errorf("모수 불일치: mappable=%d applicable=%d gaps=%d", fin.Mappable, fin.Applicable, len(fin.Gaps))
+	}
+	// 공백은 발견 0건이고, 커버된 항목과 겹치지 않는다.
+	covered := map[string]bool{}
+	for _, it := range fin.Items {
+		covered[it.CheckItem.ID] = true
+	}
+	for _, g := range fin.Gaps {
+		if g.Count != 0 || len(g.Endpoints) != 0 {
+			t.Errorf("공백 항목 %s 에 후보가 있다 (count=%d)", g.CheckItem.ID, g.Count)
+		}
+		if covered[g.CheckItem.ID] {
+			t.Errorf("항목 %s 가 커버·공백 양쪽에 있다", g.CheckItem.ID)
+		}
+		if len(g.Labels) == 0 {
+			t.Errorf("공백 항목 %s 에 유발 라벨이 비었다 — 무슨 라벨을 찾으면 메워지는지 알 수 없다", g.CheckItem.ID)
+		}
+	}
+	// 항목 1(거래 보안, payment)은 커버 쪽에만.
+	if _, ok := findItem(rep, checklist.SchemeFinance, "1"); !ok {
+		t.Error("payment 로 커버된 항목 1 이 Items 에 없다")
+	}
+}
+
+// TestGapsMappableUniverse — 모수는 "라벨로 도달 가능한 항목"이다. 전체 항목표가 아니다.
+func TestGapsMappableUniverse(t *testing.T) {
+	checklist.SetSelected([]checklist.Scheme{checklist.SchemeFinance})
+	defer checklist.SetSelected(nil)
+	rep := Build([]endpoints.Target{tgt("h.com", "/checkout", []string{"payment"}, false)})
+
+	// 라벨 매핑으로 실제 도달 가능한 항목 집합.
+	want := map[string]bool{}
+	for _, l := range checklist.SemanticLabels() {
+		for _, ci := range checklist.CheckItemsForLabel(l) {
+			if ci.Scheme == checklist.SchemeFinance {
+				want[ci.ID] = true
+			}
+		}
+	}
+	got := 0
+	for _, s := range rep.Schemes {
+		if s.Scheme != checklist.SchemeFinance {
+			continue
+		}
+		got = s.Mappable
+		for _, it := range append(append([]ItemCandidates{}, s.Items...), s.Gaps...) {
+			if !want[it.CheckItem.ID] {
+				t.Errorf("라벨로 도달 불가한 항목 %s 가 모수에 들어옴", it.CheckItem.ID)
+			}
+		}
+	}
+	if got != len(want) {
+		t.Errorf("모수=%d (want %d) — 전체 항목표를 세면 안 된다", got, len(want))
+	}
+	if len(want) >= len(checklist.CheckItemsByScheme(checklist.SchemeFinance)) {
+		t.Errorf("전자금융 전체(%d) 대비 라벨 도달 가능(%d) — 모수가 좁아야 공백이 신호가 된다",
+			len(checklist.CheckItemsByScheme(checklist.SchemeFinance)), len(want))
+	}
+}
