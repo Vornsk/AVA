@@ -136,8 +136,10 @@ targets:
     methods: [GET]
     params: [file]
     expect: [vuln.file-download]
+    not_expect: [vuln.xss]
     note: |
       순회 시퀀스가 /etc/passwd·win.ini 내용으로 도달.
+      file 이 반사되지만 Content-Type 이 text/plain 이라 XSS 는 오탐(/transfer 와 같은 결함).
       cmd-injection·ssrf 도 여기서 발동해 미분류로 남는다 — 판단 보류. vulnapp 이 file 값에
       "passwd" 가 들어있기만 하면 무조건 passwd 를 뱉는 조잡한 시뮬레이션이라
       ";cat /etc/passwd" 나 "file:///etc/passwd" 에도 반응한다. 실제 LFI 앱이라면 그런 이름의
@@ -161,15 +163,21 @@ targets:
     methods: [POST]
     body_params: [file]
     auth: true
-    expect: [vuln.file-upload]
-    note: 확장자·타입 검증 없이 .php 도 수용.
+    expect: [vuln.file-upload, vuln.csrf]
+    note: |
+      확장자·타입 검증 없이 .php 도 수용.
+      anti-CSRF 토큰 검증도 없다(소스 확인) → /transfer 와 같은 조건이므로 csrf 도 정탐.
 
   - path: /upload-safe
     methods: [POST]
     body_params: [file]
     auth: true
+    expect: [vuln.csrf]
     not_expect: [vuln.file-upload]
-    note: 대조군. 위험 확장자(.php·.jsp·.exe 등) 403 거부.
+    note: |
+      업로드 대조군. 위험 확장자(.php·.jsp·.exe 등) 403 거부.
+      ★ 여기서 "safe" 는 확장자 검증만 뜻한다. anti-CSRF 토큰은 여기도 없으므로
+      csrf 는 정탐이다 — 이름에 끌려 not_expect 로 두면 정답셋이 스스로 모순된다.
 
   - path: /transfer
     methods: [POST]
