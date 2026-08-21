@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight, ClipboardCheck } from 'lucide-react'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, ScanLine, ClipboardCheck } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me, type ReconRegmap } from '../api'
 import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
@@ -172,7 +172,9 @@ function CrawlExplore() {
 
 // EndpointTree — 캡처된 공격면 조회 (이슈 #7): 검색·메서드·인증·판정 필터 + 행 클릭 상세 드릴다운.
 // SOURCE_META — 출처 신뢰도 등급별 라벨·색 (#28). 위에서부터 신뢰도 높음.
-const SOURCE_META: Record<string, { label: string; color: string; key: string }> = {
+// key 는 i18n 키의 접미사다 — 리터럴 유니온으로 둬야 `recon.source.${key}` 가 MsgKey 로 좁혀진다.
+type SourceKey = 'spec' | 'traffic' | 'xhr' | 'discover' | 'crawl' | 'regex'
+const SOURCE_META: Record<string, { label: string; color: string; key: SourceKey }> = {
   'spec': { label: 'spec', color: 'var(--green)', key: 'spec' },
   'traffic': { label: 'traffic', color: 'var(--accent)', key: 'traffic' },
   'headless-xhr': { label: 'xhr', color: 'var(--blue)', key: 'xhr' },
@@ -183,7 +185,8 @@ const SOURCE_META: Record<string, { label: string; color: string; key: string }>
 // LABEL_META — 의미 라벨 색 (#41·#43). 라벨마다 고유색이다 — 민감 라벨을 전부 red 로 두면
 // "결제"와 "관리자"를 색으로 구분할 수 없어 배지가 경고등 역할만 하고 정보를 못 준다.
 // 키 순서 = 민감도 순. 행에서 접힐 때 덜 중요한 것부터 접힌다.
-const LABEL_META: Record<string, string> = {
+type LabelKey = 'payment' | 'admin' | 'pii' | 'auth' | 'upload' | 'search'
+const LABEL_META: Record<LabelKey, string> = {
   payment: 'var(--red)',
   admin: '#f97316',
   pii: '#d946ef',
@@ -191,17 +194,17 @@ const LABEL_META: Record<string, string> = {
   upload: '#14b8a6',
   search: 'var(--blue)',
 }
-const LABEL_ORDER = Object.keys(LABEL_META)
+const LABEL_ORDER = Object.keys(LABEL_META) as LabelKey[]
 const MAX_ROW_LABELS = 3 // 행 배지 상한. 넘으면 +N 으로 접어 경로가 밀리는 것을 막는다 (#43 합의 ①).
 
 // 행 배지에는 의미 라벨만 보인다(구조적 api·static·other 는 노이즈라 제외). 민감도 순 정렬.
-function labelBadges(labels?: string[]): string[] {
-  return (labels ?? []).filter((l) => l in LABEL_META)
+function labelBadges(labels?: string[]): LabelKey[] {
+  return (labels ?? []).filter((l): l is LabelKey => l in LABEL_META)
                        .sort((a, b) => LABEL_ORDER.indexOf(a) - LABEL_ORDER.indexOf(b))
 }
 
 // LabelChip — 의미 라벨 배지 한 개(행·분포·필터 공용).
-function LabelChip({ label, dim = false, children }: { label: string; dim?: boolean; children?: React.ReactNode }) {
+function LabelChip({ label, dim = false, children }: { label: LabelKey; dim?: boolean; children?: React.ReactNode }) {
   const c = LABEL_META[label]
   return (
     <span className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -277,7 +280,7 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
   for (const t of all) if (!t.unverified) dist[t.source || 'traffic'] = (dist[t.source || 'traffic'] ?? 0) + 1
 
   // 라벨 분포 — 출처 분포와 같은 기준(verified). 칩이 곧 필터다 (#43).
-  const labelDist: Record<string, number> = {}
+  const labelDist: Partial<Record<LabelKey, number>> = {}
   for (const t of all) if (!t.unverified) for (const l of labelBadges(t.labels)) labelDist[l] = (labelDist[l] ?? 0) + 1
   const labelKeys = LABEL_ORDER.filter((l) => labelDist[l])
 
@@ -476,12 +479,13 @@ function ReconSteps({ stats, targets }: { stats: Stats | null; targets: Target[]
   const t = useT()
   const scopeN = stats?.scope?.length ?? 0
   const epN = targets?.length ?? 0
+  // key 는 i18n 키의 접미사다 — as const 로 리터럴을 유지해야 `recon.steps.${key}.title` 이 좁혀진다.
   const steps = [
     { icon: Globe, key: 'scope', done: scopeN > 0, meta: `${scopeN} host` },
     { icon: Radar, key: 'traffic', done: epN > 0, meta: '' },
     { icon: Crosshair, key: 'endpoints', done: epN > 0, meta: epN > 0 ? `${epN} eps` : '' },
     { icon: ScanLine, key: 'scan', done: (stats?.scanruns ?? 0) > 0, meta: '' },
-  ]
+  ] as const
   return (
     <Card pad={false} className="overflow-hidden">
       <div className="flex flex-col divide-y divide-[var(--border)] sm:flex-row sm:divide-x sm:divide-y-0">
