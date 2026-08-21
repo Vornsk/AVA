@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -19,6 +20,35 @@ var mockRiskyParams = map[string]bool{
 }
 
 func (MockProvider) Complete(_ context.Context, system, user string) (string, error) {
+	// 엔드포인트 의미 분류 (이슈 #41) — 경로·키 키워드로 라벨 흉내 (실제 LLM 대체 데모).
+	if strings.Contains(system, "endpoint-classifier") {
+		low := strings.ToLower(user)
+		var labels []string
+		add := func(cond bool, l string) {
+			if cond {
+				labels = append(labels, l)
+			}
+		}
+		hasAny := func(subs ...string) bool {
+			for _, s := range subs {
+				if strings.Contains(low, s) {
+					return true
+				}
+			}
+			return false
+		}
+		add(hasAny("login", "auth", "token", "password", "session", "oauth"), "auth")
+		add(hasAny("pay", "checkout", "order", "billing", "card", "amount", "wallet"), "payment")
+		add(hasAny("upload", "file", "import", "attachment"), "upload")
+		add(hasAny("admin", "manage", "console", "backoffice", "internal"), "admin")
+		add(hasAny("profile", "account", "customer", "kyc", "email", "ssn", "phone"), "pii")
+		add(hasAny("search", "query", "keyword", "lookup"), "search")
+		if len(labels) == 0 {
+			labels = []string{"other"}
+		}
+		b, _ := json.Marshal(map[string][]string{"labels": labels})
+		return string(b), nil
+	}
 	// 오탐 검토(Review) — 응답 증적으로 휴리스틱 판정 (실제 LLM 대체 데모)
 	if strings.Contains(system, "triage") {
 		low := strings.ToLower(user)

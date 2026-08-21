@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight } from 'lucide-react'
-import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me } from '../api'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, Activity, ScanLine, ArrowRight, ClipboardCheck } from 'lucide-react'
+import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me, type ReconRegmap } from '../api'
 import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
 
@@ -160,6 +160,7 @@ function CrawlExplore() {
           <span className="text-[var(--muted)]">{t('recon.crawl.found')} <b className="text-[var(--text)]">{latest.found}</b></span>
           {latest.js > 0 && <span className="text-[var(--muted)]">JS <b className="text-[var(--text)]">{latest.js}</b></span>}
           {!!latest.mined && latest.mined > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.mined')} <b>{latest.mined}</b></span>}
+          {!!latest.labeled && latest.labeled > 0 && <span className="text-[var(--muted)]">{t('recon.crawl.labeled')} <b className="text-[var(--text)]">{latest.labeled}</b></span>}
           <span className="text-[var(--muted)]">{t('recon.crawl.queued')} {latest.queued}</span>
           {latest.errors > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.errors')} {latest.errors}</span>}
           <span className="font-mono text-[10px] text-[var(--muted)]">{latest.seed}</span>
@@ -178,6 +179,15 @@ const SOURCE_META: Record<string, { label: string; color: string; key: string }>
   'discover': { label: 'discover', color: '#a78bfa', key: 'discover' },
   'crawl-link': { label: 'crawl', color: 'var(--muted)', key: 'crawl' },
   'static-regex': { label: 'regex', color: 'var(--muted)', key: 'regex' },
+}
+// LABEL_META — 의미 라벨 색 (#41). 민감·규제 관련(auth·admin·payment·pii)은 경고색으로 강조.
+const LABEL_META: Record<string, string> = {
+  auth: 'var(--red)', admin: 'var(--red)', payment: 'var(--red)', pii: 'var(--red)',
+  upload: 'var(--amber)', search: 'var(--blue)',
+}
+// 행 배지에는 의미 라벨만 보인다(구조적 api·static·other 는 노이즈라 제외).
+function labelBadges(labels?: string[]): string[] {
+  return (labels ?? []).filter((l) => l in LABEL_META)
 }
 // sourceMeta — 빈 문자열(레거시 프록시 캡처)은 traffic 으로 본다 (#26 등급 규칙과 정합).
 // methodColor — HTTP 메서드 색. 읽기(GET/HEAD)는 차분하게, 쓰기·삭제는 경고색으로 (#28 가독성).
@@ -328,6 +338,10 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                                     style={{ background: 'color-mix(in srgb, var(--red) 14%, transparent)' }}>auth-only</span>
                             </Tooltip>
                           )}
+                          {labelBadges(t.labels).map((l) => (
+                            <span key={l} title={tr('recon.tree.labelHint')} className="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
+                                  style={{ color: LABEL_META[l], background: `color-mix(in srgb, ${LABEL_META[l]} 14%, transparent)` }}>{l}</span>
+                          ))}
                         </span>
                         {/* 메타 — 우측 정렬로 모음 */}
                         <span className="flex shrink-0 items-center gap-2.5 text-[11px] text-[var(--muted)]">
@@ -428,6 +442,49 @@ function ReconSteps({ stats, targets }: { stats: Stats | null; targets: Target[]
   )
 }
 
+// RegMapCard — 정찰 규제 매핑 (이슈 #42): 의미 라벨 → 점검항목 후보. 라벨이 없으면 숨김.
+function RegMapCard() {
+  const t = useT()
+  const { data } = usePoll<ReconRegmap>('/api/recon/regmap', 6000)
+  if (!data || data.labeled === 0) return null
+  return (
+    <Card title={t('recon.regmap.title')} icon={ClipboardCheck} collapsible defaultOpen muted
+          right={<span className="hidden text-[11px] text-[var(--muted)] md:inline">{t('recon.regmap.subtitle')}</span>}>
+      <div className="mb-2.5 flex flex-wrap items-center gap-3 text-xs">
+        <span className="text-[var(--muted)]">{t('recon.regmap.labeled')} <b className="text-[var(--text)]">{data.labeled}</b> / {data.endpoints}</span>
+        {data.access_control_candidates > 0 && (
+          <Tooltip label={t('recon.regmap.acHint')}>
+            <span className="rounded px-1.5 py-0.5 font-medium text-[var(--red)]" style={{ background: 'color-mix(in srgb, var(--red) 14%, transparent)' }}>
+              {t('recon.regmap.accessCtl')} {data.access_control_candidates}
+            </span>
+          </Tooltip>
+        )}
+      </div>
+      <div className="space-y-3">
+        {data.schemes?.map((s) => (
+          <div key={s.scheme}>
+            <div className="mb-1.5 flex items-baseline gap-2 text-xs">
+              <span className="font-semibold">{s.scheme}</span>
+              <span className="text-[var(--muted)]">{t('recon.regmap.applicable')} {s.applicable}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {s.items.map((it) => (
+                <Tooltip key={it.check_item.id} label={`${it.vuln_name} · ${it.labels.join(', ')}`}>
+                  <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
+                        style={{ borderColor: it.access_control ? 'var(--red)' : 'var(--border)', color: it.access_control ? 'var(--red)' : 'var(--muted)' }}>
+                    <b className="text-[var(--text)]">{it.check_item.id}</b>
+                    <span className="tabular-nums">{it.count}</span>
+                  </span>
+                </Tooltip>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 export function Recon() {
   const t = useT()
   const { data: targets } = usePoll<Target[]>('/api/endpoints?include_unverified=true', 4000)
@@ -446,6 +503,7 @@ export function Recon() {
         <ProxyTool stats={stats} />
         <CrawlExplore />
         <EndpointTree targets={targets} />
+        <RegMapCard />
       </div>
 
       {/* 우측: 참고 — 파이프라인·스코프·인증 (#28: 기본 접힘, 필요 시 펼침) */}

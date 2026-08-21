@@ -15,6 +15,7 @@ import (
 	"log"
 	"os"
 	"sort"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -169,6 +170,58 @@ func DetectorsFor(checkItemID string) []string {
 	return v.Detectors
 }
 
+// ── 정찰 의미 라벨 → 점검항목 매핑 (이슈 #42) ─────────────────────────
+//
+// 정찰 분류(#41)가 붙인 의미 라벨을 규제 점검항목에 연결한다. detector→vuln 과 "같은 허브"
+// (VulnDef)를 쓰므로 기존 취약점 기반 매핑과 충돌하지 않는다 — 라벨은 vuln 을 가리키고,
+// checkitem 은 current 항목표에서 동적으로 해석한다(커스텀 YAML 을 넣어도 그대로 동작).
+//
+// ★ 취약점 기반 매핑과 의미가 다르다. 이건 스캔 "전"에 "이 엔드포인트에 이 점검항목이
+// 적용된다(후보)"를 말한다. detector 커버리지(취약/양호)와는 별개 축이다.
+var labelVulns = map[string][]string{
+	"auth":    {"vuln.weak-auth", "vuln.weak-session", "vuln.auth-credential"},
+	"payment": {"vuln.txn-security"},
+	"upload":  {"vuln.file-upload"},
+	"admin":   {"vuln.access-control"},
+	"pii":     {"vuln.info-exposure", "vuln.plaintext"},
+	"search":  {"vuln.sqli"},
+	// api·static·other 는 구조적 라벨이라 규제 후보로 매핑하지 않는다(노이즈 방지).
+}
+
+// AccessControlVuln — 접근통제 취약점 정의 id. auth-only(E1)+admin(E4) 조합이 강조 대상으로 삼는다.
+const AccessControlVuln = "vuln.access-control"
+
+// VulnsForLabel — 의미 라벨이 가리키는 VulnDef id들 (없으면 nil).
+func VulnsForLabel(label string) []string {
+	return labelVulns[strings.ToLower(strings.TrimSpace(label))]
+}
+
+// CheckItemsForVuln — 이 VulnDef 를 참조하는 점검항목들(스킴 무관).
+func CheckItemsForVuln(vulnID string) []CheckItem {
+	var out []CheckItem
+	for _, c := range current.CheckItems {
+		if c.Vuln == vulnID {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// CheckItemsForLabel — 의미 라벨(#41)에 연결된 점검항목들(라벨→vuln→checkitem, 중복 제거).
+func CheckItemsForLabel(label string) []CheckItem {
+	seen := map[string]bool{}
+	var out []CheckItem
+	for _, v := range VulnsForLabel(label) {
+		for _, c := range CheckItemsForVuln(v) {
+			if !seen[c.ID] {
+				seen[c.ID] = true
+				out = append(out, c)
+			}
+		}
+	}
+	return out
+}
+
 // CheckItemsForDetector — 역방향: 이 detector가 커버하는 점검항목들(스킴 무관).
 func CheckItemsForDetector(detectorID string) []CheckItem {
 	vuln := map[string]bool{}
@@ -222,6 +275,14 @@ func Validate(available map[string]bool) []string {
 		seen[c.ID] = true
 		if !vulnIDs[c.Vuln] {
 			issues = append(issues, fmt.Sprintf("checkitem %s → 미존재 vuln %q", c.ID, c.Vuln))
+		}
+	}
+	// 라벨→vuln 매핑(#42)도 존재하는 vuln 을 가리켜야 한다.
+	for label, vs := range labelVulns {
+		for _, v := range vs {
+			if !vulnIDs[v] {
+				issues = append(issues, fmt.Sprintf("label %q → 미존재 vuln %q", label, v))
+			}
 		}
 	}
 	return issues

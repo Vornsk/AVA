@@ -112,6 +112,7 @@ export interface Target {
   source?: string     // 출처 신뢰도 등급 spec|traffic|headless-xhr|discover|crawl-link|static-regex (#25·#26·#27)
   unverified?: boolean // 라이브니스 프로브 미통과 — 기본 숨김 (#26·#28)
   auth_only?: boolean  // 인증 뒤에만 보이는 표면 (인증 델타, #38)
+  labels?: string[]    // 의미 라벨 auth|payment|upload|admin|pii|search|api|static (#41)
 }
 export interface Rule {
   name: string
@@ -226,7 +227,26 @@ export interface CrawlResult {
   queued: number
   errors: number
   mined?: number      // 파라미터 마이닝으로 발견한 hidden 파라미터 수 (#40)
+  labeled?: number    // 의미 라벨이 붙은 엔드포인트 수 (분류, #41)
   started: string
+}
+
+// 정찰 규제 매핑 (이슈 #42) — 의미 라벨 → 점검항목 후보.
+export interface RegmapItem {
+  check_item: { id: string; scheme: string; control?: string; label?: string; vuln: string; risk?: number }
+  vuln_name: string
+  labels: string[]
+  count: number
+  endpoints?: string[]
+  access_control?: boolean
+}
+export interface RegmapScheme { scheme: string; applicable: number; items: RegmapItem[] }
+export interface ReconRegmap {
+  endpoints: number
+  labeled: number
+  access_control_candidates: number
+  schemes?: RegmapScheme[]
+  unmapped_sample?: string[]
 }
 
 export interface TenantInfo {

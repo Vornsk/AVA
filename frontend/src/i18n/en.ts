@@ -158,6 +158,13 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.crawl.paramMineTitle': 'Inject a wordlist of hidden parameters into verified endpoints to find debug/authz-bypass/legacy fields the server processes but does not expose. Active injection — GET-only, budgeted, audit-logged.',
   'recon.crawl.optIn': '· opt-in',
   'recon.crawl.mined': 'Mined',
+  'recon.crawl.labeled': 'Labeled',
+  'recon.regmap.title': 'Regulatory mapping (recon)',
+  'recon.regmap.subtitle': 'Which checklist items apply — before scanning',
+  'recon.regmap.labeled': 'Labeled',
+  'recon.regmap.applicable': 'applicable',
+  'recon.regmap.accessCtl': 'Access-control candidates',
+  'recon.regmap.acHint': 'Endpoints that are both behind auth (auth delta, #38) and admin-labeled (#41) — prime access-control review targets.',
 
   // Recon — 워크플로 단계 (#28)
   'recon.steps.scope.title': 'Scope',
@@ -192,6 +199,7 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.tree.authOnlyHint': 'Surfaces visible only after login — access-control review candidates (auth delta, #38).',
   'recon.tree.mined': 'mined',
   'recon.tree.minedHint': 'Hidden parameter found by active parameter mining, not observed traffic (#40).',
+  'recon.tree.labelHint': 'Semantic label (auth/payment/admin/pii/upload/search) from rule + LLM classification — for compliance mapping and risk prioritization (#41).',
   'recon.tree.showUnverified': 'Unverified',
   'recon.tree.unverifiedHint': 'Show endpoints that failed the liveness probe (soft-404). Hidden by default.',
   'recon.tree.sources': 'Sources',
