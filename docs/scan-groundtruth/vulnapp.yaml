@@ -1,0 +1,176 @@
+# 스캔 벤치마크 정답셋 — vulnapp (#49)
+#
+# 대상: backend/cmd/vulnapp — 우리가 직접 심은 취약 앱이라 정답을 안다.
+#   기동: cd backend && go run ./cmd/vulnapp        (기본 127.0.0.1:9099)
+#
+# 스키마:
+#   expect      — 이 경로에서 나와야 하는 VulnDef id. 정답(TP 후보).
+#   not_expect  — 이 경로에서 나오면 오탐인 VulnDef id. FP 의 분모다.
+#   site_wide   — 앱 전체에 해당하는 취약점. 어디서 나와도 오탐도 정답도 아니다.
+#
+#   한 경로에 expect 와 not_expect 를 같이 둘 수 있다. /profile 이 그 예 —
+#   민감정보 평문 노출은 취약이지만 접근통제는 정상이라 access-control 이 나오면 오탐이다.
+#
+# ⚠️ expect/not_expect 에 없는 발견은 오탐이 아니라 '미분류'로 집계된다(합의 ②).
+#   미분류 목록을 보고 이 파일을 넓히는 것이 벤치 운영의 정상 절차다.
+
+app: vulnapp
+base: http://127.0.0.1:9099
+
+# 이 앱은 보안 헤더를 일부러 안 붙인다(noSecurityHeaders 미들웨어). 전 경로에서 나온다.
+site_wide:
+  - vuln.sec-headers
+
+# 세션 주입 — 인증 뒤 대상(/orders·/manage/users·/upload·/transfer)을 점검하려면 필요하다.
+# vulnapp 의 whoami 는 session 쿠키 값을 sessions 맵으로 사용자에 매핑한다
+# (sess-user1→user1, sess-user2→user2, sess-admin→admin). 폐기용 테스트 앱이라 실 크리덴셜 아님.
+auth:
+  cookies:
+    session: sess-user1
+
+# 다중 신원 (FR-3.6) — 접근통제 계열 detector 는 이게 없으면 아예 동작하지 않는다.
+#   idor    : 신원 2개 이상 필요(anon 포함). 신원 간 응답이 같으면 수평권한 미흡.
+#   privesc : privileged 신원과 저권한 신원이 모두 있어야 수직 권한상승을 대조한다.
+identities:
+  - name: anon # 비인가 기준선. 자격증명 없이 이름만 둔다.
+  - name: user1
+    cookies: { session: sess-user1 }
+  - name: user2
+    cookies: { session: sess-user2 }
+  - name: admin
+    cookies: { session: sess-admin }
+    privileged: true
+
+targets:
+  # ── 공개 · 반사 ────────────────────────────────────────────────
+  - path: /
+    methods: [GET]
+    note: 홈. 링크만 노출.
+
+  - path: /search
+    methods: [GET]
+    params: [q]
+    expect: [vuln.xss]
+    note: q 를 이스케이프 없이 HTML 에 반사.
+
+  - path: /product
+    methods: [GET]
+    params: [id, cat]
+    expect: [vuln.xss]
+    note: 다중 파라미터 반사.
+
+  # ── 접근통제 ──────────────────────────────────────────────────
+  - path: /dashboard
+    methods: [GET]
+    auth: true
+    not_expect: [vuln.access-control]
+    note: 정상 보호. 세션 없으면 401, 신원별 응답 상이 → 접근통제 오탐 대조군.
+
+  - path: /profile
+    methods: [GET]
+    auth: true
+    expect: [vuln.info-exposure]
+    not_expect: [vuln.access-control]
+    note: 주민번호·카드번호 평문(취약)이나 접근통제 자체는 정상. 신원별 상이 → IDOR 오탐 대조군.
+
+  - path: /orders
+    methods: [GET]
+    auth: true
+    expect: [vuln.access-control]
+    note: 수평권한 미흡(IDOR). 세션은 있으나 소유자 검증이 없어 신원 무관 동일 응답.
+
+  - path: /admin
+    methods: [GET]
+    expect: [vuln.access-control]
+    note: 관리자 경로인데 세션 검사가 전혀 없다.
+
+  - path: /manage/users
+    methods: [GET]
+    auth: true
+    expect: [vuln.access-control]
+    note: 수직 권한상승. 역할 검사 없이 저권한도 관리자와 동일 응답.
+
+  - path: /admin/audit
+    methods: [GET]
+    auth: true
+    not_expect: [vuln.access-control]
+    note: 정상 인가. 관리자만 200, 저권한 403, anon 401 → 수직권한 오탐 대조군.
+
+  # ── SQL 주입 ─────────────────────────────────────────────────
+  - path: /item
+    methods: [GET]
+    params: [id]
+    expect: [vuln.sqli]
+    note: 에러 기반. 따옴표 주입 시 MySQL 구문오류를 그대로 노출.
+
+  - path: /report
+    methods: [GET]
+    params: [id]
+    expect: [vuln.sqli]
+    note: 시간 기반 블라인드. 주입된 SLEEP 이 실행되나 본문은 항상 동일.
+
+  - path: /report-safe
+    methods: [GET]
+    params: [id]
+    not_expect: [vuln.sqli]
+    note: 대조군. id 를 아예 쓰지 않아 지연이 없다 → 시간 블라인드 오탐 대조군.
+
+  - path: /user
+    methods: [GET]
+    params: [id]
+    expect: [vuln.sqli]
+    note: 불린 블라인드. 주입한 조건의 참/거짓이 응답을 바꾼다.
+
+  - path: /user-safe
+    methods: [GET]
+    params: [id]
+    not_expect: [vuln.sqli]
+    note: 대조군. id 를 리터럴 비교(파라미터화) → 주입 무효.
+
+  # ── 경로 순회 · 리다이렉트 ────────────────────────────────────
+  - path: /download
+    methods: [GET]
+    params: [file]
+    expect: [vuln.file-download]
+    note: 순회 시퀀스가 /etc/passwd·win.ini 내용으로 도달.
+
+  - path: /go
+    methods: [GET]
+    params: [url]
+    expect: [vuln.open-redirect]
+    note: url 을 무검증으로 302 목적지에 사용.
+
+  - path: /safe-go
+    methods: [GET]
+    params: [url]
+    not_expect: [vuln.open-redirect]
+    note: 대조군. 같은 오리진 경로만 허용하고 외부 호스트는 400.
+
+  # ── 업로드 · CSRF ────────────────────────────────────────────
+  - path: /upload
+    methods: [POST]
+    body_params: [file]
+    auth: true
+    expect: [vuln.file-upload]
+    note: 확장자·타입 검증 없이 .php 도 수용.
+
+  - path: /upload-safe
+    methods: [POST]
+    body_params: [file]
+    auth: true
+    not_expect: [vuln.file-upload]
+    note: 대조군. 위험 확장자(.php·.jsp·.exe 등) 403 거부.
+
+  - path: /transfer
+    methods: [POST]
+    body_params: [amount, to]
+    auth: true
+    expect: [vuln.csrf]
+    note: 세션만 확인하고 anti-CSRF 토큰이 없다.
+
+  - path: /change-email
+    methods: [POST]
+    body_params: [email, csrf_token]
+    auth: true
+    not_expect: [vuln.csrf]
+    note: 대조군. csrf_token 없으면 403.

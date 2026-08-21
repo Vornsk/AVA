@@ -1,0 +1,61 @@
+# 스캔 벤치마크 정답셋 — vulnlab (#49)
+#
+# 대상: backend/internal/vulnlab — http.Handler 라 하네스가 httptest 로 인프로세스 기동한다.
+#   → 외부 기동이 필요 없다. 이 정답셋은 어떤 환경에서도 항상 채점된다.
+#
+# 신규 인젝션 계열 detector(cmd·ssrf·ssti·ldap·ssi·xxe)의 정탐을 재는 것이 목적이다.
+# 정상 대조군이 없으므로 FP 분모는 vulnapp 이 담당한다 — 여기 지표는 재현율 위주로 읽을 것.
+
+app: vulnlab
+handler: vulnlab
+
+# 이 앱도 보안 헤더를 붙이지 않는다. 전 경로에서 나오므로 채점에서 뺀다.
+site_wide:
+  - vuln.sec-headers
+
+targets:
+  - path: /exec
+    methods: [GET]
+    params: [cmd]
+    expect: [vuln.code-injection]
+    not_expect: [vuln.xss]
+    note: |
+      셸 분리자 뒤 명령이 실행된 것처럼 응답(id·whoami·ver·/etc/passwd) + 지연 주입.
+      cmd 가 응답에 반사되지만 Content-Type 이 text/plain 이라 브라우저가 실행하지 않는다
+      → XSS 는 오탐. (2026-08-21 실측: "PING <script>..." 는 Go 스니핑이 text/plain 으로 판정)
+
+  - path: /fetch
+    methods: [GET]
+    params: [url]
+    expect: [vuln.ssrf]
+    not_expect: [vuln.xss]
+    note: |
+      클라우드 메타데이터(169.254.169.254·metadata.google)·file:// 를 대신 가져와 노출.
+      url 이 반사되지만 text/plain 이라 XSS 는 오탐 (/exec 와 같은 이유).
+
+  - path: /greet
+    methods: [GET]
+    params: [name]
+    expect: [vuln.ssti, vuln.xss]
+    note: |
+      템플릿 식 7333*7333 을 53772889 로 평가.
+      name 을 <h1> 안에 그대로 넣고 text/html 로 응답 → 반사 XSS 도 진짜다(실측 확인).
+
+  - path: /login
+    methods: [GET]
+    params: [user]
+    expect: [vuln.ldap-injection]
+    note: LDAP 필터 특수문자에 InvalidSearchFilterException 노출.
+
+  - path: /comment
+    methods: [GET]
+    params: [c]
+    expect: [vuln.ssi-injection, vuln.xss]
+    note: |
+      SSI 지시자(#exec)가 실행돼 SSI7333OK 로 치환.
+      c 를 <div> 안에 그대로 넣고 text/html 로 응답 → 반사 XSS 도 진짜다(실측 확인).
+
+  - path: /xml
+    methods: [POST]
+    expect: [vuln.xxe]
+    note: XML 본문의 외부 엔티티(file:///etc/passwd·win.ini)를 확장.
