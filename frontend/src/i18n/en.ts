@@ -163,6 +163,11 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.regmap.subtitle': 'Which checklist items apply — before scanning',
   'recon.regmap.labeled': 'Labeled',
   'recon.regmap.applicable': 'applicable',
+  'recon.regmap.covered': 'Covered',
+  'recon.regmap.coverHint': 'Checklist items reachable via semantic labels (the denominator) for which recon found candidates. A different axis from scan coverage (vulnerable/clean) — this is the map of what to review.',
+  'recon.regmap.gap': 'Gaps',
+  'recon.regmap.gapHint': 'Items reachable via labels but with zero candidates so far — either the crawl never reached that surface or classification did not label it.',
+  'recon.regmap.gapNeeds': 'needs label',
   'recon.regmap.accessCtl': 'Access-control candidates',
   'recon.regmap.acHint': 'Endpoints that are both behind auth (auth delta, #38) and admin-labeled (#41) — prime access-control review targets.',
 
@@ -204,6 +209,14 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.tree.unverifiedHint': 'Show endpoints that failed the liveness probe (soft-404). Hidden by default.',
   'recon.tree.sources': 'Sources',
   'recon.tree.unverifiedCount': 'unverified',
+  'recon.tree.labels': 'Labels',
+  'recon.tree.clearLabel': 'Clear label filter',
+  'recon.label.payment': 'Payment / transaction — e-finance transaction security items',
+  'recon.label.admin': 'Admin functionality — access-control items',
+  'recon.label.pii': 'Handles personal data — info-exposure / plaintext items',
+  'recon.label.auth': 'Auth / session — authentication strength and session items',
+  'recon.label.upload': 'File upload — upload vulnerability items',
+  'recon.label.search': 'Search / lookup — injection items',
   'recon.tree.noParams': 'No parameters',
 
   // Recon — 용어 도움말 (#28 D)

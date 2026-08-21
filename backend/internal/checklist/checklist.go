@@ -196,6 +196,18 @@ func VulnsForLabel(label string) []string {
 	return labelVulns[strings.ToLower(strings.TrimSpace(label))]
 }
 
+// SemanticLabels — 규제 매핑을 가진 의미 라벨 전체(정렬). 구조적 라벨(api·static·other)은 없다.
+// 정찰 커버리지의 "공백" 모수를 구할 때 쓴다 (이슈 #43) — 이 라벨들로 도달 가능한 점검항목이
+// 정찰이 커버할 수 있었던 전부다.
+func SemanticLabels() []string {
+	out := make([]string, 0, len(labelVulns))
+	for l := range labelVulns {
+		out = append(out, l)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // CheckItemsForVuln — 이 VulnDef 를 참조하는 점검항목들(스킴 무관).
 func CheckItemsForVuln(vulnID string) []CheckItem {
 	var out []CheckItem

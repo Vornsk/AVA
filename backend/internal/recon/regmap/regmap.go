@@ -34,8 +34,10 @@ type ItemCandidates struct {
 // SchemeReport — 스킴(탭)별 정찰 규제 매핑.
 type SchemeReport struct {
 	Scheme     checklist.Scheme `json:"scheme"`
-	Applicable int              `json:"applicable"` // 적용 대상 점검항목 수
+	Applicable int              `json:"applicable"` // 적용 대상 점검항목 수(= 커버)
+	Mappable   int              `json:"mappable"`   // 의미 라벨로 도달 가능한 점검항목 수(모수)
 	Items      []ItemCandidates `json:"items"`
+	Gaps       []ItemCandidates `json:"gaps,omitempty"` // 도달 가능하나 발견 0건 = 정찰 공백 (이슈 #43)
 }
 
 // Report — 정찰 규제 매핑 1회.
@@ -113,16 +115,57 @@ func Build(targets []endpoints.Target) Report {
 		}
 		byScheme[a.item.Scheme] = append(byScheme[a.item.Scheme], ic)
 	}
+	// 공백(#43) — 의미 라벨로 도달 가능한 점검항목 중 후보가 0건인 것. 모수를 "라벨 매핑이 있는
+	// 항목"으로 잡는다: 정찰로 애초에 닿을 수 없는 항목까지 세면 공백이 노이즈가 된다.
+	gapsByScheme := map[checklist.Scheme][]ItemCandidates{}
+	for id, a := range mappable() {
+		if items[id] != nil {
+			continue // 이미 커버됨
+		}
+		gapsByScheme[a.item.Scheme] = append(gapsByScheme[a.item.Scheme], ItemCandidates{
+			CheckItem: a.item, VulnName: vulnName(a.item), Labels: sortedKeys(a.labels),
+		})
+	}
+
 	for _, scheme := range checklist.Selected() {
-		its := byScheme[scheme]
-		if len(its) == 0 {
+		its, gaps := byScheme[scheme], gapsByScheme[scheme]
+		if len(its) == 0 && len(gaps) == 0 {
 			continue
 		}
-		sort.Slice(its, func(i, j int) bool { return lessCheckItemID(its[i].CheckItem.ID, its[j].CheckItem.ID) })
-		rep.Schemes = append(rep.Schemes, SchemeReport{Scheme: scheme, Applicable: len(its), Items: its})
+		sortItems(its)
+		sortItems(gaps)
+		rep.Schemes = append(rep.Schemes, SchemeReport{
+			Scheme: scheme, Applicable: len(its), Mappable: len(its) + len(gaps), Items: its, Gaps: gaps,
+		})
 	}
 	rep.UnmappedList = cappedKeys(unmapped, 10)
 	return rep
+}
+
+// mappable — 의미 라벨로 도달 가능한 점검항목(선택 스킴만). id → 항목·유발 라벨.
+// 커버/공백의 모수다. 라벨 매핑(checklist.labelVulns)과 현재 항목표에서만 나오므로,
+// 커스텀 항목표 YAML 을 넣어도 그대로 따라간다.
+func mappable() map[string]*acc {
+	out := map[string]*acc{}
+	for _, label := range checklist.SemanticLabels() {
+		for _, ci := range checklist.CheckItemsForLabel(label) {
+			if !checklist.IsSelected(ci.Scheme) {
+				continue
+			}
+			a := out[ci.ID]
+			if a == nil {
+				a = &acc{item: ci, labels: map[string]bool{}, eps: map[string]bool{}}
+				out[ci.ID] = a
+			}
+			a.labels[label] = true
+		}
+	}
+	return out
+}
+
+// sortItems — 점검항목 id 순 정렬(커버·공백 공통).
+func sortItems(its []ItemCandidates) {
+	sort.Slice(its, func(i, j int) bool { return lessCheckItemID(its[i].CheckItem.ID, its[j].CheckItem.ID) })
 }
 
 func vulnName(ci checklist.CheckItem) string {
@@ -145,12 +188,9 @@ func hasLabel(labels []string, want string) bool {
 }
 
 // isSemanticLabel — 규제 매핑이 있어야 할 의미 라벨인가(구조적 api·static·other 제외).
+// 목록을 여기 복제하지 않고 checklist 의 라벨 매핑을 그대로 묻는다(드리프트 방지, #43).
 func isSemanticLabel(label string) bool {
-	switch label {
-	case "auth", "payment", "upload", "admin", "pii", "search":
-		return true
-	}
-	return false
+	return len(checklist.VulnsForLabel(label)) > 0
 }
 
 func sortedKeys(m map[string]bool) []string {

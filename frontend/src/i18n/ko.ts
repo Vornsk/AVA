@@ -162,6 +162,11 @@ export const ko = {
   'recon.regmap.subtitle': '스캔 전에 — 어떤 점검항목이 적용되는가',
   'recon.regmap.labeled': '라벨',
   'recon.regmap.applicable': '적용',
+  'recon.regmap.covered': '커버',
+  'recon.regmap.coverHint': '의미 라벨로 도달 가능한 점검항목(모수) 중 정찰이 후보를 찾아낸 항목 수. 취약/양호를 가리는 스캔 커버리지와는 다른 축 — "무엇을 점검해야 하는가"의 지도다.',
+  'recon.regmap.gap': '공백',
+  'recon.regmap.gapHint': '라벨로 닿을 수 있는데 아직 후보가 0건인 점검항목. 크롤이 그 표면에 도달하지 못했거나 분류가 라벨을 못 붙였다는 신호다.',
+  'recon.regmap.gapNeeds': '필요 라벨',
   'recon.regmap.accessCtl': '접근통제 후보',
   'recon.regmap.acHint': '인증 뒤(인증 델타 #38)이면서 admin 라벨(#41)인 엔드포인트 — 접근통제 점검 1순위 대상.',
 
@@ -203,6 +208,14 @@ export const ko = {
   'recon.tree.unverifiedHint': '라이브니스 프로브(soft-404)를 통과하지 못한 엔드포인트를 표시합니다. 기본 숨김.',
   'recon.tree.sources': '출처',
   'recon.tree.unverifiedCount': '미검증',
+  'recon.tree.labels': '라벨',
+  'recon.tree.clearLabel': '라벨 필터 해제',
+  'recon.label.payment': '결제·거래 — 전자금융 거래 보안 점검 대상',
+  'recon.label.admin': '관리자 기능 — 접근통제 점검 대상',
+  'recon.label.pii': '개인정보 취급 — 정보노출·평문전송 점검 대상',
+  'recon.label.auth': '인증·세션 — 인증 강도·세션 관리 점검 대상',
+  'recon.label.upload': '파일 업로드 — 업로드 취약점 점검 대상',
+  'recon.label.search': '검색·조회 — 인젝션 점검 대상',
   'recon.tree.noParams': '파라미터 없음',
 
   // Recon — 용어 도움말 (#28 D)

@@ -240,7 +240,13 @@ export interface RegmapItem {
   endpoints?: string[]
   access_control?: boolean
 }
-export interface RegmapScheme { scheme: string; applicable: number; items: RegmapItem[] }
+export interface RegmapScheme {
+  scheme: string
+  applicable: number          // 후보가 나온 점검항목 수(= 커버)
+  mappable: number            // 의미 라벨로 도달 가능한 점검항목 수(모수) (#43)
+  items: RegmapItem[]
+  gaps?: RegmapItem[]         // 도달 가능하나 발견 0건 = 정찰 공백 (#43)
+}
 export interface ReconRegmap {
   endpoints: number
   labeled: number

@@ -7,6 +7,9 @@
 
 - frontend에서 `npm run build`를 먼저 실행해야 `go build`가 성공한다.
   `backend/internal/webui/dist`는 `//go:embed` 대상이며 git에 커밋되지 않는다.
+- `npm run build`는 `tsc --noEmit`을 먼저 돌린다. 타입 에러면 vite가 아예 안 돌아
+  **dist가 갱신되지 않는다** — JS를 안 고쳤는데 go build가 옛 화면을 embed하는 상황이 아니라,
+  프론트 빌드가 먼저 실패한다. 타입만 빠르게 보려면 `npm run typecheck`.
 
 # 이 프로젝트의 함정
 

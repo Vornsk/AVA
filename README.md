@@ -60,9 +60,11 @@ Go(goproxy) **MITM 프록시 엔진**을 코어로, 그 위에 **MCP 오케스�
 ```bash
 cd frontend
 npm install            # 최초 1회
-npm run build          # → backend/internal/webui/dist (embed)
+npm run build          # tsc --noEmit → vite build → backend/internal/webui/dist (embed)
 ```
 
+> 타입 에러가 있으면 `tsc` 단계에서 멈추고 vite가 돌지 않습니다(`npm run typecheck` 로 단독 확인).
+>
 > `backend/internal/webui/dist`는 빌드 산출물이라 커밋되지 않습니다.
 > `go build` 전에 반드시 위 프론트 빌드를 먼저 수행하세요. 건너뛰면
 > `pattern all:dist: no matching files found` 로 컴파일이 실패합니다.

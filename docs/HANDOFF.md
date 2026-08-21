@@ -64,6 +64,7 @@
 | **#40** | **파라미터 마이닝** — hidden 파라미터 주입으로 인젝션 포인트 확대(옵트인) | `backend/internal/recon/parammine/`, `endpoints.AddMinedParam` |
 | **#41** | **의미 분류** — 경로·파라미터를 auth/payment/admin/pii 등으로 라벨링(룰+LLM) | `backend/internal/recon/classify/`, `endpoints.SetLabels` |
 | **#42** | **규제 점검항목 자동 매핑** — 의미 라벨 → KII/전자금융 CheckItem(정찰 기반) | `backend/internal/recon/regmap/`, `checklist.CheckItemsForLabel` |
+| **#43** | **정찰 UI** — 라벨 배지 고유색·접기·필터 + 규제 커버리지 공백 | `frontend/src/pages/Recon.tsx`, `regmap.SchemeReport.Gaps` |
 
 **#24 가 무엇을 바꿨나.** `NormalizePath` 가 숫자-only 세그먼트만 접어서, UUID·해시·날짜 경로가
 값마다 별도 노드로 쌓였다(트리 폭발 → 스캔 타겟·커버리지 오염). v2 는 세그먼트를
