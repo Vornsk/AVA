@@ -110,7 +110,55 @@ targets:
 ## 베이스라인
 
 <!-- BASELINE:START -->
-*(측정 대기 — 아래 "기록 방법" 참고)*
+
+### 2026-08-21 · 최초 측정
+
+- 커밋: `dd015a2` (브랜치 `seona`)
+- 환경: Go 1.26.5 windows/amd64 · 외부 도구 `sslscan` 미설치(해당 detector 는 스킵)
+- LLM 프로바이더 미설정 → `seeded+llm` 프로파일은 skip
+
+| 대상 | GT | 발견 | TP | FP | FN | 미분류 | P | R | F1 | FP율 | 소요 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `vulnapp` | 16 | 23 | 16 | 3 | 0 | 4 | 84.2% | 100.0% | 91.4% | 15.8% | 3m31s |
+| `vulnlab` | 8 | 10 | 8 | 2 | 0 | 0 | 80.0% | 100.0% | 88.9% | 20.0% | 50s |
+| **합산**¹ | 24 | 33 | 24 | 5 | 0 | 4 | **82.8%** | **100.0%** | **90.6%** | **17.2%** | — |
+
+¹ 합산은 하네스가 내는 값이 아니라 두 행의 TP·FP 를 더해 수기 계산한 것이다.
+`P = 24/(24+5) = 82.8%`, `R = 24/24 = 100%`.
+
+그 밖에: 전역(`vuln.sec-headers`) 27쌍은 채점 제외, 측정불가 1쌍(`/upload vuln.file-upload`
+— 담당 detector 가 파괴성이라 GT 분모에서 제외).
+
+**재현:**
+
+```bash
+cd backend && go run ./cmd/vulnapp &          # vulnlab 은 인프로세스라 준비 불필요
+cd backend && SCANBENCH_TIMEOUT=50m go test ./internal/scanengine/bench \
+  -run ScanBench -v -count=1 -timeout 90m
+```
+
+### 이 수치를 어떻게 읽을 것인가
+
+- **재현율 100%** — 정답 24쌍을 하나도 놓치지 않았다. 다만 정답셋이 **우리가 만든 앱 2종**이라
+  detector 가 이 앱들에 맞춰 개발된 면이 있다. 외부 앱을 넣기 전까지 재현율은 상한에 가깝게
+  나올 것으로 보는 게 맞다.
+- **오탐 5건이 전부 `reflected-input` 하나에서 나왔다.** 다른 12개 detector 의 FP 는 0이다.
+  → 오탐 문제는 "스캐너 전반"이 아니라 **한 detector 의 한 가지 결함**으로 좁혀졌다.
+- **`reflected-input` 자체의 오탐률은 절반이다** (vulnapp TP=4/FP=4, vulnlab TP=2/FP=2).
+  원인은 하나다 — **응답 Content-Type 을 보지 않는다.** `text/plain` 응답에 반사된 입력은
+  브라우저가 실행하지 않으므로 XSS 가 아닌데도 보고한다.
+  해당 5건: `/exec`·`/fetch`(vulnlab), `/transfer`·`/change-email`·`/download`(vulnapp).
+  전부 `curl -D-` 로 Content-Type 을 직접 확인했다.
+  **이걸 고치면 합산 P 가 82.8% → 100% 가 된다** — 다음 개선의 1순위이자, 이 벤치의 첫 성과다.
+
+### 남은 미분류 4건 (판단 보류)
+
+| 쌍 | 왜 보류인가 |
+|---|---|
+| `/download vuln.code-injection`<br>`/download vuln.ssrf` | vulnapp 이 `file` 값에 `passwd` 가 들어있기만 하면 무조건 passwd 를 뱉는다. 그래서 `;cat /etc/passwd`·`file:///etc/passwd` 페이로드에도 반응한다. **실제 LFI 앱이라면 그런 이름의 파일이 없어 안 나온다** → detector 결함이 아니라 테스트 앱 충실도 문제일 가능성이 크다. vulnapp 의 LFI 를 실제 경로 해석으로 바꾼 뒤 재판정할 것 |
+| `/transfer vuln.access-control`<br>`/transfer vuln.ssrf` | 아직 근거를 확보하지 못했다. 정탐인지 오탐인지 실측으로 가르기 전에는 정답셋에 넣지 않는다 |
+
+미분류를 근거 없이 `expect`/`not_expect` 로 옮기면 계기판이 아니라 자기충족 예언이 된다.
 <!-- BASELINE:END -->
 
 ### 기록 방법
