@@ -25,6 +25,17 @@ cd backend && go test ./internal/scanengine/bench -run ScanBench -v -count=1
 
 특정 정답셋만: `SCANBENCH_GT=../../../../docs/scan-groundtruth/vulnapp.yaml go test ... -count=1`
 폴더 변경: `SCANBENCH_GT_DIR=/path/to/dir`
+실행 예산: `SCANBENCH_TIMEOUT=50m` (기본 40m)
+
+### 오래 걸린다 — 그리고 잘리면 실패한다
+
+`vulnapp` 은 대상 21개 × detector 23종에 더해 `sqli-time` 이 **대상이 실제로 잠들기를 기다리고**,
+`idor`·`privesc` 가 신원 수만큼 요청을 곱한다. 십수 분 규모다. `go test -timeout` 도 넉넉히 줄 것.
+
+예산이 모자라면 **부분 결과로 채점하지 않고 테스트가 실패한다.** 이건 의도된 동작이다 —
+이 하네스의 초기 실행이 10분 타임아웃에 잘려 `csrf`·`cookie-security`·`http-method`·
+`dir-indexing` 이 통째로 빠진 채 `P=100%` 를 자신 있게 출력한 적이 있다.
+계기판이 조용히 절단되면 계기판이 아니라 거짓말이 된다.
 
 정답셋 자체의 스키마·참조 무결성은 대상 없이도 검사된다:
 

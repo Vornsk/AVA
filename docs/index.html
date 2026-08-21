@@ -674,6 +674,15 @@ nonexistent-bogus-xyz.js.map -&gt; code=200 type=text/html size=9393</code></pre
 <p>조회: <code>/api/scanruns</code> · <code>/api/detectors</code> · <code>/api/stats</code> · <code>/api/payloads</code> · <code>/api/endpoints</code></p>
 <h3>동작 메모</h3>
 <ul><li>스캔은 <strong>비동기</strong>입니다. 여러 run이 동시에 돌 수 있으니 finding 조회 전 <strong>모든 run이 '완료'인지</strong> 확인.</li><li><code>sqli-time</code>은 시간지연을 유발해 느립니다(2회 확증). 완료까지 대기 필요.</li></ul>
+<h3>스캔 품질 벤치 (이슈 #49)</h3>
+<p>detector 를 고치거나 추가할 때 <strong>"좋아졌다 / 회귀 없다"를 숫자로</strong> 말하기 위한 계기판입니다. 정찰 벤치(#22)가 정찰에 해준 것을 스캔에 합니다.</p>
+<pre><code>cd backend &amp;&amp; go test ./internal/scanengine/bench -run ScanBench -v -count=1</code></pre>
+<div class="callout info"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 11v5M12 8h.01"/></svg></span><p><code>-count=1</code> 을 꼭 붙이세요. 정답셋 YAML 이 패키지 밖에 있어 go test 캐시가 변경을 감지하지 못합니다 — 빼먹으면 YAML 을 고쳐도 이전 결과가 그대로 재출력됩니다.</p></div>
+<p><code>vulnlab</code> 은 <code>httptest</code> 로 인프로세스 기동돼 준비 없이 항상 채점됩니다. <code>vulnapp</code> 은 <code>go run ./cmd/vulnapp</code> 으로 띄워야 하고, 미기동이면 skip 됩니다.</p>
+<h4>무엇을 재는가</h4>
+<p>정답셋(<code>docs/scan-groundtruth/*.yaml</code>)의 대상으로 엔드포인트를 <strong>직접 시드</strong>하고 크롤은 돌리지 않습니다 — 정찰이 못 찾은 경로가 스캔의 FN 으로 잡혀 detector 탓이 되는 것을 막습니다.</p>
+<ul><li><strong>TP</strong> = <code>expect</code> 조합 발견 · <strong>FP</strong> = <code>not_expect</code>(정상 구현) 조합 발견</li><li><strong>미분류</strong> = 정답셋에 없는 발견. <strong>오탐으로 세지 않습니다</strong> — 정답셋을 넓히라는 작업 목록입니다</li><li><strong>측정불가</strong> = 담당 detector 가 파괴성 등으로 빠진 정답. GT 분모에서 제외합니다</li><li>detector 별 TP/FP 분해로 <strong>어느 탐지기가 오탐을 만드는지</strong> 지목합니다</li></ul>
+<p>수치와 채점 규칙 상세, 정답셋 작성법은 <a href="#sec-home" data-go="home"><code>docs/scan-groundtruth/README.md</code></a>.</p>
 <h3>관련 문서</h3>
 <ul><li>탐지기 25종 상세 → <a href="#sec-00" data-go="00">00-아키텍처 §3</a></li><li>도출된 취약점 검토 → <a href="#sec-05" data-go="05">05-취약점</a></li><li>LLM 판정 기록·룰 이관 → <a href="#sec-09" data-go="09">09-룰제안</a></li></ul>
   </section>
