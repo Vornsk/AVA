@@ -53,12 +53,15 @@ type JudgeInput struct {
 }
 
 // Verdict — LLM 판단 결과.
+// Prompt/PromptHash 는 FR-6.1(판단 로깅의 "모델/프롬프트버전")과 이슈 #53 감사 추적용.
 type Verdict struct {
 	Allow      bool    `json:"allow"`
 	Reason     string  `json:"reason"`
 	Confidence float64 `json:"confidence"`
 	Provider   string  `json:"provider"`
 	Model      string  `json:"model"`
+	Prompt     string  `json:"prompt,omitempty"`      // 판단 프롬프트 ID (strict|balanced|permissive|custom)
+	PromptHash string  `json:"prompt_hash,omitempty"` // 프롬프트 지문 — 캐시 키 구성요소
 }
 
 // Provider — LLM 프로바이더 추상화 (mock/anthropic/ollama/openai/… 교체 가능).
@@ -124,15 +127,19 @@ func Complete(ctx context.Context, system, user string) (string, error) {
 // ErrNoProvider — 활성 LLM 프로바이더가 없다.
 var ErrNoProvider = errors.New("활성 LLM 프로바이더 없음")
 
-func sig(in JudgeInput) string {
+// sig — 캐시 키. ★ 판단 프롬프트 지문을 포함한다 (이슈 #53).
+// 프롬프트가 프로젝트별로 달라진 이상 요청 시그니처만으론 부족하다 — 정책이 다른
+// 프로젝트의 판단이 전역 캐시를 통해 서로 오염된다. prompt.go 주석 참조.
+func sig(in JudgeInput, pol Policy) string {
 	keys := append([]string(nil), in.ParamKeys...)
 	sort.Strings(keys)
-	return in.Method + " " + in.Path + " [" + strings.Join(keys, ",") + "] " + in.ContentType
+	return pol.Hash + "|" + in.Method + " " + in.Path + " [" + strings.Join(keys, ",") + "] " + in.ContentType
 }
 
 // Judge — 캐시 확인 → 프로바이더 호출 → 로깅. 프로바이더 오류 시 가용성 위해 기본 허용.
 func Judge(ctx context.Context, in JudgeInput) Verdict {
-	key := sig(in)
+	pol := JudgePolicy()
+	key := sig(in, pol)
 
 	mu.Lock()
 	p := provider
@@ -147,7 +154,7 @@ func Judge(ctx context.Context, in JudgeInput) Verdict {
 	var v Verdict
 	if p == nil {
 		v = Verdict{Allow: true, Reason: "프로바이더 없음 — 기본 허용", Provider: "none"}
-	} else if content, err := p.Complete(ctx, sysPrompt, promptUser(in)); err != nil {
+	} else if content, err := p.Complete(ctx, pol.System, promptUser(in)); err != nil {
 		v = Verdict{Allow: true, Reason: "프로바이더 오류(" + err.Error() + ") — 가용성 위해 기본 허용", Provider: p.Name()}
 	} else {
 		var vj struct {
@@ -161,6 +168,7 @@ func Judge(ctx context.Context, in JudgeInput) Verdict {
 			v = Verdict{Allow: vj.Allow, Reason: vj.Reason, Confidence: normConf(vj.Confidence), Provider: p.Name()}
 		}
 	}
+	v.Prompt, v.PromptHash = pol.ID, pol.Hash // 어떤 정책의 판단인지 로그·감사에 남긴다
 
 	mu.Lock()
 	cache[key] = v

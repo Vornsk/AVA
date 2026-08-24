@@ -9,7 +9,9 @@ import (
 
 // MockProvider — 오프라인 기본 프로바이더 (API 키 불필요).
 // 실제 LLM 대신 결정론적 휴리스틱으로 응답을 흉내낸다.
-// system 프롬프트로 작업을 구분: "gatekeeper"=판단, "triage"=오탐검토.
+// system 프롬프트로 작업을 구분: 판단 verdict 계약=판단, "endpoint-classifier"=의미분류, "triage"=오탐검토.
+// 판단을 먼저 확인하는 이유: 판단 프롬프트가 프리셋·커스텀으로 바뀔 수 있어(이슈 #53)
+// 문구 키워드 대신 고정된 출력 계약(verdictContract)으로 식별해야 오라우팅이 없다.
 type MockProvider struct{}
 
 func (MockProvider) Name() string { return "mock" }
@@ -20,8 +22,9 @@ var mockRiskyParams = map[string]bool{
 }
 
 func (MockProvider) Complete(_ context.Context, system, user string) (string, error) {
+	judgeTask := strings.Contains(system, verdictContract)
 	// 엔드포인트 의미 분류 (이슈 #41) — 경로·키 키워드로 라벨 흉내 (실제 LLM 대체 데모).
-	if strings.Contains(system, "endpoint-classifier") {
+	if !judgeTask && strings.Contains(system, "endpoint-classifier") {
 		low := strings.ToLower(user)
 		var labels []string
 		add := func(cond bool, l string) {
@@ -50,7 +53,7 @@ func (MockProvider) Complete(_ context.Context, system, user string) (string, er
 		return string(b), nil
 	}
 	// 오탐 검토(Review) — 응답 증적으로 휴리스틱 판정 (실제 LLM 대체 데모)
-	if strings.Contains(system, "triage") {
+	if !judgeTask && strings.Contains(system, "triage") {
 		low := strings.ToLower(user)
 		verdict := "uncertain"
 		switch {

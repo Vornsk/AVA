@@ -38,11 +38,6 @@ func NewAnthropic(apiKey, model, endpoint string) *AnthropicProvider {
 
 func (a *AnthropicProvider) Name() string { return "anthropic" }
 
-const sysPrompt = "You are a security proxy gatekeeper for an authorized vulnerability assessment. " +
-	"Given a token-minimized HTTP request descriptor (no bodies/values), decide whether forwarding it " +
-	"is safe for the TARGET's availability (avoid destructive/irreversible actions). " +
-	"Reply with ONLY compact JSON: {\"allow\":boolean,\"reason\":string,\"confidence\":number}."
-
 func (a *AnthropicProvider) Complete(ctx context.Context, system, user string) (string, error) {
 	body, _ := json.Marshal(map[string]any{
 		"model":       a.Model,
