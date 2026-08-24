@@ -61,6 +61,13 @@ func main() {
 	rules.Load(project.Rules)
 	rules.SetReconAllow(project.ReconAllow) // recon 허용 경로를 guardrail 앞에 (접근통제 점검)
 	rules.LoadAdopted()                     // HITL로 승인·채택된 룰 복원 (rules.adopted.json)
+	// 판단 프롬프트 정책의 기본값 (이슈 #53). 프로젝트가 자기 값을 가지면 활성화 시 덮어쓴다.
+	basePolicy, policyErr := llm.ResolvePolicy(project.JudgePrompt, project.JudgePromptCustom)
+	if policyErr != nil {
+		log.Printf("판단 프롬프트 설정 경고: %v", policyErr)
+	}
+	llm.SetBasePolicy(basePolicy)
+	log.Printf("판단 프롬프트(기본): %s", basePolicy)
 	auth.Set(project.Auth)
 	auth.SetIdentities(toIdentities(project.Identities)) // 다중 신원 (FR-3.6)
 	auth.SetLogin(project.Login)                         // 세션 만료 시 자동 재로그인 (FR-2.5)
@@ -125,11 +132,17 @@ func main() {
 			Name:  name, MainURL: "https://" + name,
 			Scope: project.Scope, AllowPaths: project.AllowPaths,
 			ExcludePaths: project.ExcludePaths, Schemes: project.Schemes,
+			JudgePrompt: project.JudgePrompt, JudgePromptCustom: project.JudgePromptCustom, // 이슈 #53
 		})
 		log.Printf("기본 프로젝트 생성: %s (%s, owner=%s)", p.ID, p.Name, ownerID)
 	}
 	if ap, ok := projects.Active(); ok {
-		log.Printf("활성 프로젝트: %s (%s)", ap.ID, ap.Name)
+		// 활성 프로젝트의 판단 프롬프트 정책 적용 (이슈 #53). 비면 위의 기본 정책 유지.
+		pol, err := llm.ApplyProject(ap.JudgePrompt, ap.JudgePromptCustom)
+		if err != nil {
+			log.Printf("판단 프롬프트 경고(%s): %v", ap.ID, err)
+		}
+		log.Printf("활성 프로젝트: %s (%s, 판단 프롬프트 %s)", ap.ID, ap.Name, pol)
 	}
 
 	// 도출 항목·공격면·스캔 이력 복원 (재시작 시 유지).

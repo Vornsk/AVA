@@ -1,6 +1,7 @@
 package advisor
 
 import (
+	"strings"
 	"testing"
 
 	"proxypoc/internal/llm"
@@ -53,5 +54,35 @@ func TestInconsistentExcludedOrWarned(t *testing.T) {
 	cands := Analyze(decisions, 2, 0.5)
 	if len(cands) != 1 || cands[0].Warning == "" {
 		t.Errorf("낮은 임계: 후보+경고 기대, got %+v", cands)
+	}
+}
+
+// 이슈 #53 — 보수성이 다른 판단 정책의 판정이 한 시그니처에 섞이면 경고해야 한다.
+// 채택된 룰은 프로젝트 공용이라, 그대로 이관하면 한 프로젝트의 정책이 전체로 샌다.
+func TestMixedJudgePromptWarns(t *testing.T) {
+	mk := func(prompt string, allow bool) llm.Decision {
+		return llm.Decision{
+			Input:   llm.JudgeInput{Method: "POST", Path: "/pay", ContentType: "application/json"},
+			Verdict: llm.Verdict{Allow: allow, Confidence: 0.9, Prompt: prompt},
+		}
+	}
+	// 같은 정책 3건 → 프롬프트 경고 없음
+	same := Analyze([]llm.Decision{mk("strict", false), mk("strict", false), mk("strict", false)}, 2, 0.7)
+	if len(same) != 1 {
+		t.Fatalf("후보 %d개, want 1", len(same))
+	}
+	if strings.Contains(same[0].Warning, "프롬프트 정책 혼재") {
+		t.Errorf("단일 정책인데 혼재 경고: %q", same[0].Warning)
+	}
+	// strict 2건 + permissive 1건 → 혼재 경고
+	mixed := Analyze([]llm.Decision{mk("strict", false), mk("strict", false), mk("permissive", false)}, 2, 0.7)
+	if len(mixed) != 1 {
+		t.Fatalf("후보 %d개, want 1", len(mixed))
+	}
+	if !strings.Contains(mixed[0].Warning, "프롬프트 정책 혼재") {
+		t.Errorf("혼재인데 경고 없음: %q", mixed[0].Warning)
+	}
+	if !strings.Contains(mixed[0].Warning, "permissive") || !strings.Contains(mixed[0].Warning, "strict") {
+		t.Errorf("경고에 정책 ID 누락: %q", mixed[0].Warning)
 	}
 }
