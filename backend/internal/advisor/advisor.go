@@ -69,6 +69,7 @@ func analyzeLang(decisions []llm.Decision, minHits int, minConsistency float64, 
 		var confSum float64
 		samples := make([]int, 0, hits)
 		models := map[string]bool{}
+		prompts := map[string]bool{} // 판단 프롬프트 정책 (이슈 #53)
 		for _, d := range ds {
 			if d.Verdict.Allow {
 				allow++
@@ -78,6 +79,7 @@ func analyzeLang(decisions []llm.Decision, minHits int, minConsistency float64, 
 			confSum += d.Verdict.Confidence
 			samples = append(samples, d.ID)
 			models[d.Verdict.Model] = true
+			prompts[d.Verdict.Prompt] = true
 		}
 		maj, verdict := block, "block"
 		if allow > block {
@@ -118,6 +120,9 @@ func analyzeLang(decisions []llm.Decision, minHits int, minConsistency float64, 
 		}
 		if len(models) > 1 {
 			warns = append(warns, warnMixedModel(lang))
+		}
+		if len(prompts) > 1 { // 보수성이 다른 정책의 판정이 섞였다 — 룰은 전역이라 그대로 이관하면 안 된다 (이슈 #53)
+			warns = append(warns, warnMixedPrompt(lang, sortedKeys(prompts)))
 		}
 		if c.AvgConfidence < 0.7 {
 			warns = append(warns, warnLowConf(lang, c.AvgConfidence))
@@ -165,6 +170,27 @@ func warnMixedModel(lang string) string {
 		return "Mixed model versions — re-verify stability"
 	}
 	return "모델 버전 혼재 — 안정성 재확인"
+}
+
+// warnMixedPrompt — 서로 다른 판단 프롬프트 정책의 판정이 한 시그니처에 섞였을 때 (이슈 #53).
+// 채택된 룰은 프로젝트 공용이므로, 보수성이 다른 정책의 판정을 뭉쳐 이관하면 정책이 조용히 새어나간다.
+func warnMixedPrompt(lang string, ids []string) string {
+	if lang == "en" {
+		return "Mixed judgment prompt policies (" + strings.Join(ids, ", ") + ") — rules are global; re-verify under one policy"
+	}
+	return "판단 프롬프트 정책 혼재(" + strings.Join(ids, ", ") + ") — 룰은 전역이므로 한 정책으로 재확인 필요"
+}
+
+func sortedKeys(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		if k == "" {
+			k = "unknown"
+		}
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func warnLowConf(lang string, avg float64) string {

@@ -128,6 +128,7 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/detectors", jsonHandler(func() any { return detector.Catalog() }))
 	mux.HandleFunc("/api/payloads", jsonHandler(func() any { return payload.Info() }))
 	mux.HandleFunc("/api/llm-decisions", jsonHandler(func() any { return llm.Decisions() }))
+	mux.HandleFunc("/api/judge-prompt", judgePromptHandler) // GET 현재 정책·프리셋 / POST 변경(llm:policy, 리더) — 이슈 #53
 	mux.HandleFunc("/api/rule-candidates", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, advisor.CandidatesLang(langOf(r))) }) // X-Lang 반영(#18)
 	mux.HandleFunc("/api/rules/adopt", ruleAdoptHandler)                                                                                     // POST: 추천 후보를 활성 룰로 채택(rule:promote)
 	mux.HandleFunc("/api/checkitems", jsonHandler(func() any { return checklist.Current().CheckItems }))
@@ -727,10 +728,12 @@ func itoa(n int) string { return strconv.Itoa(n) }
 func projectsHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodPost {
 		var in struct {
-			Name    string   `json:"name"`
-			MainURL string   `json:"main_url"`
-			Scope   []string `json:"scope"`
-			Schemes []string `json:"schemes"`
+			Name              string   `json:"name"`
+			MainURL           string   `json:"main_url"`
+			Scope             []string `json:"scope"`
+			Schemes           []string `json:"schemes"`
+			JudgePrompt       string   `json:"judge_prompt"`        // 이슈 #53
+			JudgePromptCustom string   `json:"judge_prompt_custom"` // 이슈 #53
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Name == "" {
 			http.Error(w, "name 필요", http.StatusBadRequest)
@@ -744,7 +747,12 @@ func projectsHandler(w http.ResponseWriter, r *http.Request) {
 		if mainURL == "" && len(in.Scope) > 0 {
 			mainURL = "https://" + in.Scope[0]
 		}
-		p := project.Create(project.Project{Owner: u.ID, Name: in.Name, MainURL: mainURL, Scope: in.Scope, Schemes: in.Schemes})
+		if _, err := llm.ResolvePolicy(in.JudgePrompt, in.JudgePromptCustom); err != nil { // 잘못된 정책은 생성 단계에서 거른다
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		p := project.Create(project.Project{Owner: u.ID, Name: in.Name, MainURL: mainURL, Scope: in.Scope, Schemes: in.Schemes,
+			JudgePrompt: in.JudgePrompt, JudgePromptCustom: in.JudgePromptCustom})
 		audit.Record(u.Name, string(u.Role), "project:create", p.ID, "ok", p.Name)
 		log.Printf("[WEB ] %s(%s) create_project %s (%s)", u.Name, u.Role, p.ID, p.Name)
 		writeJSON(w, p)
@@ -1068,9 +1076,77 @@ func activateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	checklist.SetSelected(schemes)
 	applyCredentials(p.ID) // 암호화 인증정보 복호화·주입 (§5.1 FR-1.4)
-	audit.Record(u.Name, string(u.Role), "project:activate", p.ID, "ok", p.Name)
-	log.Printf("[WEB ] %s(%s) activate_project %s (%s)", u.Name, u.Role, p.ID, p.Name)
+	// 판단 프롬프트 정책 전환 (이슈 #53). 프로젝트가 미지정이면 기동 시 기본 정책으로 되돌아간다.
+	pol, polErr := llm.ApplyProject(p.JudgePrompt, p.JudgePromptCustom)
+	if polErr != nil {
+		log.Printf("[WEB ] 판단 프롬프트 경고(%s): %v", p.ID, polErr)
+	}
+	audit.Record(u.Name, string(u.Role), "project:activate", p.ID, "ok", p.Name+" judge_prompt="+pol.String())
+	log.Printf("[WEB ] %s(%s) activate_project %s (%s, 판단 프롬프트 %s)", u.Name, u.Role, p.ID, p.Name, pol)
 	writeJSON(w, p)
+}
+
+// judgePromptHandler — 판단 프롬프트 정책 조회/변경 (이슈 #53).
+//
+//	GET  현재 활성 정책 + 기본 정책 + 선택 가능한 프리셋.
+//	POST {preset, custom} 로 변경 (llm:policy, 리더 전용). 활성 프로젝트가 있으면 그 프로젝트에
+//	     영속화해 다음 기동·재활성화에도 유지된다. 둘 다 비우면 기본 정책으로 되돌린다.
+func judgePromptHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var in struct {
+			Preset string `json:"preset"`
+			Custom string `json:"custom"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		u, ok := authorize(w, r, "llm:policy", "judge-prompt")
+		if !ok {
+			return
+		}
+		pol, err := llm.ResolvePolicy(in.Preset, in.Custom)
+		if err != nil { // 잘못된 프리셋·과길이 커스텀은 조용히 폴백하지 않고 거절한다
+			audit.Record(u.Name, string(u.Role), "llm:judge_prompt", "judge-prompt", "denied", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		target := "process"
+		if ap, ok := project.Active(); ok {
+			project.Update(ap.ID, func(p *project.Project) {
+				p.JudgePrompt, p.JudgePromptCustom = in.Preset, in.Custom
+			})
+			target = ap.ID
+		}
+		llm.SetJudgePolicy(pol)
+		audit.Record(u.Name, string(u.Role), "llm:judge_prompt", target, "ok", "judge_prompt="+pol.String())
+		log.Printf("[WEB ] %s(%s) judge_prompt %s → %s", u.Name, u.Role, target, pol)
+		writeJSON(w, judgePromptView())
+		return
+	}
+	writeJSON(w, judgePromptView())
+}
+
+// judgePromptView — 판단 프롬프트 정책 화면 표현. system 프롬프트는 비밀이 아니라 그대로 노출한다.
+func judgePromptView() map[string]any {
+	presets := make([]llm.Policy, 0, len(llm.Presets()))
+	for _, id := range llm.Presets() {
+		if pol, err := llm.ResolvePolicy(id, ""); err == nil {
+			presets = append(presets, pol)
+		}
+	}
+	view := map[string]any{
+		"active":         llm.JudgePolicy(),
+		"base":           llm.BasePolicy(),
+		"presets":        presets,
+		"max_custom_len": llm.MaxCustomLen,
+	}
+	if ap, ok := project.Active(); ok {
+		view["project"] = ap.ID
+		view["project_preset"] = ap.JudgePrompt
+		view["project_custom"] = ap.JudgePromptCustom
+	}
+	return view
 }
 
 // applyCredentials — 프로젝트 인증정보 복호화 후 auth 엔진 주입 (§5.1 FR-1.4 / FR-2.5 / FR-3.6).

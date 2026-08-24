@@ -66,6 +66,21 @@
 >   `GET /api/endpoints/tree`·`GET /api/endpoints/detail` 신설 → **라우트 60 → 62**(`webui` LOC → 1,148).
 >   `endpoints` 모델에 발견 시각(`first_seen`/`last_seen`) 추가·영속화. 정찰 페이지에 필터바 + 상세 드릴다운.
 
+> **갱신 3 (이슈 #53 · 판단 프롬프트 선택형):** 판단(Judge) system 프롬프트가 `anthropic.go` 의
+> 상수 하나였다 → 프리셋(`strict`/`balanced`/`permissive`) + 커스텀 선택형.
+>
+> - `llm/prompt.go` 신설(정책 해석·프리셋·지문). `sysPrompt` 상수는 `anthropic.go` 에서 사라졌다.
+> - **캐시 키가 바뀌었다.** `llm.sig(in)` → `sig(in, pol)` — 키 앞에 프롬프트 지문(sha256 앞 8자리)이
+>   붙는다. 프롬프트가 상수가 아니게 되면 요청 시그니처만으로 만든 캐시는 서로 다른 정책의
+>   판단을 섞는다(프로젝트 전환 시 전역 `cache` 재사용). §4 미해결 목록과 별개인 신규 방어다.
+> - `Verdict` 에 `prompt`/`prompt_hash` 추가 → `/api/llm-decisions` 응답과 룰 제안 화면에 노출(FR-6.1).
+> - **라우트 +1** (`GET/POST /api/judge-prompt` — `llm:policy` 리더·감사). 권한 `llm:policy` 신설.
+>   재현: `grep -c 'mux.HandleFunc' backend/internal/webui/webui.go` → **68**(+`mux.Handle` 1 = 69).
+> - 설정: `project.config.yaml` 의 `judge_prompt`/`judge_prompt_custom`(기본값) + `Project` 엔티티의
+>   동명 필드(활성화 시 전환·영속). **미설정이면 `balanced` = 종전 하드코딩 프롬프트와 바이트 동일.**
+> - 테스트: `llm/prompt_test.go`(8건, 캐시 격리 회귀 포함) · `webui/judge_prompt_test.go`(4건)
+>   → `webui` 테스트 파일 **2개 → 3개**.
+
 ---
 
 ## 1. 디렉터리 구조와 각 최상위 폴더의 역할

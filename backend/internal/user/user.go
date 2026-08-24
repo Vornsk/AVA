@@ -43,6 +43,7 @@ var perms = map[string][]Role{
 	"finding:clear":       {RoleLeader}, // 도출 항목 전체 초기화 — 파괴적, 리더 전용
 	"user:manage":         {RoleLeader},
 	"proxy:control":       {RoleLeader}, // 공용 프록시 캡처 on/off — 리더 전용 (이슈 #5)
+	"llm:policy":          {RoleLeader}, // 판단 프롬프트 정책 변경 — 리더 전용 (이슈 #53)
 }
 
 // Can — 역할이 액션을 수행할 수 있는가.

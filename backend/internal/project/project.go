@@ -28,6 +28,9 @@ type Project struct {
 	AllowPaths   []string `json:"allow_paths,omitempty"`
 	ExcludePaths []string `json:"exclude_paths,omitempty"`
 	Schemes      []string `json:"schemes,omitempty"` // 선택된 탭 (§6)
+	// 판단(LLM) 프롬프트 정책 (이슈 #53). 프로젝트 활성화 시 적용. 비면 기동 시 기본 정책.
+	JudgePrompt       string `json:"judge_prompt,omitempty"`        // strict | balanced | permissive
+	JudgePromptCustom string `json:"judge_prompt_custom,omitempty"` // 지정 시 프리셋보다 우선
 	Created      string   `json:"created"`
 	Modified     string   `json:"modified"`
 	DeletedAt    string   `json:"deleted_at,omitempty"` // 소프트 삭제 시각(RFC3339). 빈 값=정상 (이슈 #14)

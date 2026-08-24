@@ -48,6 +48,9 @@ type Project struct {
 	ExcludePaths []string               `yaml:"exclude_paths"` // 경로 제외(정규식). 허용보다 우선 (FR-2.1)
 	ReconAllow   []string               `yaml:"recon_allow"`   // recon(GET/HEAD) 허용 경로(정규식). guardrail보다 우선 (접근통제 점검)
 	Stages       []string               `yaml:"stages"`        // 판단 스테이지 구성/순서 (FR-2.2): rule, llm
+	// 판단(LLM) 프롬프트 정책 (이슈 #53). 미설정이면 balanced = 종전 하드코딩 프롬프트.
+	JudgePrompt       string `yaml:"judge_prompt"`        // strict | balanced | permissive
+	JudgePromptCustom string `yaml:"judge_prompt_custom"` // 지정 시 프리셋보다 우선. 출력 계약은 자동 부착
 	Rules        []rules.Rule           `yaml:"rules"`         // 전송 전 Rule 스테이지 룰셋
 	Auth         auth.Config            `yaml:"auth"`          // 인증 크롤링 주입정보 (FR-2.5; 제품은 서버 암호화)
 	Login        auth.LoginSeq          `yaml:"login"`         // 세션 만료 시 자동 재로그인 절차 (FR-2.5 세션 지속성)
