@@ -32,19 +32,20 @@ func NewAnthropic(apiKey, model, endpoint string) *AnthropicProvider {
 		APIKey:   apiKey,
 		Model:    model,
 		Endpoint: endpoint,
-		client:   &http.Client{Timeout: 20 * time.Second},
+		client:   &http.Client{Timeout: 60 * time.Second},
 	}
 }
 
 func (a *AnthropicProvider) Name() string { return "anthropic" }
 
 func (a *AnthropicProvider) Complete(ctx context.Context, system, user string) (string, error) {
+	// sampling 파라미터(temperature/top_p/top_k)는 Opus 4.7 이후 모델에서 제거돼
+	// 전송하면 400이 된다. 결정론성은 llm.Judge의 시그니처 캐시가 담당한다.
 	body, _ := json.Marshal(map[string]any{
-		"model":       a.Model,
-		"max_tokens":  300,
-		"temperature": 0,
-		"system":      system,
-		"messages":    []any{map[string]any{"role": "user", "content": user}},
+		"model":      a.Model,
+		"max_tokens": 2048,
+		"system":     system,
+		"messages":   []any{map[string]any{"role": "user", "content": user}},
 	})
 
 	req, err := http.NewRequestWithContext(ctx, "POST", a.Endpoint, bytes.NewReader(body))
@@ -67,14 +68,18 @@ func (a *AnthropicProvider) Complete(ctx context.Context, system, user string) (
 
 	var out struct {
 		Content []struct {
+			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
 	}
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return "", err
 	}
-	if len(out.Content) > 0 {
-		return out.Content[0].Text, nil
+	// thinking이 켜진 모델은 첫 블록이 thinking이다. text 블록만 고른다.
+	for _, c := range out.Content {
+		if c.Type == "text" && strings.TrimSpace(c.Text) != "" {
+			return c.Text, nil
+		}
 	}
 	return "", nil
 }

@@ -99,3 +99,7 @@ Thumbs.db
 *.log
 tmp/
 .tmp/
+# ── 로컬 전용 도구 설정 / 백업 ────────────────────────────────────────
+# .mcp.json 은 MCP 포트가 local.config.yaml(커밋 제외) 기준이라 PC마다 다르다.
+.mcp.json
+*.bak

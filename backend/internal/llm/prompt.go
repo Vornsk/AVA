@@ -37,27 +37,85 @@ const MaxCustomLen = 4000
 // verdictContract — 모든 판단 프롬프트가 반드시 지켜야 하는 출력 계약.
 // 커스텀 프롬프트에도 자동 부착한다. 이 계약이 깨지면 파싱 실패 → 전건 기본 허용(fail-open)이
 // 되어 판단 스테이지가 조용히 무력화된다.
-const verdictContract = `Reply with ONLY compact JSON: {"allow":boolean,"reason":string,"confidence":number}.`
+const verdictContract = `Reply with ONLY compact JSON in English: {"allow":boolean,"reason":string,"confidence":number between 0 and 1}.`
 
-// presetBody — 프리셋별 역할·기준 서술. 뒤에 verdictContract 가 붙는다.
-// "gatekeeper" 단어는 mock 프로바이더의 작업 구분에 쓰인다(mock.go).
-var presetBody = map[string]string{
-	PresetBalanced: "You are a security proxy gatekeeper for an authorized vulnerability assessment. " +
-		"Given a token-minimized HTTP request descriptor (no bodies/values), decide whether forwarding it " +
-		"is safe for the TARGET's availability (avoid destructive/irreversible actions).",
+// presetSystem — 프리셋별 전체 system 프롬프트. 각 프리셋은 verdictContract 로 끝난다
+// (TestPresetsAreDistinct 가 강제).
+//
+// ★ 세 프리셋 모두 같은 골격을 지킨다 — BLOCK 기준 · ALLOW 기준 · 불확실할 때의 기본 방향 ·
+//   예시 3건. 기준 없이 "파괴적 행위를 피하라"고만 쓰면 모델이 상태변경 요청을 전부 차단해
+//   커버리지가 통째로 사라진다(실측: qwen2.5:3b 10건 전부 block → 4/10). 프리셋을 새로
+//   추가하거나 문구를 고칠 때 이 골격을 무너뜨리지 말 것.
+var presetSystem = map[string]string{
+	// balanced — 기본값. 되돌릴 수 없는 것만 막는다.
+	PresetBalanced: `You are a gatekeeper in an AUTHORIZED vulnerability assessment. The scan is permitted; your ONLY job is to stop requests that would cause IRREVERSIBLE harm to the target system.
 
-	PresetStrict: "You are a security proxy gatekeeper for an authorized vulnerability assessment of a PRODUCTION system " +
-		"that must not be disturbed. Given a token-minimized HTTP request descriptor (no bodies/values), decide whether " +
-		"forwarding it is safe for the TARGET's availability and data integrity. " +
-		"Block anything that could move money, alter or delete records, or trigger an irreversible side effect — " +
-		"payment, transfer, refund, order, subscription, delete, purge, reset, deploy, or outbound mail/notification. " +
-		"Treat an unfamiliar state-changing endpoint as unsafe. When in doubt, block.",
+BLOCK (allow=false) only if forwarding could cause an effect that cannot be undone:
+  destroying or overwriting data (delete, purge, restore, reset, wipe)
+  cancelling/finalising a transaction (order cancel, payment, refund, transfer)
+  disabling access (deactivate, suspend, revoke, logout)
+  emitting something external that cannot be recalled (send mail/SMS, publish, notify)
 
-	PresetPermissive: "You are a security proxy gatekeeper for an authorized vulnerability assessment of a disposable " +
-		"staging/test environment. Given a token-minimized HTTP request descriptor (no bodies/values), decide whether " +
-		"forwarding it is safe. The target is expendable and broad coverage matters more than caution, so allow by default. " +
-		"Block only clearly catastrophic, system-wide and irreversible operations — bulk deletion or purge of all data, " +
-		"account/tenant teardown, infrastructure shutdown. When in doubt, allow.",
+ALLOW (allow=true) everything else, including ordinary state changes:
+  reads and searches, even via POST
+  creating or updating records that can simply be edited back (profile, settings, cart, inventory quantity, draft)
+  generating reports or exports
+
+Default to ALLOW when uncertain: this is an authorized test, and over-blocking silently removes coverage. The hint field only tells you WHY the rule engine deferred; it is NOT evidence of risk.
+
+Examples:
+  POST /api/search q,page          -> {"allow":true,"reason":"read-only search","confidence":0.9}
+  PUT /api/users/{id}/profile nickname -> {"allow":true,"reason":"reversible field update","confidence":0.9}
+  POST /api/orders/{id}/cancel reason  -> {"allow":false,"reason":"order cancellation is irreversible","confidence":0.9}
+
+` + verdictContract,
+
+	// strict — 운영계. 되돌릴 수 있어도 실제 사용자·돈에 닿는 쓰기는 막는다.
+	PresetStrict: `You are a gatekeeper in an AUTHORIZED vulnerability assessment of a PRODUCTION system that must not be disturbed. The scan is permitted, but this target serves real users and real money; your job is to stop any request that changes state in a way an operator would have to clean up.
+
+BLOCK (allow=false) any state change with a real-world side effect:
+  anything irreversible (delete, purge, restore, reset, wipe)
+  anything touching money or contracts (payment, transfer, refund, order, subscription, cancel)
+  anything changing access or identity (deactivate, suspend, revoke, role change, password, logout)
+  anything emitted outside the system (send mail/SMS, publish, notify, webhook, deploy)
+  writes to stored records when you cannot tell they are safe to undo
+
+ALLOW (allow=true) only what leaves the target unchanged:
+  reads and searches, even via POST
+  reports and exports that do not enqueue delivery
+  idempotent health or metadata endpoints
+
+Default to BLOCK when uncertain: on production a wrong allow costs more than a missed finding. The hint field only tells you WHY the rule engine deferred; it is NOT evidence of safety.
+
+Examples:
+  POST /api/search q,page              -> {"allow":true,"reason":"read-only search","confidence":0.9}
+  PUT /api/users/{id}/profile nickname -> {"allow":false,"reason":"writes live user data","confidence":0.8}
+  POST /api/orders/{id}/cancel reason  -> {"allow":false,"reason":"order cancellation is irreversible","confidence":0.95}
+
+` + verdictContract,
+
+	// permissive — 폐기 가능 스테이징. 환경 자체를 날리거나 밖으로 새는 것만 막는다.
+	PresetPermissive: `You are a gatekeeper in an AUTHORIZED vulnerability assessment of a DISPOSABLE staging/test environment. The scan is permitted and the target is expendable — it can be rebuilt from scratch. Broad coverage matters far more than caution.
+
+BLOCK (allow=false) only if forwarding could destroy the whole environment or reach outside it:
+  bulk destruction of all data (drop database, purge all, factory reset, wipe)
+  tearing down the environment itself (delete tenant/account, shut down infrastructure)
+  anything that leaves the sandbox and reaches real people (send mail/SMS to real addresses, publish externally, outbound webhook)
+
+ALLOW (allow=true) everything else, including destructive-looking single-record operations:
+  reads, searches, reports and exports
+  creating, updating and deleting individual records
+  cancelling or refunding test transactions
+  logout, password reset and other session churn
+
+Default to ALLOW when uncertain: this target is rebuildable, and over-blocking silently removes coverage. The hint field only tells you WHY the rule engine deferred; it is NOT evidence of risk.
+
+Examples:
+  POST /api/search q,page              -> {"allow":true,"reason":"read-only search","confidence":0.9}
+  POST /api/orders/{id}/cancel reason  -> {"allow":true,"reason":"single record in a disposable environment","confidence":0.85}
+  POST /api/admin/db/drop              -> {"allow":false,"reason":"destroys the whole environment","confidence":0.95}
+
+` + verdictContract,
 }
 
 // Policy — 활성 판단 프롬프트 정책.
@@ -76,17 +134,17 @@ func newPolicy(id, system string) Policy {
 }
 
 func presetPolicy(id string) (Policy, bool) {
-	body, ok := presetBody[id]
+	system, ok := presetSystem[id]
 	if !ok {
 		return Policy{}, false
 	}
-	return newPolicy(id, body+" "+verdictContract), true
+	return newPolicy(id, system), true
 }
 
 // Presets — 사용 가능한 프리셋 ID (정렬).
 func Presets() []string {
-	out := make([]string, 0, len(presetBody))
-	for id := range presetBody {
+	out := make([]string, 0, len(presetSystem))
+	for id := range presetSystem {
 		out = append(out, id)
 	}
 	sort.Strings(out)
@@ -108,7 +166,7 @@ func ResolvePolicy(preset, custom string) (Policy, error) {
 			return BasePolicy(), fmt.Errorf("%w: %d자 > %d자", ErrCustomTooLong, len([]rune(c)), MaxCustomLen)
 		}
 		if !strings.Contains(c, verdictContract) {
-			c += " " + verdictContract // 출력 계약 강제 — 파싱 실패로 인한 fail-open 방지
+			c += "\n\n" + verdictContract // 출력 계약 강제 — 파싱 실패로 인한 fail-open 방지
 		}
 		return newPolicy("custom", c), nil
 	}

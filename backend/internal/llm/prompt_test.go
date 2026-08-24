@@ -20,7 +20,7 @@ func (r *recorder) Complete(_ context.Context, system, _ string) (string, error)
 	r.mu.Lock()
 	r.systems = append(r.systems, system)
 	r.mu.Unlock()
-	if strings.Contains(system, "When in doubt, block") {
+	if strings.Contains(system, "Default to BLOCK when uncertain") {
 		return `{"allow":false,"reason":"strict","confidence":0.9}`, nil
 	}
 	return `{"allow":true,"reason":"loose","confidence":0.5}`, nil
@@ -39,13 +39,33 @@ func restorePolicy(t *testing.T) {
 	t.Cleanup(func() { SetBasePolicy(b); SetJudgePolicy(a) })
 }
 
-// 미설정(balanced) 프롬프트가 이슈 #53 이전 하드코딩 상수와 바이트 단위로 같아야 한다.
-// 하위호환의 핵심 — 설정을 안 건드린 사용자는 판단 결과가 달라지면 안 된다.
+// 미설정(balanced) 프롬프트가 이슈 #53 이전 anthropic.go 의 sysPrompt 상수와 바이트 단위로
+// 같아야 한다. 하위호환의 핵심 — 설정을 안 건드린 사용자는 판단 결과가 달라지면 안 된다.
+//
+// 이 상수는 main 의 e317d97 "판단 프롬프트에 허용 기준 명시" 로 교정된 문구다(10케이스 실측
+// qwen2.5:3b 4/10 → 9/10). 프리셋으로 옮기면서 이 교정이 되돌아가면 커버리지가 통째로 사라진다.
 func TestBalancedPresetIsLegacyPrompt(t *testing.T) {
-	const legacy = "You are a security proxy gatekeeper for an authorized vulnerability assessment. " +
-		"Given a token-minimized HTTP request descriptor (no bodies/values), decide whether forwarding it " +
-		"is safe for the TARGET's availability (avoid destructive/irreversible actions). " +
-		"Reply with ONLY compact JSON: {\"allow\":boolean,\"reason\":string,\"confidence\":number}."
+	const legacy = `You are a gatekeeper in an AUTHORIZED vulnerability assessment. The scan is permitted; your ONLY job is to stop requests that would cause IRREVERSIBLE harm to the target system.
+
+BLOCK (allow=false) only if forwarding could cause an effect that cannot be undone:
+  destroying or overwriting data (delete, purge, restore, reset, wipe)
+  cancelling/finalising a transaction (order cancel, payment, refund, transfer)
+  disabling access (deactivate, suspend, revoke, logout)
+  emitting something external that cannot be recalled (send mail/SMS, publish, notify)
+
+ALLOW (allow=true) everything else, including ordinary state changes:
+  reads and searches, even via POST
+  creating or updating records that can simply be edited back (profile, settings, cart, inventory quantity, draft)
+  generating reports or exports
+
+Default to ALLOW when uncertain: this is an authorized test, and over-blocking silently removes coverage. The hint field only tells you WHY the rule engine deferred; it is NOT evidence of risk.
+
+Examples:
+  POST /api/search q,page          -> {"allow":true,"reason":"read-only search","confidence":0.9}
+  PUT /api/users/{id}/profile nickname -> {"allow":true,"reason":"reversible field update","confidence":0.9}
+  POST /api/orders/{id}/cancel reason  -> {"allow":false,"reason":"order cancellation is irreversible","confidence":0.9}
+
+Reply with ONLY compact JSON in English: {"allow":boolean,"reason":string,"confidence":number between 0 and 1}.`
 
 	pol, ok := presetPolicy(PresetBalanced)
 	if !ok {
@@ -53,6 +73,23 @@ func TestBalancedPresetIsLegacyPrompt(t *testing.T) {
 	}
 	if pol.System != legacy {
 		t.Errorf("balanced 프롬프트가 기존 상수와 다름:\n got: %q\nwant: %q", pol.System, legacy)
+	}
+}
+
+// 세 프리셋 모두 같은 골격(BLOCK 기준·ALLOW 기준·기본 방향·예시)을 지켜야 한다.
+// 기준 없이 쓰면 모델이 상태변경을 전부 차단해 커버리지가 사라진다(e317d97 실측).
+func TestPresetsKeepCalibratedShape(t *testing.T) {
+	for _, id := range Presets() {
+		pol, _ := presetPolicy(id)
+		for _, must := range []string{"BLOCK (allow=false)", "ALLOW (allow=true)", "Examples:", "POST /api/search"} {
+			if !strings.Contains(pol.System, must) {
+				t.Errorf("%s 프리셋에 %q 없음 — 기준 없는 프롬프트는 전건 차단으로 무너진다", id, must)
+			}
+		}
+		if !strings.Contains(pol.System, "Default to ALLOW when uncertain") &&
+			!strings.Contains(pol.System, "Default to BLOCK when uncertain") {
+			t.Errorf("%s 프리셋에 불확실할 때의 기본 방향이 없음", id)
+		}
 	}
 }
 
