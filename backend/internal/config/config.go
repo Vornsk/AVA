@@ -28,34 +28,37 @@ type LLM struct {
 
 // Local — PC마다 다른 설정 (서버 미동기). 문서 §4 로컬 설정.
 type Local struct {
-	ProxyAddr    string            `yaml:"proxy_addr"`    // 프록시 리슨 주소 (예: ":8080")
-	MCPAddr      string            `yaml:"mcp_addr"`      // MCP 서버 주소 (예: "127.0.0.1:8765")
-	WebAddr      string            `yaml:"web_addr"`      // 읽기전용 웹 GUI 주소 (예: "127.0.0.1:8090")
-	LLM          LLM               `yaml:"llm"`           // LLM 스테이지 프로바이더
-	Tools        map[string]string `yaml:"tools"`         // 외부 도구 실행 경로 (FR-3.4; 비면 PATH)
-	SafeMode     bool              `yaml:"safe_mode"`     // 안전모드 기본값 (FR-3.2): 파괴성 강제제외 + 요청간격 강화
-	AuthDisabled bool              `yaml:"auth_disabled"` // 개발용: 로그인 게이트 우회(항상 리더). 운영 금지.
-	ArtifactExt  string            `yaml:"artifact_ext"`  // 산출물 네이티브 확장자 (FR-1.6 DRM 비간섭). 예: .cgpkg
-	RetentionDays int              `yaml:"retention_days"` // 휴지통 프로젝트 자동 영구삭제 보존기간(일). 기본 30 (이슈 #15)
+	ProxyAddr     string            `yaml:"proxy_addr"`     // 프록시 리슨 주소 (예: ":8080")
+	MCPAddr       string            `yaml:"mcp_addr"`       // MCP 서버 주소 (예: "127.0.0.1:8765")
+	WebAddr       string            `yaml:"web_addr"`       // 읽기전용 웹 GUI 주소 (예: "127.0.0.1:8090")
+	LLM           LLM               `yaml:"llm"`            // LLM 스테이지 프로바이더
+	Tools         map[string]string `yaml:"tools"`          // 외부 도구 실행 경로 (FR-3.4; 비면 PATH)
+	SafeMode      bool              `yaml:"safe_mode"`      // 안전모드 기본값 (FR-3.2): 파괴성 강제제외 + 요청간격 강화
+	AuthDisabled  bool              `yaml:"auth_disabled"`  // 개발용: 로그인 게이트 우회(항상 리더). 운영 금지.
+	ArtifactExt   string            `yaml:"artifact_ext"`   // 산출물 네이티브 확장자 (FR-1.6 DRM 비간섭). 예: .cgpkg
+	RetentionDays int               `yaml:"retention_days"` // 휴지통 프로젝트 자동 영구삭제 보존기간(일). 기본 30 (이슈 #15)
 }
 
 // Project — 공유/프로젝트 설정 (서버 버전관리). 문서 §4.
 // (실제 제품에선 기본 룰셋=공유 계층, 스코프=프로젝트 계층으로 더 나뉨)
 type Project struct {
-	Scope        []string               `yaml:"scope"`         // 진단 대상 호스트 화이트리스트
-	Schemes      []string               `yaml:"schemes"`       // 선택된 점검 스킴/탭 (§3, §6). 비면 전체
-	AllowPaths   []string               `yaml:"allow_paths"`   // 경로 허용(정규식). 비면 전체 허용 (FR-2.1)
-	ExcludePaths []string               `yaml:"exclude_paths"` // 경로 제외(정규식). 허용보다 우선 (FR-2.1)
-	ReconAllow   []string               `yaml:"recon_allow"`   // recon(GET/HEAD) 허용 경로(정규식). guardrail보다 우선 (접근통제 점검)
-	Stages       []string               `yaml:"stages"`        // 판단 스테이지 구성/순서 (FR-2.2): rule, llm
+	Scope        []string `yaml:"scope"`         // 진단 대상 호스트 화이트리스트
+	Schemes      []string `yaml:"schemes"`       // 선택된 점검 스킴/탭 (§3, §6). 비면 전체
+	AllowPaths   []string `yaml:"allow_paths"`   // 경로 허용(정규식). 비면 전체 허용 (FR-2.1)
+	ExcludePaths []string `yaml:"exclude_paths"` // 경로 제외(정규식). 허용보다 우선 (FR-2.1)
+	ReconAllow   []string `yaml:"recon_allow"`   // recon(GET/HEAD) 허용 경로(정규식). guardrail보다 우선 (접근통제 점검)
+	Stages       []string `yaml:"stages"`        // 판단 스테이지 구성/순서 (FR-2.2): rule, llm
 	// 판단(LLM) 프롬프트 정책 (이슈 #53). 미설정이면 balanced = 종전 하드코딩 프롬프트.
 	JudgePrompt       string `yaml:"judge_prompt"`        // strict | balanced | permissive
 	JudgePromptCustom string `yaml:"judge_prompt_custom"` // 지정 시 프리셋보다 우선. 출력 계약은 자동 부착
-	Rules        []rules.Rule           `yaml:"rules"`         // 전송 전 Rule 스테이지 룰셋
-	Auth         auth.Config            `yaml:"auth"`          // 인증 크롤링 주입정보 (FR-2.5; 제품은 서버 암호화)
-	Login        auth.LoginSeq          `yaml:"login"`         // 세션 만료 시 자동 재로그인 절차 (FR-2.5 세션 지속성)
-	Identities   map[string]auth.Config `yaml:"identities"`    // 다중 신원 진단용 신원들 (FR-3.6)
-	Payloads     Payloads               `yaml:"payloads"`      // 페이로드/워드리스트 확장 (FR-3.7)
+	// 판단 불능(프로바이더 장애·파싱 실패) 시 동작 (이슈 #56). allow(기본) | block.
+	// 기본이 allow 인 이유는 대상 가용성 우선(1원칙). 운영계는 block 을 고른다.
+	JudgeOnError string                 `yaml:"judge_on_error"`
+	Rules        []rules.Rule           `yaml:"rules"`      // 전송 전 Rule 스테이지 룰셋
+	Auth         auth.Config            `yaml:"auth"`       // 인증 크롤링 주입정보 (FR-2.5; 제품은 서버 암호화)
+	Login        auth.LoginSeq          `yaml:"login"`      // 세션 만료 시 자동 재로그인 절차 (FR-2.5 세션 지속성)
+	Identities   map[string]auth.Config `yaml:"identities"` // 다중 신원 진단용 신원들 (FR-3.6)
+	Payloads     Payloads               `yaml:"payloads"`   // 페이로드/워드리스트 확장 (FR-3.7)
 }
 
 // Payloads — 페이로드셋 확장 (공유설정, FR-3.7). 비면 내장 기본셋만 사용.
@@ -66,10 +69,10 @@ type Payloads struct {
 
 func defaultLocal() Local {
 	return Local{
-		ProxyAddr:   ":8080",
-		MCPAddr:     "127.0.0.1:8765",
-		WebAddr:     "127.0.0.1:8090",
-		LLM:         LLM{Provider: "mock", Endpoint: "http://127.0.0.1:11434", Model: "llama3.2"},
+		ProxyAddr:     ":8080",
+		MCPAddr:       "127.0.0.1:8765",
+		WebAddr:       "127.0.0.1:8090",
+		LLM:           LLM{Provider: "mock", Endpoint: "http://127.0.0.1:11434", Model: "llama3.2"},
 		Tools:         map[string]string{}, // 예: {sslscan: "C:/tools/sslscan.exe"}
 		ArtifactExt:   ".cgpkg",            // DRM 비간섭 사용자 지정 확장자 (FR-1.6)
 		RetentionDays: 30,                  // 휴지통 보존기간 기본 30일 (이슈 #15)

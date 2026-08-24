@@ -14,8 +14,20 @@ export interface Stats {
   rules: number
   detectors: number
   llm_provider: string
+  llm_health?: LLMHealth // 판단 스테이지 건강 상태 (이슈 #56)
   risk_profile: string
   retention_days?: number // 휴지통 자동 영구삭제 보존기간(일) — D-n 표시용 (이슈 #15)
+}
+
+// 판단 스테이지가 프로바이더 장애를 정책으로 흡수하고 있는지 (이슈 #56).
+// degraded=true 면 가드레일이 켜져 보여도 실제로는 판단하지 못하는 상태다.
+export interface LLMHealth {
+  policy: string // allow | block
+  degraded: boolean
+  count: number
+  reason?: string
+  since?: string
+  provider?: string
 }
 
 export interface Finding {

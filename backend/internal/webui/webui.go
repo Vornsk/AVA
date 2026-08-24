@@ -128,7 +128,7 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/detectors", jsonHandler(func() any { return detector.Catalog() }))
 	mux.HandleFunc("/api/payloads", jsonHandler(func() any { return payload.Info() }))
 	mux.HandleFunc("/api/llm-decisions", jsonHandler(func() any { return llm.Decisions() }))
-	mux.HandleFunc("/api/judge-prompt", judgePromptHandler) // GET 현재 정책·프리셋 / POST 변경(llm:policy, 리더) — 이슈 #53
+	mux.HandleFunc("/api/judge-prompt", judgePromptHandler)                                                                                  // GET 현재 정책·프리셋 / POST 변경(llm:policy, 리더) — 이슈 #53
 	mux.HandleFunc("/api/rule-candidates", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, advisor.CandidatesLang(langOf(r))) }) // X-Lang 반영(#18)
 	mux.HandleFunc("/api/rules/adopt", ruleAdoptHandler)                                                                                     // POST: 추천 후보를 활성 룰로 채택(rule:promote)
 	mux.HandleFunc("/api/checkitems", jsonHandler(func() any { return checklist.Current().CheckItems }))
@@ -307,19 +307,20 @@ func logoutHandler(w http.ResponseWriter, r *http.Request) {
 
 // Stats — 대시보드 요약.
 type Stats struct {
-	Endpoints     int      `json:"endpoints"`
-	Hosts         int      `json:"hosts"`
-	Findings      int      `json:"findings"`
-	ScanRuns      int      `json:"scanruns"`
-	Scope         []string `json:"scope"`
-	Schemes       []string `json:"schemes"`
-	SafeMode      bool     `json:"safe_mode"`
-	CATrusted     bool     `json:"ca_trusted"`
-	Rules         int      `json:"rules"`
-	Detectors     int      `json:"detectors"`
-	LLMProvider   string   `json:"llm_provider"`
-	RiskProfile   string   `json:"risk_profile"`   // 최고 심각도 기반 (high/medium/low/none)
-	RetentionDays int      `json:"retention_days"` // 휴지통 자동 영구삭제 보존기간(일) — D-n 표시용 (이슈 #15)
+	Endpoints     int        `json:"endpoints"`
+	Hosts         int        `json:"hosts"`
+	Findings      int        `json:"findings"`
+	ScanRuns      int        `json:"scanruns"`
+	Scope         []string   `json:"scope"`
+	Schemes       []string   `json:"schemes"`
+	SafeMode      bool       `json:"safe_mode"`
+	CATrusted     bool       `json:"ca_trusted"`
+	Rules         int        `json:"rules"`
+	Detectors     int        `json:"detectors"`
+	LLMProvider   string     `json:"llm_provider"`
+	LLMHealth     llm.Health `json:"llm_health"`     // 판단 스테이지 건강 상태 (이슈 #56)
+	RiskProfile   string     `json:"risk_profile"`   // 최고 심각도 기반 (high/medium/low/none)
+	RetentionDays int        `json:"retention_days"` // 휴지통 자동 영구삭제 보존기간(일) — D-n 표시용 (이슈 #15)
 }
 
 // authorize — 현재 사용자가 action 권한이 있는지. 없으면 403 + 감사기록 후 false.
@@ -1081,6 +1082,15 @@ func activateHandler(w http.ResponseWriter, r *http.Request) {
 	if polErr != nil {
 		log.Printf("[WEB ] 판단 프롬프트 경고(%s): %v", p.ID, polErr)
 	}
+	// 판단 불능 시 정책 (이슈 #56). 미지정 프로젝트는 기본 allow 로 되돌린다 —
+	// 앞 프로젝트의 block 이 남아 다음 진단을 조용히 막는 일이 없어야 한다.
+	onErr := p.JudgeOnError
+	if onErr == "" {
+		onErr = llm.FailOpen
+	}
+	if !llm.SetFailurePolicy(onErr) {
+		log.Printf("[WEB ] judge_on_error 경고(%s): %q 는 allow|block 이 아니다", p.ID, p.JudgeOnError)
+	}
 	audit.Record(u.Name, string(u.Role), "project:activate", p.ID, "ok", p.Name+" judge_prompt="+pol.String())
 	log.Printf("[WEB ] %s(%s) activate_project %s (%s, 판단 프롬프트 %s)", u.Name, u.Role, p.ID, p.Name, pol)
 	writeJSON(w, p)
@@ -1237,6 +1247,7 @@ func stats() any {
 		Rules:         len(rules.Snapshot()),
 		Detectors:     len(detector.Catalog()),
 		LLMProvider:   llm.ProviderName(),
+		LLMHealth:     llm.HealthSnapshot(),
 		RiskProfile:   riskProfile(),
 		RetentionDays: retentionDays,
 	}

@@ -31,9 +31,10 @@ type Project struct {
 	// 판단(LLM) 프롬프트 정책 (이슈 #53). 프로젝트 활성화 시 적용. 비면 기동 시 기본 정책.
 	JudgePrompt       string `json:"judge_prompt,omitempty"`        // strict | balanced | permissive
 	JudgePromptCustom string `json:"judge_prompt_custom,omitempty"` // 지정 시 프리셋보다 우선
-	Created      string   `json:"created"`
-	Modified     string   `json:"modified"`
-	DeletedAt    string   `json:"deleted_at,omitempty"` // 소프트 삭제 시각(RFC3339). 빈 값=정상 (이슈 #14)
+	JudgeOnError      string `json:"judge_on_error,omitempty"`      // 판단 불능 시 allow(기본)|block (이슈 #56)
+	Created           string `json:"created"`
+	Modified          string `json:"modified"`
+	DeletedAt         string `json:"deleted_at,omitempty"` // 소프트 삭제 시각(RFC3339). 빈 값=정상 (이슈 #14)
 	// 인증정보는 암호화된 blob 으로만 저장(§5.1 FR-1.4). 평문은 파일/JSON 어디에도 없다.
 	EncCreds string `json:"enc_creds,omitempty"`
 }

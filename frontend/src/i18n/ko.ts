@@ -92,6 +92,8 @@ export const ko = {
   'overview.topo.localSub': '이 PC · LLM {provider}',
   'overview.topo.loaded': '로드됨',
   'overview.topo.verified': '검증됨',
+  'overview.topo.degraded': '판단 불능',
+  'overview.llmDegraded': '⚠ 판단 불능 — 정책 {policy} 로 흡수 중',
   'overview.caCert': 'CA 인증서',
   'overview.cert.trustStore': 'Web / OS 신뢰저장소',
   'overview.cert.trusted': '신뢰됨',

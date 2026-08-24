@@ -82,11 +82,19 @@ func TestNewFactory(t *testing.T) {
 	if New("ollama", "", "", "").Name() != "ollama" {
 		t.Error("ollama")
 	}
-	if New("openai", "", "", "").Name() != "openai" {
-		t.Error("openai")
+	if New("openai", "", "https://llm.internal/v1", "").Name() != "openai" {
+		t.Error("openai (자체 엔드포인트는 키 없이도 유지)")
 	}
-	if New("anthropic", "", "", "").Name() != "anthropic" {
+	if New("anthropic", "", "", "k-1").Name() != "anthropic" {
 		t.Error("anthropic")
+	}
+	// 이슈 #56 — 키 없이 외부 API 프로바이더를 고르면 mock 으로 강등한다.
+	// 강등하지 않으면 전건 401 → fail-open 으로 흡수돼 가드레일이 조용히 죽는다.
+	if got := New("anthropic", "", "", "").Name(); got != "mock" {
+		t.Errorf("anthropic + 빈 키 → %q, want mock 강등", got)
+	}
+	if got := New("openai", "", "", "").Name(); got != "mock" {
+		t.Errorf("openai + 빈 키 + 빈 엔드포인트 → %q, want mock 강등", got)
 	}
 	if New("unknown-xyz", "", "", "").Name() != "mock" {
 		t.Error("unknown → mock fallback")

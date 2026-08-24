@@ -12,7 +12,7 @@ import (
 )
 
 // AnthropicProvider — 실제 Claude(Anthropic Messages API) 프로바이더.
-// config의 llm.api_key 가 있을 때 사용. (키 없으면 mock 사용)
+// config의 llm.api_key 가 있을 때 사용. 키가 비면 llm.New 가 mock 으로 강등한다(이슈 #56).
 // temperature 0 로 결정론성 확보(§7 FR-7.3). 응답은 compact JSON verdict.
 type AnthropicProvider struct {
 	APIKey   string

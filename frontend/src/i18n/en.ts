@@ -93,6 +93,8 @@ export const en: Record<keyof typeof ko, string> = {
   'overview.topo.localSub': 'this PC · LLM {provider}',
   'overview.topo.loaded': 'Loaded',
   'overview.topo.verified': 'Verified',
+  'overview.topo.degraded': 'degraded',
+  'overview.llmDegraded': '⚠ LLM judgment unavailable — absorbed by policy {policy}',
   'overview.caCert': 'CA Certificate',
   'overview.cert.trustStore': 'Web / OS trust store',
   'overview.cert.trusted': 'Trusted',
