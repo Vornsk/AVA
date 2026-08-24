@@ -132,8 +132,24 @@ export interface DetectorInfo {
 export interface LLMDecision {
   id: number
   input: { method: string; path: string; param_keys?: string[]; content_type?: string; hint?: string }
-  verdict: { allow: boolean; reason: string; confidence: number; provider?: string; model?: string }
+  // prompt/prompt_hash: 어떤 판단 프롬프트 정책의 판정인가 (FR-6.1, 이슈 #53)
+  verdict: { allow: boolean; reason: string; confidence: number; provider?: string; model?: string; prompt?: string; prompt_hash?: string }
   cached: boolean
+}
+// 판단 프롬프트 정책 (이슈 #53)
+export interface JudgePolicy {
+  id: string // strict | balanced | permissive | custom
+  hash: string
+  system: string
+}
+export interface JudgePromptView {
+  active: JudgePolicy
+  base: JudgePolicy
+  presets: JudgePolicy[]
+  max_custom_len: number
+  project?: string
+  project_preset?: string
+  project_custom?: string
 }
 export interface ReverifyItem {
   finding_id: string

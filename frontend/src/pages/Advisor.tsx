@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { BrainCircuit, Lightbulb, TriangleAlert, ShieldCheck, Check, Zap } from 'lucide-react'
-import { usePoll, apiPost, type LLMDecision, type RuleCandidate, type Rule } from '../api'
+import { useEffect, useState } from 'react'
+import { BrainCircuit, Lightbulb, TriangleAlert, ShieldCheck, Check, Zap, SlidersHorizontal } from 'lucide-react'
+import { usePoll, apiPost, type LLMDecision, type RuleCandidate, type Rule, type Me, type JudgePromptView } from '../api'
 import { Card, Badge, Empty } from '../components/ui'
 import { useT } from '../i18n'
 
@@ -120,9 +120,86 @@ export function Advisor() {
         )}
       </Card>
 
-      {/* 3) LLM 판단 로그 + 요약/필터 */}
+      {/* 3) 판단 프롬프트 정책 (이슈 #53) */}
+      <JudgePromptCard />
+
+      {/* 4) LLM 판단 로그 + 요약/필터 */}
       <DecisionLog data={data ?? []} />
     </div>
+  )
+}
+
+// JudgePromptCard — 판단 프롬프트 정책 선택 (이슈 #53).
+// 프리셋 3종 또는 커스텀. 변경은 리더 전용(llm:policy)이며 활성 프로젝트에 저장된다.
+function JudgePromptCard() {
+  const t = useT()
+  const { data: me } = usePoll<Me>('/api/me', 30000)
+  const { data: view } = usePoll<JudgePromptView>('/api/judge-prompt', 10000)
+  const canEdit = !!me?.can?.includes('llm:policy')
+
+  const [preset, setPreset] = useState<string | null>(null)
+  const [custom, setCustom] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  // 서버 값으로 1회 초기화 (사용자가 편집 중이면 덮어쓰지 않는다)
+  useEffect(() => {
+    if (!view) return
+    setPreset((p) => (p === null ? view.project_preset ?? view.active.id : p))
+    setCustom((c) => (c === null ? view.project_custom ?? '' : c))
+  }, [view])
+
+  if (!view) return null
+  const usingCustom = !!custom?.trim()
+  const effective = usingCustom ? 'custom' : preset || view.base.id
+  const preview = usingCustom ? custom! : view.presets.find((p) => p.id === effective)?.system ?? view.base.system
+
+  async function save() {
+    setBusy(true); setErr(''); setSaved(false)
+    try {
+      await apiPost('/api/judge-prompt', { preset: usingCustom ? '' : preset, custom: custom ?? '' })
+      setSaved(true)
+    } catch (e) { setErr(String(e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <Card title={t('advisor.promptTitle')} icon={SlidersHorizontal}
+          right={<span className="font-mono text-[11px] text-[var(--muted)]">{t('advisor.promptActive')} {view.active.id} · {view.active.hash}</span>}>
+      <p className="mb-3 text-xs text-[var(--muted)]">{t('advisor.promptIntro')}</p>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        {view.presets.map((p) => (
+          <span key={p.id}
+                onClick={() => { if (canEdit) { setPreset(p.id); setCustom(''); setSaved(false) } }}
+                className={`rounded-full border px-2.5 py-0.5 text-xs ${canEdit ? 'cursor-pointer' : ''} ${effective === p.id ? 'border-transparent font-semibold' : 'border-[var(--border)] text-[var(--muted)]'}`}
+                style={effective === p.id ? { background: 'var(--panel-2)', color: 'var(--text)' } : undefined}>
+            {p.id}
+          </span>
+        ))}
+        {usingCustom && <Badge text="custom" color="var(--blue)" />}
+      </div>
+      <textarea
+        className="w-full rounded-md border border-[var(--border)] bg-[var(--panel-2)] p-2 font-mono text-[11px]"
+        rows={4} disabled={!canEdit} maxLength={view.max_custom_len}
+        placeholder={t('advisor.promptCustomPlaceholder')}
+        value={custom ?? ''} onChange={(e) => { setCustom(e.target.value); setSaved(false) }} />
+      <div className="mt-2 rounded-md border border-[var(--border)] bg-[var(--panel)] p-2 font-mono text-[11px] text-[var(--muted)]">
+        {preview}
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        {canEdit ? (
+          <button onClick={save} disabled={busy}
+                  className="rounded-md border border-[var(--border)] bg-[var(--panel-2)] px-3 py-1 text-xs disabled:opacity-50">
+            {busy ? t('advisor.promptSaving') : t('advisor.promptSave')}
+          </button>
+        ) : (
+          <span className="text-[11px] text-[var(--muted)]">{t('advisor.promptLeaderOnly')}</span>
+        )}
+        {saved && <span className="inline-flex items-center gap-1 text-[11px]" style={{ color: 'var(--green)' }}><Check size={12} /> {t('advisor.promptSaved')}</span>}
+        {err && <span className="text-[11px]" style={{ color: 'var(--red)' }}>{err}</span>}
+        <span className="ml-auto text-[11px] text-[var(--muted)]">{t('advisor.promptCacheNote')}</span>
+      </div>
+    </Card>
   )
 }
 
@@ -170,6 +247,7 @@ function DecisionLog({ data }: { data: LLMDecision[] }) {
                   <th className="pb-2 pr-3 font-semibold">{t('advisor.colConf')}</th>
                   <th className="pb-2 pr-3 font-semibold">{t('advisor.colReason')}</th>
                   <th className="pb-2 pr-3 font-semibold">{t('advisor.colModel')}</th>
+                  <th className="pb-2 pr-3 font-semibold">{t('advisor.colPrompt')}</th>
                   <th className="pb-2 pr-3 font-semibold">{t('advisor.colCache')}</th>
                 </tr>
               </thead>
@@ -189,6 +267,9 @@ function DecisionLog({ data }: { data: LLMDecision[] }) {
                     <td className="py-2.5 pr-3 text-xs">{Math.round((d.verdict?.confidence ?? 0) * 100)}%</td>
                     <td className="py-2.5 pr-3 max-w-[240px] text-xs text-[var(--muted)]">{d.verdict?.reason}</td>
                     <td className="py-2.5 pr-3 text-xs text-[var(--muted)]">{d.verdict?.model || '—'}</td>
+                    <td className="py-2.5 pr-3 font-mono text-[11px] text-[var(--muted)]" title={d.verdict?.prompt_hash ?? ''}>
+                      {d.verdict?.prompt || '—'}
+                    </td>
                     <td className="py-2.5 pr-3">{d.cached ? <Badge text={t('advisor.cacheHitBadge')} color="var(--blue)" /> : '—'}</td>
                   </tr>
                 ))}
