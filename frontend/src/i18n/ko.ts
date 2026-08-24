@@ -157,6 +157,8 @@ export const ko = {
   'recon.crawl.errors': '오류',
   'recon.crawl.paramMine': '파라미터 마이닝',
   'recon.crawl.paramMineTitle': '검증된 엔드포인트에 hidden 파라미터 워드리스트를 주입해, 서버가 처리하지만 노출하지 않는 debug·권한우회·레거시 필드를 찾는다. 능동 주입 — GET 전용·예산 제한·감사 기록.',
+  'recon.crawl.authDelta': '인증 델타 크롤 (로그인 뒤 표면 식별)',
+  'recon.crawl.authDeltaTitle': '비인증·인증 두 번 크롤해, 로그인 뒤에만 접근되는 표면을 auth-only 로 표시합니다. 프로젝트 인증정보(세션 쿠키·헤더) 또는 로그인 시퀀스가 먼저 설정돼야 합니다.',
   'recon.crawl.optIn': '· 옵트인',
   'recon.crawl.mined': '마이닝',
   'recon.crawl.labeled': '라벨',

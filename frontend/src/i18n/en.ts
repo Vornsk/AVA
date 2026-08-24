@@ -158,6 +158,8 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.crawl.errors': 'Errors',
   'recon.crawl.paramMine': 'Parameter mining',
   'recon.crawl.paramMineTitle': 'Inject a wordlist of hidden parameters into verified endpoints to find debug/authz-bypass/legacy fields the server processes but does not expose. Active injection — GET-only, budgeted, audit-logged.',
+  'recon.crawl.authDelta': 'Auth-delta crawl (surface behind login)',
+  'recon.crawl.authDeltaTitle': 'Crawls twice (unauthenticated + authenticated) and marks surface reachable only after login as auth-only. Requires project credentials (session cookie/header) or a login sequence first.',
   'recon.crawl.optIn': '· opt-in',
   'recon.crawl.mined': 'Mined',
   'recon.crawl.labeled': 'Labeled',

@@ -114,6 +114,7 @@ function CrawlExplore() {
   const [busy, setBusy] = useState(false)
   const [headless, setHeadless] = useState(false)
   const [paramMine, setParamMine] = useState(false) // 파라미터 마이닝 옵트인 (#40)
+  const [authDelta, setAuthDelta] = useState(false) // 인증 델타 크롤 (#38)
   const { data: runs } = usePoll<CrawlResult[]>('/api/crawl', 2000)
   const { data: modes } = usePoll<{ headless_available: boolean }>('/api/crawl-modes', 30000)
   const hlOK = modes?.headless_available === true
@@ -123,7 +124,7 @@ function CrawlExplore() {
   async function start() {
     if (!seed.trim()) return
     setBusy(true)
-    try { await apiPost('/api/crawl', { seed: seed.trim(), mode: headless ? 'headless' : 'static', param_mine: paramMine }) }
+    try { await apiPost('/api/crawl', { seed: seed.trim(), mode: headless ? 'headless' : 'static', param_mine: paramMine, auth_delta: authDelta }) }
     catch (e) { alert(t('recon.crawl.startFail') + ': ' + e) } finally { setBusy(false) }
   }
 
@@ -151,6 +152,11 @@ function CrawlExplore() {
              title={t('recon.crawl.paramMineTitle')}>
         <input type="checkbox" checked={paramMine} onChange={(e) => setParamMine(e.target.checked)} />
         {t('recon.crawl.paramMine')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
+      </label>
+      <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
+             title={t('recon.crawl.authDeltaTitle')}>
+        <input type="checkbox" checked={authDelta} onChange={(e) => setAuthDelta(e.target.checked)} />
+        {t('recon.crawl.authDelta')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
       </label>
       {latest && (
         <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs">

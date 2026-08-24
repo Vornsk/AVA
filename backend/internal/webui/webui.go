@@ -597,6 +597,7 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			Budget     int    `json:"budget"`      // 능동 발견 요청 예산 (0 = 기본값)
 			ParamMine  bool   `json:"param_mine"`  // 파라미터 마이닝 옵트인 (#40)
 			MineBudget int    `json:"mine_budget"` // 파라미터 마이닝 요청 예산 (0 = 기본값)
+			AuthDelta  bool   `json:"auth_delta"`  // 인증 델타 크롤 — 로그인 뒤 표면 식별 (#38)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Seed == "" {
 			http.Error(w, "seed URL 필요", http.StatusBadRequest)
@@ -606,10 +607,17 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "헤드리스 크롤 불가 — 이 서버에 Chrome/Chromium이 설치돼 있지 않습니다", http.StatusBadRequest)
 			return
 		}
+		// 인증 델타는 자격증명 또는 로그인 시퀀스가 있어야 의미가 있다. 없으면 비인증 패스와
+		// 인증 패스가 같아 auth-only 표면이 안 잡힌다 — 조용히 헛돌지 않게 미리 막는다.
+		if in.AuthDelta && !auth.Default().Enabled() && !auth.Default().LoginEnabled() {
+			http.Error(w, "인증 델타 크롤을 켜려면 먼저 프로젝트 인증정보(세션 쿠키·헤더) 또는 로그인 시퀀스를 설정하세요", http.StatusBadRequest)
+			return
+		}
 		res := crawler.Start(in.Seed, crawler.Options{
 			MaxPages: in.MaxPages, MaxDepth: in.MaxDepth, Mode: in.Mode,
 			Discover: in.Discover, Budget: in.Budget,
 			ParamMine: in.ParamMine, MineBudget: in.MineBudget,
+			AuthDelta: in.AuthDelta,
 		})
 		audit.Record(u.Name, string(u.Role), "crawl", in.Seed, "ok", res.ID)
 		// 능동 탐색은 파괴성·소음·법적 경계가 있다. 누가 언제 켰는지 별도로 남긴다 (#27).
