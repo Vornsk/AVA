@@ -162,6 +162,7 @@ func (j *job) execute(targets []endpoints.Target, dets []detector.Detector, opts
 						Vuln: f.Vuln, Severity: f.Severity, Method: f.Method,
 						Path: f.Path, Param: f.Param, Detector: f.Detector, Evidence: f.Evidence,
 						Request: f.Request, Response: f.Response, RespCode: f.RespCode, // 실제 증적으로 문맥 판단
+						ContentType: f.ContentType, // 렌더링 가능한 응답인가 (이슈 #54)
 					})
 					f.LLMVerdict, f.LLMReason, f.Remediation = rr.Verdict, rr.Reason, rr.Remediation
 					// 주석만 — 상태는 사람이 결정(HITL). 약한 모델이 오판해도 진짜 취약을 숨기지 않는다.

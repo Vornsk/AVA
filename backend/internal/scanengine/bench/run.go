@@ -162,6 +162,7 @@ func RunDetectors(ctx context.Context, targets []endpoints.Target, dets []detect
 					Path: f.Path, Method: f.Method, Param: f.Param,
 					VulnDef: vd, Detector: f.Detector, Severity: f.Severity,
 					Evidence: f.Evidence, Request: f.Request, Response: f.Response, RespCode: f.RespCode,
+					ContentType: f.ContentType,
 				})
 			}
 		}
@@ -194,16 +195,17 @@ func ReviewLLM(ctx context.Context, found []Found) []Found {
 	copy(out, found)
 	for i := range out {
 		rr := llm.Review(ctx, llm.ReviewInput{
-			Vuln:     out[i].VulnDef,
-			Severity: out[i].Severity,
-			Method:   out[i].Method,
-			Path:     out[i].Path,
-			Param:    out[i].Param,
-			Detector: out[i].Detector,
-			Evidence: out[i].Evidence,
-			Request:  out[i].Request,
-			Response: out[i].Response,
-			RespCode: out[i].RespCode,
+			Vuln:        out[i].VulnDef,
+			Severity:    out[i].Severity,
+			Method:      out[i].Method,
+			Path:        out[i].Path,
+			Param:       out[i].Param,
+			Detector:    out[i].Detector,
+			Evidence:    out[i].Evidence,
+			Request:     out[i].Request,
+			Response:    out[i].Response,
+			RespCode:    out[i].RespCode,
+			ContentType: out[i].ContentType,
 		})
 		out[i].LLMFP = rr.Verdict == "false_positive"
 	}

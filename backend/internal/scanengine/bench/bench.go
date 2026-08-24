@@ -124,7 +124,9 @@ type Found struct {
 	Request  string
 	Response string
 	RespCode int
-	LLMFP    bool // LLM 이 오탐으로 판정 (FR-3.3)
+	// ContentType — 응답 미디어타입 (이슈 #54). 트리아지가 실행 가능성을 판단하는 근거.
+	ContentType string
+	LLMFP       bool // LLM 이 오탐으로 판정 (FR-3.3)
 }
 
 // 발견 1건의 채점 분류.

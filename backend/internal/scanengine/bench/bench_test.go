@@ -129,7 +129,7 @@ func TestLLMEffect(t *testing.T) {
 
 // TestReviewLLMCarriesEvidence — ★ 증적이 LLM 까지 실제로 전달되는가.
 //
-// 판정은 응답 문맥으로 한다(reviewSysPrompt). 증적을 빼고 부르면 근거가 사라져 전부
+// 판정은 응답 문맥으로 한다(llm.reviewPrompt). 증적을 빼고 부르면 근거가 사라져 전부
 // uncertain 이 되고, "LLM 이 오탐을 줄이는가"가 측정되지 않은 채 0건으로 보인다.
 // 초기 구현이 실제로 그랬다 — 그때는 프로바이더 탓인지 배관 탓인지 구분할 수 없었다.
 // mock 은 인코딩·비실행 컨텍스트 반사를 오탐으로 판정하므로 배관 검증에 그대로 쓸 수 있다.
@@ -149,6 +149,13 @@ func TestReviewLLMCarriesEvidence(t *testing.T) {
 		{"raw 반사 → 오탐 아님", Found{Path: "/c", VulnDef: "vuln.xss", Detector: "reflected-input",
 			Severity: "medium", Response: "<h1>Hello <script>alert(1)</script></h1>"}, false},
 		{"증적 없음 → 판정 불가", Found{Path: "/d", VulnDef: "vuln.xss", Detector: "reflected-input"}, false},
+		// 이슈 #54 — Content-Type 이 전달되는가. #49 오탐 5건이 전부 이 모양(raw 반사 + text/plain)이었다.
+		{"raw 반사인데 text/plain → 오탐", Found{Path: "/e", VulnDef: "vuln.xss", Detector: "reflected-input",
+			Severity: "medium", ContentType: "text/plain",
+			Response: "<h1>Hello <script>alert(1)</script></h1>"}, true},
+		{"raw 반사 + text/html → 오탐 아님(정탐 삭제 금지)", Found{Path: "/f", VulnDef: "vuln.xss", Detector: "reflected-input",
+			Severity: "medium", ContentType: "text/html",
+			Response: "<h1>Hello <script>alert(1)</script></h1>"}, false},
 	}
 	for _, c := range cases {
 		if got := ReviewLLM(context.Background(), []Found{c.f})[0].LLMFP; got != c.want {

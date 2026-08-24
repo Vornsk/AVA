@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -300,10 +301,11 @@ func (securityHeaders) Detect(ctx context.Context, t endpoints.Target, c *http.C
 	return []finding.Finding{{
 		Vuln: "미흡한 보안 헤더", Severity: "low", Host: t.Host, Path: t.Path, Method: "GET",
 		Kind: "rule", Detector: "sec-headers", Confidence: "high",
-		Evidence: "누락: " + strings.Join(missing, ", "),
-		Request:  reqLine("GET", urlOf(t)),
-		Response: "응답에 보안 헤더 없음: " + strings.Join(missing, ", "),
-		RespCode: resp.StatusCode,
+		Evidence:    "누락: " + strings.Join(missing, ", "),
+		Request:     reqLine("GET", urlOf(t)),
+		Response:    "응답에 보안 헤더 없음: " + strings.Join(missing, ", "),
+		RespCode:    resp.StatusCode,
+		ContentType: ctype(resp),
 	}}
 }
 
@@ -335,10 +337,11 @@ func (reflectedInput) Detect(ctx context.Context, t endpoints.Target, c *http.Cl
 				out = append(out, finding.Finding{
 					Vuln: "반사된 입력값(XSS 후보)", Severity: "medium", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "reflected-input", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 의 페이로드가 실행 가능한 컨텍스트에 인코딩 없이 반사됨",
-					Request:  probeLine(pr),
-					Response: snippet(body, pl),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 의 페이로드가 실행 가능한 컨텍스트에 인코딩 없이 반사됨",
+					Request:     probeLine(pr),
+					Response:    snippet(body, pl),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				break // 파라미터당 1건이면 충분
 			}
@@ -462,10 +465,11 @@ func (domXSS) Detect(ctx context.Context, t endpoints.Target, c *http.Client, in
 		return []finding.Finding{{
 			Vuln: "DOM 기반 XSS(정적 힌트)", Severity: "medium", Host: t.Host, Path: t.Path, Method: "GET",
 			Kind: "rule", Detector: "dom-xss", Confidence: "low", // 정적 힌트 — 수동 확증 필요
-			Evidence: fmt.Sprintf("스크립트에서 사용자 제어 source '%s' → 위험 sink '%s' 흐름 가능(수동 검토)", src, sink),
-			Request:  reqLine("GET", urlOf(t)),
-			Response: snippet(m[1], ""),
-			RespCode: resp.StatusCode,
+			Evidence:    fmt.Sprintf("스크립트에서 사용자 제어 source '%s' → 위험 sink '%s' 흐름 가능(수동 검토)", src, sink),
+			Request:     reqLine("GET", urlOf(t)),
+			Response:    snippet(m[1], ""),
+			RespCode:    resp.StatusCode,
+			ContentType: ctype(resp),
 		}}
 	}
 	return nil
@@ -500,10 +504,11 @@ func (sensitiveData) Detect(ctx context.Context, t endpoints.Target, c *http.Cli
 	return []finding.Finding{{
 		Vuln: "민감정보 노출", Severity: "high", Host: t.Host, Path: t.Path, Method: "GET",
 		Kind: "rule", Detector: "sensitive-data", Confidence: "high",
-		Evidence: "응답에서 발견: " + strings.Join(kinds, ", "),
-		Request:  reqLine("GET", urlOf(t)),
-		Response: snippet(body, at), // 마스킹되어 실제 값은 가려짐
-		RespCode: resp.StatusCode,
+		Evidence:    "응답에서 발견: " + strings.Join(kinds, ", "),
+		Request:     reqLine("GET", urlOf(t)),
+		Response:    snippet(body, at), // 마스킹되어 실제 값은 가려짐
+		RespCode:    resp.StatusCode,
+		ContentType: ctype(resp),
 	}}
 }
 
@@ -867,10 +872,11 @@ func (sqlInjection) Detect(ctx context.Context, t endpoints.Target, c *http.Clie
 				out = append(out, finding.Finding{
 					Vuln: "SQL 주입(에러 기반)", Severity: "high", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "sqli", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 주입 시 " + dbms + " DB 오류 메시지 노출",
-					Request:  probeLine(pr),
-					Response: snippet(body, m),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 주입 시 " + dbms + " DB 오류 메시지 노출",
+					Request:     probeLine(pr),
+					Response:    snippet(body, m),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				break // 파라미터당 1건
 			}
@@ -1037,10 +1043,11 @@ func (pathTraversal) Detect(ctx context.Context, t endpoints.Target, c *http.Cli
 				out = append(out, finding.Finding{
 					Vuln: "경로 순회(Path Traversal)", Severity: "high", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "path-traversal", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 경로순회 주입 시 " + file + " 내용 노출",
-					Request:  probeLine(pr),
-					Response: snippet(body, m),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 경로순회 주입 시 " + file + " 내용 노출",
+					Request:     probeLine(pr),
+					Response:    snippet(body, m),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				break
 			}
@@ -1083,10 +1090,11 @@ func (openRedirect) Detect(ctx context.Context, t endpoints.Target, c *http.Clie
 				out = append(out, finding.Finding{
 					Vuln: "오픈 리다이렉트", Severity: "medium", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "open-redirect", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 로 외부 호스트(" + redirectMarker + ") 리다이렉트됨",
-					Request:  probeLine(pr),
-					Response: fmt.Sprintf("HTTP %d  Location: %s", resp.StatusCode, masking.Mask(loc)),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 로 외부 호스트(" + redirectMarker + ") 리다이렉트됨",
+					Request:     probeLine(pr),
+					Response:    fmt.Sprintf("HTTP %d  Location: %s", resp.StatusCode, masking.Mask(loc)),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 			}
 		}
@@ -1127,10 +1135,11 @@ func (cmdInjection) Detect(ctx context.Context, t endpoints.Target, c *http.Clie
 				out = append(out, finding.Finding{
 					Vuln: "OS 커맨드 인젝션", Severity: "high", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "cmd-injection", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 주입 시 명령 출력 노출(" + name + ")",
-					Request:  probeLine(pr),
-					Response: snippet(body, m),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 주입 시 명령 출력 노출(" + name + ")",
+					Request:     probeLine(pr),
+					Response:    snippet(body, m),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				hit = true
 				break
@@ -1202,10 +1211,11 @@ func (ssrf) Detect(ctx context.Context, t endpoints.Target, c *http.Client, inj 
 				out = append(out, finding.Finding{
 					Vuln: "서버측 요청 위조(SSRF)", Severity: "high", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "ssrf", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 로 내부 자원 요청 성공(" + name + ")",
-					Request:  probeLine(pr),
-					Response: snippet(body, m),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 로 내부 자원 요청 성공(" + name + ")",
+					Request:     probeLine(pr),
+					Response:    snippet(body, m),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				break // 파라미터당 1건
 			}
@@ -1242,10 +1252,11 @@ func (ssti) Detect(ctx context.Context, t endpoints.Target, c *http.Client, inj 
 				out = append(out, finding.Finding{
 					Vuln: "서버측 템플릿 인젝션(SSTI)", Severity: "high", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "ssti", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 의 템플릿 식이 서버에서 평가됨(결과값 " + payload.SSTIResult + " 노출)",
-					Request:  probeLine(pr),
-					Response: snippet(body, payload.SSTIResult),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 의 템플릿 식이 서버에서 평가됨(결과값 " + payload.SSTIResult + " 노출)",
+					Request:     probeLine(pr),
+					Response:    snippet(body, payload.SSTIResult),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				break // 파라미터당 1건
 			}
@@ -1275,10 +1286,11 @@ func (xxe) Detect(ctx context.Context, t endpoints.Target, c *http.Client, inj *
 			out = append(out, finding.Finding{
 				Vuln: "XML 외부객체 공격(XXE)", Severity: "high", Host: t.Host, Path: t.Path, Method: method,
 				Kind: "rule", Detector: "xxe", Confidence: "high",
-				Evidence: "외부 엔티티로 " + file + " 내용이 응답에 노출됨(XML 파서 XXE 취약)",
-				Request:  probeLine(pr),
-				Response: snippet(body, m),
-				RespCode: resp.StatusCode,
+				Evidence:    "외부 엔티티로 " + file + " 내용이 응답에 노출됨(XML 파서 XXE 취약)",
+				Request:     probeLine(pr),
+				Response:    snippet(body, m),
+				RespCode:    resp.StatusCode,
+				ContentType: ctype(resp),
 			})
 			break
 		}
@@ -1313,10 +1325,11 @@ func (ldapInjection) Detect(ctx context.Context, t endpoints.Target, c *http.Cli
 				out = append(out, finding.Finding{
 					Vuln: "LDAP 인젝션", Severity: "high", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "ldap-injection", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 주입 시 LDAP 오류 노출",
-					Request:  probeLine(pr),
-					Response: snippet(body, m),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 주입 시 LDAP 오류 노출",
+					Request:     probeLine(pr),
+					Response:    snippet(body, m),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				break // 파라미터당 1건
 			}
@@ -1353,10 +1366,11 @@ func (ssiInjection) Detect(ctx context.Context, t endpoints.Target, c *http.Clie
 				out = append(out, finding.Finding{
 					Vuln: "SSI 인젝션", Severity: "high", Host: t.Host, Path: t.Path, Method: pr.method,
 					Param: p.Name, Kind: "rule", Detector: "ssi-injection", Confidence: "high",
-					Evidence: "파라미터 " + p.Name + "(" + p.In + ") 의 SSI 지시자가 서버에서 실행됨(마커 " + payload.SSIMarker + " 출력)",
-					Request:  probeLine(pr),
-					Response: snippet(body, payload.SSIMarker),
-					RespCode: resp.StatusCode,
+					Evidence:    "파라미터 " + p.Name + "(" + p.In + ") 의 SSI 지시자가 서버에서 실행됨(마커 " + payload.SSIMarker + " 출력)",
+					Request:     probeLine(pr),
+					Response:    snippet(body, payload.SSIMarker),
+					RespCode:    resp.StatusCode,
+					ContentType: ctype(resp),
 				})
 				break // 파라미터당 1건
 			}
@@ -1448,10 +1462,11 @@ func (fileUpload) Detect(ctx context.Context, t endpoints.Target, c *http.Client
 			out = append(out, finding.Finding{
 				Vuln: "파일 업로드 제한 미흡", Severity: "high", Host: t.Host, Path: t.Path, Method: "POST",
 				Param: p.Name, Kind: "rule", Detector: "file-upload", Confidence: "medium",
-				Evidence: "위험 확장자(.php) 파일이 거부 없이 업로드 수용됨",
-				Request:  "POST " + masking.Mask(urlOf(t)) + " (multipart " + p.Name + "=" + uploadName + ")",
-				Response: fmt.Sprintf("HTTP %d — %s", resp.StatusCode, snippet(body, "")),
-				RespCode: resp.StatusCode,
+				Evidence:    "위험 확장자(.php) 파일이 거부 없이 업로드 수용됨",
+				Request:     "POST " + masking.Mask(urlOf(t)) + " (multipart " + p.Name + "=" + uploadName + ")",
+				Response:    fmt.Sprintf("HTTP %d — %s", resp.StatusCode, snippet(body, "")),
+				RespCode:    resp.StatusCode,
+				ContentType: ctype(resp),
 			})
 			break // 엔드포인트당 1건
 		}
@@ -1520,10 +1535,11 @@ func (cookieSecurity) Detect(ctx context.Context, t endpoints.Target, c *http.Cl
 		out = append(out, finding.Finding{
 			Vuln: "쿠키 보안속성 미흡", Severity: "medium", Host: t.Host, Path: t.Path, Method: "GET",
 			Param: ck.Name, Kind: "rule", Detector: "cookie-security", Confidence: "high",
-			Evidence: "쿠키 " + ck.Name + " 보안속성 누락: " + strings.Join(missing, ", "),
-			Request:  reqLine("GET", urlOf(t)),
-			Response: "Set-Cookie: " + ck.Name + " (누락: " + strings.Join(missing, ", ") + ")",
-			RespCode: resp.StatusCode,
+			Evidence:    "쿠키 " + ck.Name + " 보안속성 누락: " + strings.Join(missing, ", "),
+			Request:     reqLine("GET", urlOf(t)),
+			Response:    "Set-Cookie: " + ck.Name + " (누락: " + strings.Join(missing, ", ") + ")",
+			RespCode:    resp.StatusCode,
+			ContentType: ctype(resp),
 		})
 	}
 	return out
@@ -1560,10 +1576,11 @@ func (httpMethod) Detect(ctx context.Context, t endpoints.Target, c *http.Client
 	return []finding.Finding{{
 		Vuln: "위험 HTTP 메소드 허용", Severity: "medium", Host: t.Host, Path: t.Path, Method: "OPTIONS",
 		Kind: "rule", Detector: "http-method", Confidence: "high",
-		Evidence: "허용 메소드에 위험 메소드 포함: " + strings.Join(found, ", "),
-		Request:  reqLine("OPTIONS", urlOf(t)),
-		Response: "Allow: " + resp.Header.Get("Allow"),
-		RespCode: resp.StatusCode,
+		Evidence:    "허용 메소드에 위험 메소드 포함: " + strings.Join(found, ", "),
+		Request:     reqLine("OPTIONS", urlOf(t)),
+		Response:    "Allow: " + resp.Header.Get("Allow"),
+		RespCode:    resp.StatusCode,
+		ContentType: ctype(resp),
 	}}
 }
 
@@ -1595,10 +1612,11 @@ func (dirIndexing) Detect(ctx context.Context, t endpoints.Target, c *http.Clien
 		return []finding.Finding{{
 			Vuln: "디렉터리 인덱싱", Severity: "medium", Host: t.Host, Path: dir, Method: "GET",
 			Kind: "rule", Detector: "dir-indexing", Confidence: "high",
-			Evidence: "디렉터리 " + dir + " 에서 파일 목록 노출",
-			Request:  reqLine("GET", scheme+"://"+t.Host+dir),
-			Response: snippet(body, m),
-			RespCode: resp.StatusCode,
+			Evidence:    "디렉터리 " + dir + " 에서 파일 목록 노출",
+			Request:     reqLine("GET", scheme+"://"+t.Host+dir),
+			Response:    snippet(body, m),
+			RespCode:    resp.StatusCode,
+			ContentType: ctype(resp),
 		}}
 	}
 	return nil
@@ -1628,4 +1646,17 @@ func (destructiveDemo) Detect(ctx context.Context, t endpoints.Target, c *http.C
 		Kind: "rule", Detector: "destructive-demo", Confidence: "low",
 		Evidence: "AllowDestructive 옵트인으로 실행 (실제 파괴적 로직 없음)",
 	}}
+}
+
+// ctype — 응답 Content-Type 의 미디어타입(파라미터 제외·소문자). 이슈 #54.
+// 트리아지가 "브라우저가 이걸 렌더링하는가"를 판단하는 유일한 근거다.
+func ctype(resp *http.Response) string {
+	if resp == nil {
+		return ""
+	}
+	raw := resp.Header.Get("Content-Type")
+	if mt, _, err := mime.ParseMediaType(raw); err == nil {
+		return strings.ToLower(mt)
+	}
+	return strings.ToLower(strings.TrimSpace(strings.Split(raw, ";")[0]))
 }

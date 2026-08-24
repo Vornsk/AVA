@@ -57,6 +57,11 @@ func (MockProvider) Complete(_ context.Context, system, user string) (string, er
 		low := strings.ToLower(user)
 		verdict := "uncertain"
 		switch {
+		// 렌더링되지 않는 미디어타입에 반사된 값은 브라우저가 실행하지 않는다 (이슈 #54).
+		// #49 벤치의 오탐 5건이 전부 이 유형이었는데, mock 이 Content-Type 을 안 봐서
+		// 한 건도 못 걸렀다. detector 와 같은 맹점을 공유하던 자리다.
+		case isXSSFinding(low) && nonRenderingType(low):
+			verdict = "false_positive"
 		case strings.Contains(low, "&lt;") || strings.Contains(low, "&gt;") ||
 			strings.Contains(low, "textarea") || strings.Contains(low, "<!--"):
 			verdict = "false_positive" // 인코딩/비실행 컨텍스트 반사 → 오탐
@@ -66,7 +71,7 @@ func (MockProvider) Complete(_ context.Context, system, user string) (string, er
 			verdict = "real" // 응답 증적이 취약을 확증
 		}
 		reason := map[string]string{
-			"false_positive": "응답이 인코딩/비실행 컨텍스트로 실행 불가",
+			"false_positive": "응답이 비렌더링 미디어타입이거나 인코딩/비실행 컨텍스트로 실행 불가",
 			"real":           "응답 증적이 취약을 확증",
 			"uncertain":      "증적만으로 판단 불충분 — 수동 검토 권장",
 		}[verdict]
@@ -79,4 +84,36 @@ func (MockProvider) Complete(_ context.Context, system, user string) (string, er
 		}
 	}
 	return `{"allow":true,"reason":"위험 신호 없음","confidence":0.6}`, nil
+}
+
+// isXSSFinding / nonRenderingType — XSS 계열 발견인데 응답이 렌더링되지 않는 미디어타입인가
+// (이슈 #54). user 프롬프트의 detector=·content_type= 줄을 본다.
+func isXSSFinding(lowerUser string) bool {
+	for _, d := range []string{"detector=reflected-input", "detector=stored-xss", "detector=dom-xss"} {
+		if strings.Contains(lowerUser, d) {
+			return true
+		}
+	}
+	return false
+}
+
+func nonRenderingType(lowerUser string) bool {
+	i := strings.Index(lowerUser, "content_type=")
+	if i < 0 {
+		return false
+	}
+	line := lowerUser[i+len("content_type="):]
+	if j := strings.IndexByte(line, '\n'); j >= 0 {
+		line = line[:j]
+	}
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return false // 미상은 판단 근거가 아니다
+	}
+	for _, render := range []string{"text/html", "application/xhtml+xml", "image/svg+xml"} {
+		if strings.HasPrefix(line, render) {
+			return false
+		}
+	}
+	return true
 }
