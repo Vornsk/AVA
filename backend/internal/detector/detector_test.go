@@ -20,8 +20,12 @@ import (
 
 func TestReflectedInput(t *testing.T) {
 	// 쿼리 파라미터 q의 값을 그대로 반사하는 서버.
+	// ★ Content-Type 을 명시한다 (이슈 #54). 예전 이 테스트는 평문을 반환했고 Go 가 그걸
+	// text/plain 으로 스니핑했다 — 즉 브라우저가 실행하지 않는 응답을 XSS 로 보고하는
+	// #49 오탐 5건과 똑같은 상황을 정답으로 고정해 두고 있었다.
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("you sent: " + r.URL.Query().Get("q")))
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html><body>you sent: " + r.URL.Query().Get("q") + "</body></html>"))
 	}))
 	defer srv.Close()
 
@@ -813,5 +817,49 @@ func TestMultiIdentityNeedsTwo(t *testing.T) {
 	fs := (multiIdentity{}).Detect(context.Background(), tgt, srv.Client(), auth.Default())
 	if len(fs) != 0 {
 		t.Errorf("with only anon, expected no findings, got %d", len(fs))
+	}
+}
+
+// 이슈 #54 — 브라우저가 렌더링하지 않는 응답의 반사는 XSS 가 아니다.
+//
+// #49 벤치의 오탐 5건이 전부 이 유형이었다(P 82.8% 를 깎아먹던 단일 원인):
+// 값이 raw 로 반사되지만 응답이 text/plain 이라 실행되지 않는다.
+// ★ 미상(헤더 없음)은 지우지 않는다 — 브라우저가 스니핑하므로 정탐일 수 있다.
+func TestReflectedInputContentType(t *testing.T) {
+	serve := func(ct string) *httptest.Server {
+		return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if ct == "" {
+				w.Header()["Content-Type"] = nil // 헤더 자체를 빼서 미상 상황을 만든다
+			} else {
+				w.Header().Set("Content-Type", ct)
+			}
+			_, _ = w.Write([]byte("<html><body>" + r.URL.Query().Get("q") + "</body></html>"))
+		}))
+	}
+	cases := []struct {
+		ct   string
+		want bool // 발견이 나와야 하는가
+	}{
+		{"text/html; charset=utf-8", true},
+		{"application/xhtml+xml", true},
+		{"image/svg+xml", true},
+		{"", true}, // 미상 → 스니핑 가능성. 지우지 않는다
+		{"text/plain; charset=utf-8", false},
+		{"application/json", false},
+		{"text/csv", false},
+		{"application/octet-stream", false},
+	}
+	for _, c := range cases {
+		srv := serve(c.ct)
+		tgt := endpoints.Target{Host: strings.TrimPrefix(srv.URL, "https://"), Path: "/",
+			Params: []endpoints.Param{{Name: "q", In: "query"}}}
+		fs := reflectedInput{}.Detect(context.Background(), tgt, srv.Client(), auth.Default())
+		srv.Close()
+		if got := len(fs) > 0; got != c.want {
+			t.Errorf("content-type %q → 발견 %d건, want %v", c.ct, len(fs), c.want)
+		}
+		if c.want && len(fs) > 0 && fs[0].ContentType == "" && c.ct != "" {
+			t.Errorf("content-type %q 인데 finding.ContentType 이 비었다", c.ct)
+		}
 	}
 }

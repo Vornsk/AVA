@@ -331,6 +331,13 @@ func (reflectedInput) Detect(ctx context.Context, t endpoints.Target, c *http.Cl
 			if err != nil {
 				continue
 			}
+			// ★ 미디어타입 검증 (이슈 #54). 브라우저가 마크업으로 렌더링하지 않는 응답
+			// (text/plain·application/json·text/csv…)에 반사된 값은 실행되지 않으므로 XSS 가 아니다.
+			// #49 벤치의 오탐 5건이 전부 이 유형이었다 — P 82.8% 를 깎아먹던 단일 원인.
+			// content-type 미상이면 브라우저가 스니핑하므로 보고한다(정탐 삭제 회피).
+			if !rendersMarkup(ctype(resp)) {
+				continue
+			}
 			// 컨텍스트 검증: 페이로드가 raw 로 반사되고(인코딩 시 미일치) + 실행 가능한 위치일 것.
 			// 주석·textarea·title 등 비실행 컨테이너 안의 반사는 XSS 로 실행되지 않으므로 제외(오탐 감소).
 			if strings.Contains(body, pl) && reflectionExecutable(body, pl) {
@@ -386,8 +393,12 @@ func (storedXSS) Detect(ctx context.Context, t endpoints.Target, c *http.Client,
 			continue
 		}
 		// 클린 재조회 — 요청에 마커가 없는데도 응답에 실행가능하게 남아있으면 저장형.
-		_, clean, err := fetch(ctx, c, inj, "GET", displayURL)
+		cresp, clean, err := fetch(ctx, c, inj, "GET", displayURL)
 		if err != nil {
+			continue
+		}
+		// 반사형과 같은 미디어타입 검증 (이슈 #54) — 렌더링 안 되면 저장돼 있어도 실행되지 않는다.
+		if !rendersMarkup(ctype(cresp)) {
 			continue
 		}
 		if strings.Contains(clean, marker) && reflectionExecutable(clean, marker) {
@@ -397,6 +408,7 @@ func (storedXSS) Detect(ctx context.Context, t endpoints.Target, c *http.Client,
 				Evidence: "파라미터 " + p.Name + " 로 주입한 페이로드가 마커 없는 재조회 응답에 실행 가능하게 저장·반사됨",
 				Request:  reqLine("GET", displayURL),
 				Response: snippet(clean, marker),
+				RespCode: cresp.StatusCode, ContentType: ctype(cresp),
 			})
 			break // 파라미터당 1건
 		}
@@ -1659,4 +1671,17 @@ func ctype(resp *http.Response) string {
 		return strings.ToLower(mt)
 	}
 	return strings.ToLower(strings.TrimSpace(strings.Split(raw, ";")[0]))
+}
+
+// rendersMarkup — 브라우저가 이 미디어타입을 마크업으로 렌더링하는가 (이슈 #54).
+//
+// 빈 값(헤더 없음)은 true 다. 브라우저가 내용을 스니핑해 HTML 로 볼 수 있으므로,
+// 모른다는 이유로 발견을 지우지 않는다 — 오탐을 줄이려다 정탐을 지우면 도구가 나빠진다.
+// XML 계열을 포함하는 이유도 같다: XHTML·SVG 로 해석되면 스크립트가 실행될 수 있다.
+func rendersMarkup(ct string) bool {
+	switch ct {
+	case "", "text/html", "application/xhtml+xml", "image/svg+xml", "application/xml", "text/xml":
+		return true
+	}
+	return false
 }
