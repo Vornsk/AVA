@@ -38,6 +38,14 @@ export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
                 <span className="rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2.5 py-1 text-xs font-medium text-[var(--muted)]">
                   LLM · {stats?.llm_provider ?? '—'}
                 </span>
+                {/* 판단 불능은 눈에 띄어야 한다 — 이게 안 보여서 가드레일이 죽은 줄 몰랐다 (이슈 #56) */}
+                {stats?.llm_health?.degraded && (
+                  <span className="rounded-lg px-2.5 py-1 text-xs font-semibold"
+                        style={{ background: 'color-mix(in srgb, var(--red) 18%, transparent)', color: 'var(--red)' }}
+                        title={stats.llm_health.reason}>
+                    {t('overview.llmDegraded', { policy: stats.llm_health.policy })}
+                  </span>
+                )}
                 {proj && <span className="text-[10px] text-[var(--muted)]">created {proj.created}{projects && projects.length > 1 ? ` · ${projects.length} projects` : ''}</span>}
               </div>
             </div>
@@ -91,7 +99,8 @@ export function Overview({ onNav }: { onNav?: (p: Page) => void }) {
           <div className="space-y-1">
             <TopoRow icon={Layers} name={t('overview.topo.shared')} sub={t('overview.topo.sharedSub', { n: stats?.schemes?.length ?? 0 })} status={t('overview.topo.loaded')} />
             <TopoRow icon={FolderGit2} name={t('overview.topo.project')} sub={t('overview.topo.projectSub', { n: stats?.rules ?? 0 })} status={t('overview.topo.loaded')} />
-            <TopoRow icon={Laptop} name={t('overview.topo.local')} sub={t('overview.topo.localSub', { provider: stats?.llm_provider ?? '—' })} status={t('overview.topo.verified')} />
+            <TopoRow icon={Laptop} name={t('overview.topo.local')} sub={t('overview.topo.localSub', { provider: stats?.llm_provider ?? '—' })}
+                     status={stats?.llm_health?.degraded ? t('overview.topo.degraded') : t('overview.topo.verified')} />
           </div>
         </Card>
 

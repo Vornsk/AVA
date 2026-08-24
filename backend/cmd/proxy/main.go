@@ -13,7 +13,9 @@ import (
 	"log"
 	"net/http"
 	"sort"
+	"strconv"
 
+	"proxypoc/internal/audit"
 	"proxypoc/internal/auth"
 	"proxypoc/internal/ca"
 	"proxypoc/internal/checklist"
@@ -68,6 +70,11 @@ func main() {
 	}
 	llm.SetBasePolicy(basePolicy)
 	log.Printf("판단 프롬프트(기본): %s", basePolicy)
+	// 판단 불능 시 정책 (이슈 #56). 기본 allow — 대상 가용성 우선(1원칙).
+	if project.JudgeOnError != "" && !llm.SetFailurePolicy(project.JudgeOnError) {
+		log.Printf("경고: judge_on_error=%q 는 allow|block 이 아니다 — 기본 allow 유지", project.JudgeOnError)
+	}
+	log.Printf("판단 불능 시 정책: %s", llm.FailurePolicy())
 	auth.Set(project.Auth)
 	auth.SetIdentities(toIdentities(project.Identities)) // 다중 신원 (FR-3.6)
 	auth.SetLogin(project.Login)                         // 세션 만료 시 자동 재로그인 (FR-2.5)
@@ -162,6 +169,21 @@ func main() {
 	// 휴지통 자동 영구삭제 스위퍼 (이슈 #15) — 기동 시 1회 + 6시간 주기.
 	retention.StartSweeper(local.RetentionDays)
 
+	// 판단 불능 상태 전이를 감사에 남긴다 (이슈 #56). fail-open 이 발동해도 화면·로그가
+	// 멀쩡해 보이던 게 이 버그의 핵심이라, 상태가 바뀌는 순간을 증적으로 남긴다.
+	// 요청마다가 아니라 전이 시점에만 불린다.
+	llm.SetDegradeNotifier(func(degraded bool, h llm.Health) {
+		if degraded {
+			audit.Record("system", "system", "llm:degraded", h.Provider, "denied",
+				"판단 불능 — 정책 "+h.Policy+" 로 흡수: "+h.Reason)
+			log.Printf("[LLM ] ★ 판단 불능 진입 (정책 %s, 프로바이더 %s): %s", h.Policy, h.Provider, h.Reason)
+			return
+		}
+		audit.Record("system", "system", "llm:recovered", h.Provider, "ok",
+			"판단 복구 — 누적 불능 "+strconv.Itoa(h.Count)+"건")
+		log.Printf("[LLM ] 판단 복구 (누적 불능 %d건)", h.Count)
+	})
+
 	// LLM 스테이지 프로바이더 (config 기반, 교체는 llm.New 한 곳에서)
 	llm.SetProvider(llm.New(local.LLM.Provider, local.LLM.Model, local.LLM.Endpoint, local.LLM.APIKey))
 	log.Printf("LLM 프로바이더: %s (model=%s)", local.LLM.Provider, local.LLM.Model)
@@ -182,8 +204,8 @@ func main() {
 
 	// 웹 GUI (§5.1) — 같은 프로세스, 라이브 상태 공유
 	webui.SetAuthDisabled(local.AuthDisabled)
-	webui.SetArtifactExt(local.ArtifactExt)      // 산출물 네이티브 확장자 (FR-1.6)
-	webui.SetRetentionDays(local.RetentionDays)  // 휴지통 D-n 표시용 (이슈 #15)
+	webui.SetArtifactExt(local.ArtifactExt)     // 산출물 네이티브 확장자 (FR-1.6)
+	webui.SetRetentionDays(local.RetentionDays) // 휴지통 D-n 표시용 (이슈 #15)
 	if local.AuthDisabled {
 		log.Printf("⚠ 인증 비활성(개발 모드): 로그인 없이 리더로 동작 — 운영 배포 금지")
 	}

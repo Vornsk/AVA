@@ -116,3 +116,78 @@ func TestDegradedMarkedOnAllFailurePaths(t *testing.T) {
 		t.Error("파싱 실패 판정이 캐시에서 재사용됐다")
 	}
 }
+
+// fail-closed 정책 — 운영계는 "막지 못할 바엔 보내지 않는다" 를 고를 수 있어야 한다.
+func TestFailClosedPolicy(t *testing.T) {
+	restorePolicy(t)
+	ResetHealth()
+	t.Cleanup(func() { ResetHealth(); SetProvider(MockProvider{}) })
+
+	down := &flappy{failNext: 100}
+	SetProvider(down)
+	in := JudgeInput{Method: "POST", Path: "/p56/policy", ParamKeys: []string{"amount"}}
+
+	// 기본은 fail-open — 대상 가용성 우선(1원칙)
+	if v := Judge(context.Background(), in); !v.Allow || !v.Degraded {
+		t.Fatalf("기본 정책 = %+v, want allow+degraded", v)
+	}
+	if FailurePolicy() != FailOpen {
+		t.Errorf("기본 정책 = %q, want %q", FailurePolicy(), FailOpen)
+	}
+
+	// fail-closed 로 전환하면 같은 장애가 차단이 된다
+	if !SetFailurePolicy(FailClosed) {
+		t.Fatal("SetFailurePolicy(block) 거부됨")
+	}
+	v := Judge(context.Background(), in)
+	if v.Allow {
+		t.Error("fail-closed 인데 통과시켰다")
+	}
+	if !v.Degraded {
+		t.Error("차단해도 판단 불능이라는 사실은 남아야 한다")
+	}
+	if !strings.Contains(v.Reason, "판단 불능") {
+		t.Errorf("이유에 원인이 안 남았다: %q", v.Reason)
+	}
+
+	// 오타는 무시하고 현재 정책을 유지한다 — 오타로 fail-closed 가 풀리면 안 된다
+	if SetFailurePolicy("blcok") {
+		t.Error("잘못된 값을 받아들였다")
+	}
+	if FailurePolicy() != FailClosed {
+		t.Errorf("오타 후 정책 = %q, want block 유지", FailurePolicy())
+	}
+}
+
+// 상태 전이에만 통지해야 한다 — 장애 중 매 요청을 감사에 쓰면 audit.json 이 터진다.
+func TestDegradeNotifierFiresOnTransitionOnly(t *testing.T) {
+	restorePolicy(t)
+	ResetHealth()
+	t.Cleanup(func() { ResetHealth(); SetProvider(MockProvider{}) })
+
+	var mu sync.Mutex
+	var events []bool
+	SetDegradeNotifier(func(degraded bool, _ Health) {
+		mu.Lock()
+		events = append(events, degraded)
+		mu.Unlock()
+	})
+
+	f := &flappy{failNext: 3}
+	SetProvider(f)
+	in := JudgeInput{Method: "POST", Path: "/p56/notify", ParamKeys: []string{"x"}}
+	for i := 0; i < 3; i++ {
+		Judge(context.Background(), in) // 장애 3회
+	}
+	Judge(context.Background(), in) // 복구
+	Judge(context.Background(), in) // 정상(캐시)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(events) != 2 || events[0] != true || events[1] != false {
+		t.Errorf("통지 = %v, want [true false] (진입 1회 + 복구 1회)", events)
+	}
+	if h := HealthSnapshot(); h.Degraded || h.Count != 3 {
+		t.Errorf("health = %+v, want degraded=false count=3", h)
+	}
+}

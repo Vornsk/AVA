@@ -191,6 +191,18 @@ func Judge(ctx context.Context, in JudgeInput) Verdict {
 	}
 	v.Prompt, v.PromptHash = pol.ID, pol.Hash // 어떤 정책의 판단인지 로그·감사에 남긴다
 
+	// 판단 불능이면 실패 정책을 적용하고 상태를 기록한다 (이슈 #56).
+	// 기본은 fail-open(대상 가용성 우선)이고, 프로젝트가 fail-closed 를 고르면 차단한다.
+	if v.Degraded {
+		if FailurePolicy() == FailClosed {
+			v.Allow = false
+			v.Reason = "판단 불능(" + v.Reason + ") — fail-closed 정책으로 차단"
+		}
+		markDegraded(v.Reason, v.Provider)
+	} else {
+		markHealthy()
+	}
+
 	mu.Lock()
 	// ★ 실패 판정은 캐시하지 않는다 (이슈 #56). 캐시하면 프로바이더가 곧바로 되살아나도
 	// 같은 시그니처는 프로세스가 사는 동안 계속 통과한다 — 가드레일이 켜져 있는 것처럼
