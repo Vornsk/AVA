@@ -477,13 +477,31 @@ type form struct {
 	fields []string
 }
 
+// extract — HTML 에서 링크와 폼을 뽑는다.
+//
+// 폼-필드 연결은 문서 순서로 한다. `<table>` 직속 `<form>` 은 HTML5 foster-parenting 으로
+// 자식이 통째로 폼 밖으로 밀려, 폼의 subtree 만 훑으면 필드가 0개가 된다(옛 한국 쇼핑몰의
+// 전형 — 로그인·검색 폼이 테이블 레이아웃 안에 있다). 밀려난 필드도 문서 순서상 자기
+// form-open 뒤·다음 form-open 앞에 오므로, "직전 폼"에 이어 붙여 복원한다. 정상 중첩된
+// 폼은 그대로 자기 폼에 붙는다.
 func extract(body string, base *url.URL) (links []string, forms []form) {
 	doc, err := html.Parse(strings.NewReader(body))
 	if err != nil {
 		return
 	}
-	var walk func(*html.Node)
-	walk = func(n *html.Node) {
+	type frec struct {
+		f     *form
+		order int
+	}
+	type orphan struct {
+		name  string
+		order int
+	}
+	var frecs []frec
+	var orphans []orphan
+	order := 0
+	var walk func(n *html.Node, cur *form)
+	walk = func(n *html.Node, cur *form) {
 		if n.Type == html.ElementNode {
 			switch n.Data {
 			case "a", "link":
@@ -491,46 +509,55 @@ func extract(body string, base *url.URL) (links []string, forms []form) {
 					links = append(links, abs)
 				}
 			case "form":
-				f := form{method: strings.ToUpper(attrVal(n, "method"))}
+				order++
+				f := &form{method: strings.ToUpper(attrVal(n, "method"))}
 				if f.method == "" {
 					f.method = "GET"
 				}
-				action := attrVal(n, "action")
-				if action == "" {
+				if action := attrVal(n, "action"); action == "" {
 					f.action = stripFragment(base.String())
 				} else {
 					f.action = resolve(base, action)
 				}
-				collectFields(n, &f)
-				if f.action != "" {
-					forms = append(forms, f)
+				frecs = append(frecs, frec{f, order})
+				cur = f // 정상 중첩된 필드는 이 폼에 직접 붙는다
+			case "input", "select", "textarea":
+				order++
+				if name := attrVal(n, "name"); name != "" {
+					if cur != nil {
+						cur.fields = append(cur.fields, name)
+					} else {
+						orphans = append(orphans, orphan{name, order}) // foster-parented
+					}
 				}
 			}
 		}
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+			walk(c, cur)
 		}
 	}
-	walk(doc)
-	return
-}
+	walk(doc, nil)
 
-func collectFields(n *html.Node, f *form) {
-	var walk func(*html.Node)
-	walk = func(x *html.Node) {
-		if x.Type == html.ElementNode {
-			switch x.Data {
-			case "input", "select", "textarea":
-				if name := attrVal(x, "name"); name != "" {
-					f.fields = append(f.fields, name)
-				}
+	// 밀려난 필드를 직전(문서 순서) 폼에 잇는다.
+	for _, o := range orphans {
+		var target *form
+		for i := range frecs {
+			if frecs[i].order < o.order {
+				target = frecs[i].f
+			} else {
+				break
 			}
 		}
-		for c := x.FirstChild; c != nil; c = c.NextSibling {
-			walk(c)
+		if target != nil {
+			target.fields = append(target.fields, o.name)
 		}
 	}
-	walk(n)
+	for _, fr := range frecs {
+		if fr.f.action != "" {
+			forms = append(forms, *fr.f)
+		}
+	}
+	return
 }
 
 func attrVal(n *html.Node, key string) string {
