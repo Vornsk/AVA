@@ -150,6 +150,7 @@ cd backend && SCANBENCH_TIMEOUT=50m go test ./internal/scanengine/bench \
   해당 5건: `/exec`·`/fetch`(vulnlab), `/transfer`·`/change-email`·`/download`(vulnapp).
   전부 `curl -D-` 로 Content-Type 을 직접 확인했다.
   **이걸 고치면 합산 P 가 82.8% → 100% 가 된다** — 다음 개선의 1순위이자, 이 벤치의 첫 성과다.
+  → **2026-08-24 이슈 #54 에서 실측으로 확인됨**(아래 절). 예측한 수치가 그대로 나왔다.
 
 ### LLM 트리아지 전후 (FR-3.3) — 프로바이더 `mock`
 
@@ -200,6 +201,88 @@ cd backend && SCANBENCH_LLM=ollama SCANBENCH_LLM_MODEL=llama3.2 \
 | `/transfer vuln.access-control`<br>`/transfer vuln.ssrf` | 아직 근거를 확보하지 못했다. 정탐인지 오탐인지 실측으로 가르기 전에는 정답셋에 넣지 않는다 |
 
 미분류를 근거 없이 `expect`/`not_expect` 로 옮기면 계기판이 아니라 자기충족 예언이 된다.
+### 2026-08-24 · 이슈 #54 — 트리아지 프롬프트 + detector Content-Type 수정
+
+- 커밋: 트리아지 `8d07401`·`950c393` · detector `b260943` (브랜치 `seona`)
+- 환경: Go 1.26.5 windows/amd64 · 외부 도구 `sslscan` 미설치 · LLM 은 ollama(CPU)
+- **위 최초 측정의 예측이 맞았다.** "오탐 5건이 전부 `reflected-input` 의 Content-Type 미검사 —
+  고치면 합산 P 82.8% → 100%" 가 실측으로 확인됐다.
+
+#### 스캔 지표 (detector 수정 후)
+
+| 대상 | GT | 발견 | TP | FP | FN | 미분류 | P | R | F1 | FP율 | 소요 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| `vulnapp` | 16 | 20 | 16 | 0 | 0 | 4 | 100.0% | 100.0% | 100.0% | 0.0% | 3m32s |
+| `vulnlab` | 8 | 8 | 8 | 0 | 0 | 0 | 100.0% | 100.0% | 100.0% | 0.0% | 50s |
+| **합산** | 24 | 28 | 24 | 0 | 0 | 4 | **100.0%** | **100.0%** | **100.0%** | **0.0%** | — |
+
+`reflected-input` 이 `TP=4 FP=4` → `TP=4 FP=0`(vulnapp), `TP=2 FP=2` → `TP=2 FP=0`(vulnlab).
+**정탐은 하나도 잃지 않았다** — 미디어타입 미상(Content-Type 헤더 없음)은 브라우저가 스니핑하므로
+발견을 유지하도록 했기 때문이다. 지우는 조건은 "렌더링하지 않는다고 확인된 경우"뿐이다.
+
+#### LLM 트리아지 전후 (FR-3.3) — detector 수정 **전** 상태에서 측정
+
+detector 를 고치기 전에 재야 트리아지 효과를 잴 수 있다. 고친 뒤엔 걸러낼 오탐이 0이라
+"트리아지가 detector 의 실수를 잡는가"라는 질문 자체가 성립하지 않는다.
+
+| 프로바이더 | 대상 | FP | TP | P | 오탐 표시 | 잘 걸러냄 | ★ 정탐 삭제 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `mock`(#49) | 합산 | 5 → 5 | 24 → 24 | 82.8% → 82.8% | 0건 | 0 | 0 |
+| `qwen2.5:3b` | vulnapp | 3 → 0 | 16 → 11 | 84.2% → 100.0% | 14 | 4 | **5** |
+| `qwen2.5:3b` | vulnlab | 2 → 0 | 8 → 5 | 80.0% → 100.0% | 8 | 2 | **3** |
+| `qwen2.5:7b` | vulnapp | 3 → 0 | 16 → 16 | 84.2% → 100.0% | 13 | 4 | **0** |
+| `qwen2.5:7b` | vulnlab | 2 → 1 | 8 → 8 | 80.0% → 88.9% | 4 | 1 | **0** |
+
+**결론: 트리아지에는 `qwen2.5:7b` 가 필요하다. 3b 는 오탐을 지우면서 정탐도 8건 지운다.**
+7b 합산은 FP 5 → 1, TP 24 → 24, P 82.8% → 96.0%, **정탐 손실 0건**.
+
+판단(Judge) 스테이지 권장이 3b 인 것(`main` e317d97·42cd6e7)과 모순이 아니다. 태스크가 다르고
+실패 방향이 반대다 — 판단에서 7b 의 오답은 false-allow(위험), 트리아지에서 3b 의 오답은
+과잉 삭제(정탐 손실)다. 대가는 속도다: vulnapp 트리아지가 7m49s(3b) → 13m20s(7b), 약 1.7배.
+
+#### detector 수정까지 반영한 최종 측정 (`qwen2.5:7b`)
+
+| 대상 | FP | TP | P | ★ 정탐 삭제 |
+|---|---:|---:|---:|---:|
+| `vulnapp` | 0 → 0 | 16 → 16 | 100.0% → 100.0% | 0 |
+| `vulnlab` | 0 → 0 | 8 → 8 | 100.0% → 100.0% | 0 |
+
+detector 가 이미 걸러서 트리아지가 지울 오탐이 없다. **두 방어선이 독립적으로 같은 결함을 막는다** —
+detector 가 새 우회를 만나 놓쳐도 트리아지가 잡고, 트리아지 모델이 약해도 detector 가 잡는다.
+(트리아지가 표시한 9·4건은 전부 미분류/전역이라 채점에 들어가지 않는다.)
+
+#### 프롬프트 1차 판본은 실패했다 — 기록해 둔다
+
+detector 별 힌트를 "이 탐지기는 이렇게 헛발질한다"로만 써서 **오탐 조건만 나열하고 정탐 조건을
+안 적었다.** 그랬더니 3b 가 `reflected-input` 을 통째로 오탐 처리했다(vulnapp `TP=4 FP=4` →
+`TP=0 FP=1`). 배선 문제가 아니었다 — `/search=text/html`·`/download=text/plain` 로 `content_type`
+은 정확히 전달됐다. 모델이 신호를 읽는 대신 힌트의 방향에 끌려간 것이다.
+
+판단 프롬프트가 겪은 실패와 같은 모양이다(`main` e317d97: 기준 없이 쓰니 전건 차단, 4/10).
+같은 처방으로 고쳤다 — 모든 힌트를 `REAL when … / FALSE POSITIVE when …` **대칭**으로, 기본 방향
+명시(`Default to real`), 예시 3건 중 정탐을 맨 앞에. `TestTriageHintsAreSymmetric` ·
+`TestTriagePromptDefaultsToKeeping` 이 이 회귀를 막는다.
+
+#### 재현
+
+```bash
+cd backend && go run ./cmd/vulnapp &
+cd backend && SCANBENCH_LLM=ollama SCANBENCH_LLM_MODEL=qwen2.5:7b \
+  SCANBENCH_LLM_ENDPOINT=http://127.0.0.1:11434 \
+  SCANBENCH_TIMEOUT=50m go test ./internal/scanengine/bench -run ScanBench -v -count=1 -timeout 120m
+```
+
+트리아지 효과를 다시 보려면 `b260943`(detector 수정) 이전 커밋에서 돌려야 한다.
+
+#### 아직 측정하지 않은 것
+
+- **Claude(anthropic) 프로바이더 미측정.** API 키가 설정돼 있지 않다(`local.config.yaml` 의
+  `api_key` 가 빈 값). 키가 생기면 `SCANBENCH_LLM=anthropic SCANBENCH_LLM_KEY=… ` 로 같은 명령을
+  돌려 이 표에 행을 추가할 것. 이슈 #54 의 완료 기준 중 이 항목만 미충족이다.
+- **제품에서 LLM 판정은 주석일 뿐 상태를 바꾸지 않는다**(`scanengine.execute`, HITL).
+  위 "정탐 삭제" 수치는 **판정을 그대로 믿고 필터링했다면** 의 가정값이며, 실제로 발견이
+  사라지지는 않는다. 그래도 배지·필터의 신뢰도를 그대로 나타내므로 계기판으로서 유효하다.
+
 <!-- BASELINE:END -->
 
 ### 기록 방법
@@ -217,8 +300,9 @@ cd backend && SCANBENCH_LLM=ollama SCANBENCH_LLM_MODEL=llama3.2 \
 
 - **LLM 트리아지 비교는 프로바이더가 설정돼야 나온다.** 없으면 판정이 전부 `uncertain` 이라
   비교가 무의미해 skip 한다(`SCANBENCH_LLM` 환경변수).
-- **지금까지 측정된 건 `mock` 뿐이다.** 실 모델에서 트리아지가 오탐을 줄이는지는 미측정이다.
-  위 "LLM 트리아지 전후" 절 참고.
+- **트리아지는 모델을 가린다.** `mock`(0건 검출)·`qwen2.5:3b`(오탐은 줄이나 정탐 8건 삭제)·
+  `qwen2.5:7b`(정탐 손실 0건)를 측정했다. **Claude(anthropic)는 API 키가 없어 미측정**이다.
+  위 2026-08-24 절 참고.
 - **정답셋은 우리가 만든 앱 2종뿐이다.** 닫힌 세계라 정답이 정확한 대신, 실제 웹앱의
   다양성(프레임워크·WAF·SPA)은 반영되지 않는다. 외부 앱(juice-shop·DVWA) 추가는 후속 과제.
 - **`vulnlab` 에는 정상 대조군이 없다.** FP 분모는 `vulnapp` 의 `-safe` 계열이 담당한다.

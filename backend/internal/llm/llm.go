@@ -220,6 +220,9 @@ type ReviewInput struct {
 	Request  string // 재현 요청 (FR-4.2, 마스킹)
 	Response string // 증명 응답 스니펫 (FR-4.2, 마스킹)
 	RespCode int
+	// ContentType — 응답 미디어타입 (이슈 #54). 오탐 판정의 핵심 신호다:
+	// text/plain 에 반사된 입력은 브라우저가 실행하지 않으므로 XSS 가 아니다.
+	ContentType string
 }
 
 // ReviewResult — LLM 오탐 판정 + 조치문구.
@@ -230,14 +233,6 @@ type ReviewResult struct {
 	Provider    string `json:"provider"`
 }
 
-// triage 라는 단어를 포함해 mock 프로바이더가 작업을 구분하게 한다.
-const reviewSysPrompt = "You are a security triage assistant for an authorized web assessment. " +
-	"An automated scanner produced a finding using a heuristic that can misfire; your job is to catch false positives. " +
-	"Given the finding, the reproduction request, and the masked response evidence, decide whether it is a REAL vulnerability or a FALSE POSITIVE. " +
-	"Reason about context: reflected input is XSS only if it lands unencoded in an executable HTML position; a reflected value inside a comment/textarea/attribute or HTML-encoded is a false positive; " +
-	"a DB error string confirms SQLi; a 3xx Location to an external host confirms open redirect; missing anti-CSRF token is only medium confidence. " +
-	"Reply with ONLY compact JSON: {\"verdict\":\"real|false_positive|uncertain\",\"reason\":string,\"remediation\":string}."
-
 // Review — finding을 LLM으로 오탐 판정하고 조치문구를 생성 (FR-3.3). 오류/무프로바이더 시 uncertain.
 func Review(ctx context.Context, in ReviewInput) ReviewResult {
 	mu.Lock()
@@ -246,10 +241,10 @@ func Review(ctx context.Context, in ReviewInput) ReviewResult {
 	if p == nil {
 		return ReviewResult{Verdict: "uncertain", Reason: "프로바이더 없음", Provider: "none"}
 	}
-	user := fmt.Sprintf("vuln=%s\nseverity=%s\nmethod=%s\npath=%s\nparam=%s\ndetector=%s\nsummary=%s\nrequest=%s\nresponse(HTTP %d)=%s",
-		in.Vuln, in.Severity, in.Method, in.Path, in.Param, in.Detector, in.Evidence, in.Request, in.RespCode, in.Response)
+	user := fmt.Sprintf("vuln=%s\nseverity=%s\nmethod=%s\npath=%s\nparam=%s\ndetector=%s\ncontent_type=%s\nsummary=%s\nrequest=%s\nresponse(HTTP %d)=%s",
+		in.Vuln, in.Severity, in.Method, in.Path, in.Param, in.Detector, in.ContentType, in.Evidence, in.Request, in.RespCode, in.Response)
 
-	content, err := p.Complete(ctx, reviewSysPrompt, user)
+	content, err := p.Complete(ctx, reviewPrompt(in.Detector), user)
 	if err != nil {
 		return ReviewResult{Verdict: "uncertain", Reason: "프로바이더 오류: " + err.Error(), Provider: p.Name()}
 	}

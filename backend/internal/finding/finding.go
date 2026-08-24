@@ -36,10 +36,13 @@ type Finding struct {
 	Request  string `json:"request,omitempty"`   // 재현 요청 (METHOD URL, 마스킹)
 	Response string `json:"response,omitempty"`  // 증명 응답 스니펫 (매칭 컨텍스트, 마스킹·절단)
 	RespCode int    `json:"resp_code,omitempty"` // 응답 상태코드
-	Status   string `json:"status"`              // 검토상태(FR-4.4): 신규 → 검토중 → 확정|오탐|보류 → 보고
-	Version  int    `json:"version"`             // 낙관적 락 버전 (§5.1 FR-1.3). 수정마다 +1
-	Reviewer string `json:"reviewer,omitempty"`  // 마지막 검토자 (FR-4.4)
-	Time     string `json:"time,omitempty"`      // 진단일시 (§3, FR-3.5)
+	// ContentType — 응답 미디어타입 (이슈 #54). 오탐 트리아지의 핵심 신호:
+	// text/plain 에 반사된 입력은 브라우저가 실행하지 않으므로 XSS 가 아니다.
+	ContentType string `json:"content_type,omitempty"`
+	Status      string `json:"status"`             // 검토상태(FR-4.4): 신규 → 검토중 → 확정|오탐|보류 → 보고
+	Version     int    `json:"version"`            // 낙관적 락 버전 (§5.1 FR-1.3). 수정마다 +1
+	Reviewer    string `json:"reviewer,omitempty"` // 마지막 검토자 (FR-4.4)
+	Time        string `json:"time,omitempty"`     // 진단일시 (§3, FR-3.5)
 	// LLM 오탐 검토 (FR-3.3, §8 HITL) — 옵션
 	LLMVerdict  string `json:"llm_verdict,omitempty"` // real | false_positive | uncertain
 	LLMReason   string `json:"llm_reason,omitempty"`
