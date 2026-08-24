@@ -158,7 +158,11 @@ func RunDetectors(ctx context.Context, targets []endpoints.Target, dets []detect
 						vd = vulns[0]
 					}
 				}
-				out = append(out, Found{Path: f.Path, VulnDef: vd, Detector: f.Detector})
+				out = append(out, Found{
+					Path: f.Path, Method: f.Method, Param: f.Param,
+					VulnDef: vd, Detector: f.Detector, Severity: f.Severity,
+					Evidence: f.Evidence, Request: f.Request, Response: f.Response, RespCode: f.RespCode,
+				})
 			}
 		}
 	}
@@ -181,20 +185,45 @@ func Timeout() time.Duration {
 //
 // 제품은 스캔 중 인라인으로 부르지만(scanengine.execute), 판정은 finding 의 순수 함수라
 // 스캔을 두 번 돌릴 필요가 없다. 같은 발견 집합에 판정만 얹어 전·후를 비교한다.
-// 발견 본문(Evidence/Request/Response)은 여기서 다시 만들 수 없으므로, 판정 품질은
-// 제품 실행보다 보수적으로 나올 수 있다 — 이 한계는 README 에 적어둔다.
+//
+// ★ 입력은 제품(scanengine.execute)이 넘기는 것과 같은 필드 집합이다. 증적을 빼고 부르면
+// 판정 근거가 사라져 전부 uncertain 이 되고, "LLM 이 오탐을 줄이는가"라는 질문 자체가
+// 측정되지 않는다. reviewSysPrompt 가 응답 문맥으로 판단하도록 쓰여 있기 때문이다.
 func ReviewLLM(ctx context.Context, found []Found) []Found {
 	out := make([]Found, len(found))
 	copy(out, found)
 	for i := range out {
 		rr := llm.Review(ctx, llm.ReviewInput{
 			Vuln:     out[i].VulnDef,
+			Severity: out[i].Severity,
+			Method:   out[i].Method,
 			Path:     out[i].Path,
+			Param:    out[i].Param,
 			Detector: out[i].Detector,
+			Evidence: out[i].Evidence,
+			Request:  out[i].Request,
+			Response: out[i].Response,
+			RespCode: out[i].RespCode,
 		})
 		out[i].LLMFP = rr.Verdict == "false_positive"
 	}
 	return out
+}
+
+// SetupLLM — 벤치용 LLM 프로바이더를 환경변수로 지정한다.
+//
+//	SCANBENCH_LLM=mock|ollama|anthropic|openai  (미설정이면 프로바이더를 건드리지 않는다)
+//	SCANBENCH_LLM_MODEL · SCANBENCH_LLM_ENDPOINT · SCANBENCH_LLM_KEY
+//
+// 테스트 바이너리는 local.config.yaml 을 읽지 않으므로 여기서 명시적으로 꽂는다.
+// 제품 기동 경로에는 영향이 없다.
+func SetupLLM() string {
+	p := os.Getenv("SCANBENCH_LLM")
+	if p == "" {
+		return ""
+	}
+	llm.SetProvider(llm.New(p, os.Getenv("SCANBENCH_LLM_MODEL"), os.Getenv("SCANBENCH_LLM_ENDPOINT"), os.Getenv("SCANBENCH_LLM_KEY")))
+	return llm.ProviderName()
 }
 
 // LLMAvailable — LLM 프로바이더가 설정돼 있는가. 없으면 판정이 전부 uncertain 이라 비교가 무의미하다.

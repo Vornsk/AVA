@@ -5,11 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
 	"proxypoc/internal/checklist"
 	"proxypoc/internal/detector"
+	"proxypoc/internal/llm"
 )
 
 // ── 유닛: 채점 로직 (대상 없이 합성 데이터로 항상 실행) ──
@@ -100,6 +102,58 @@ func TestScoreLLMFilter(t *testing.T) {
 	}
 	if before.TP != after.TP {
 		t.Errorf("LLM 필터가 정탐을 지웠다: TP=%d→%d", before.TP, after.TP)
+	}
+}
+
+// TestLLMEffect — ★ 트리아지 효과는 "오탐을 줄였나"와 "정탐을 지웠나"를 같이 봐야 한다.
+// 정탐까지 지우면 오탐률은 좋아지고 도구는 나빠진다.
+func TestLLMEffect(t *testing.T) {
+	found := []Found{
+		{Path: "/user-safe", VulnDef: "vuln.sqli", Detector: "sqli-blind", LLMFP: true},      // 실제 오탐 → 잘 걸러냄
+		{Path: "/search", VulnDef: "vuln.xss", Detector: "reflected-input", LLMFP: true},     // 실제 정탐 → 지움(위험)
+		{Path: "/zzz", VulnDef: "vuln.ssrf", Detector: "ssrf", LLMFP: true},                  // 미분류
+		{Path: "/search", VulnDef: "vuln.sec-headers", Detector: "sec-headers", LLMFP: true}, // 전역
+		{Path: "/item/1", VulnDef: "vuln.sqli", Detector: "sqli"},                            // 미표시
+	}
+	e := LLMEffectOf(found, gtFixture())
+	if e.Flagged != 4 {
+		t.Errorf("표시=%d (want 4)", e.Flagged)
+	}
+	if e.CorrectFP != 1 || e.HarmfulFP != 1 || e.OtherFP != 2 {
+		t.Errorf("교차표 오류: 정확=%d 유해=%d 기타=%d (want 1,1,2)", e.CorrectFP, e.HarmfulFP, e.OtherFP)
+	}
+	if !strings.Contains(e.Summary(), "정탐 1건을 지움") {
+		t.Errorf("정탐 손실이 요약에 드러나지 않는다: %s", e.Summary())
+	}
+}
+
+// TestReviewLLMCarriesEvidence — ★ 증적이 LLM 까지 실제로 전달되는가.
+//
+// 판정은 응답 문맥으로 한다(reviewSysPrompt). 증적을 빼고 부르면 근거가 사라져 전부
+// uncertain 이 되고, "LLM 이 오탐을 줄이는가"가 측정되지 않은 채 0건으로 보인다.
+// 초기 구현이 실제로 그랬다 — 그때는 프로바이더 탓인지 배관 탓인지 구분할 수 없었다.
+// mock 은 인코딩·비실행 컨텍스트 반사를 오탐으로 판정하므로 배관 검증에 그대로 쓸 수 있다.
+func TestReviewLLMCarriesEvidence(t *testing.T) {
+	llm.SetProvider(llm.New("mock", "", "", ""))
+	t.Cleanup(func() { llm.SetProvider(nil) })
+
+	cases := []struct {
+		name string
+		f    Found
+		want bool
+	}{
+		{"인코딩 반사 → 오탐", Found{Path: "/a", VulnDef: "vuln.xss", Detector: "reflected-input",
+			Severity: "medium", Response: "<p>results: &lt;script&gt;alert(1)&lt;/script&gt;</p>"}, true},
+		{"textarea 반사 → 오탐", Found{Path: "/b", VulnDef: "vuln.xss", Detector: "reflected-input",
+			Severity: "medium", Response: "<textarea><script>x</script></textarea>"}, true},
+		{"raw 반사 → 오탐 아님", Found{Path: "/c", VulnDef: "vuln.xss", Detector: "reflected-input",
+			Severity: "medium", Response: "<h1>Hello <script>alert(1)</script></h1>"}, false},
+		{"증적 없음 → 판정 불가", Found{Path: "/d", VulnDef: "vuln.xss", Detector: "reflected-input"}, false},
+	}
+	for _, c := range cases {
+		if got := ReviewLLM(context.Background(), []Found{c.f})[0].LLMFP; got != c.want {
+			t.Errorf("%s: LLMFP=%v want %v — 증적이 전달되지 않았을 수 있다", c.name, got, c.want)
+		}
 	}
 }
 
@@ -273,8 +327,11 @@ func benchOne(t *testing.T, gt GroundTruth, base string) {
 	t.Logf("%s", m.Summary(15))
 
 	// LLM 오탐 트리아지 전후 비교 (FR-3.3). 프로바이더가 없으면 판정이 전부 uncertain 이라 무의미.
+	if name := SetupLLM(); name != "" {
+		t.Logf("LLM 프로바이더: %s (SCANBENCH_LLM)", name)
+	}
 	if !LLMAvailable() {
-		t.Logf("LLM 프로파일 skip — 프로바이더 미설정 (local.config.yaml 의 llm.provider)")
+		t.Logf("LLM 프로파일 skip — 프로바이더 미설정 (SCANBENCH_LLM=mock|ollama|anthropic|openai)")
 	} else {
 		ls := time.Now()
 		reviewed := ReviewLLM(ctx, found)
@@ -282,8 +339,10 @@ func benchOne(t *testing.T, gt GroundTruth, base string) {
 		lm.Profile, lm.Duration = "seeded+llm", dur+time.Since(ls)
 		t.Logf("%s", lm.Table())
 		t.Logf("%s", lm.Summary(15))
-		t.Logf("LLM 트리아지 효과: FP %d → %d · TP %d → %d (정탐을 지웠으면 TP 가 줄어든다)",
-			m.FP, lm.FP, m.TP, lm.TP)
+		eff := LLMEffectOf(reviewed, gt)
+		t.Logf("LLM 트리아지 효과: FP %d → %d · TP %d → %d · P %.1f%% → %.1f%%",
+			m.FP, lm.FP, m.TP, lm.TP, m.Precision*100, lm.Precision*100)
+		t.Logf("  %s", eff.Summary())
 	}
 	t.Logf("↑ 이 수치를 baseline 으로 기록하세요 (docs/scan-groundtruth/README.md).")
 }

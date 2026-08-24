@@ -108,10 +108,22 @@ func LoadGroundTruth(path string) (GroundTruth, error) {
 }
 
 // Found — 스캔이 낸 발견 1건. 쌍으로 접기 전의 원본 단위(detector 분해용).
+//
+// 증적(Evidence·Request·Response·RespCode·Severity)을 같이 나른다. 채점에는 안 쓰지만
+// LLM 트리아지(FR-3.3)의 입력이다 — 판정은 "반사된 값이 실행 가능한 위치에 인코딩 없이
+// 들어갔는가" 같은 응답 문맥으로 하므로, 증적을 버리면 모델에게 판단 재료를 주지 않고
+// 판정을 요구하는 꼴이 되어 전부 uncertain 이 나온다.
 type Found struct {
 	Path     string
+	Method   string
+	Param    string
 	VulnDef  string // 2층 VulnDef id. 비면 Detector id 로 폴백된다.
 	Detector string
+	Severity string
+	Evidence string
+	Request  string
+	Response string
+	RespCode int
 	LLMFP    bool // LLM 이 오탐으로 판정 (FR-3.3)
 }
 
@@ -160,6 +172,79 @@ type Metrics struct {
 	UnreachableList  []string // 담당 detector 미실행으로 측정 불가한 정답 쌍
 
 	ByDetector []DetectorStat
+}
+
+// LLMEffect — LLM 오탐 판정(FR-3.3)과 정답의 교차표.
+//
+// "오탐을 줄였는가"만 보면 절반만 본 것이다. 정탐까지 같이 지우면 오탐률은 좋아지고
+// 도구는 나빠진다. 그래서 걸러낸 건수를 정답 기준으로 쪼개 HarmfulFP 를 같이 낸다.
+type LLMEffect struct {
+	Provider  string
+	Flagged   int // LLM 이 false_positive 로 표시한 발견 수
+	CorrectFP int // 그중 실제 오탐(not_expect) — 잘 걸러낸 것
+	HarmfulFP int // 그중 실제 정탐(expect) — ★ 정탐을 지웠다
+	OtherFP   int // 그중 미분류·전역
+}
+
+// LLMEffectOf — 판정이 붙은 발견 집합을 정답과 대조해 트리아지 효과를 낸다.
+func LLMEffectOf(found []Found, gt GroundTruth) LLMEffect {
+	expect, notExpect, siteWide := indexGT(gt, nil)
+	var e LLMEffect
+	e.Provider = "?"
+	for _, f := range found {
+		if !f.LLMFP {
+			continue
+		}
+		e.Flagged++
+		v := vulnOf(f)
+		k := pairKey(f.Path, v)
+		switch {
+		case siteWide[v]:
+			e.OtherFP++
+		case expect[k]:
+			e.HarmfulFP++
+		case notExpect[k]:
+			e.CorrectFP++
+		default:
+			e.OtherFP++
+		}
+	}
+	return e
+}
+
+// Summary — 한 줄 요약.
+func (e LLMEffect) Summary() string {
+	if e.Flagged == 0 {
+		return "LLM 이 오탐으로 표시한 발견 0건 — 트리아지가 아무것도 걸러내지 않았다"
+	}
+	s := fmt.Sprintf("LLM 이 %d건을 오탐으로 표시: 실제 오탐 %d · 미분류/전역 %d",
+		e.Flagged, e.CorrectFP, e.OtherFP)
+	if e.HarmfulFP > 0 {
+		s += fmt.Sprintf(" · ★ 정탐 %d건을 지움(위험)", e.HarmfulFP)
+	} else {
+		s += " · 정탐 손실 0건"
+	}
+	return s
+}
+
+// indexGT — 정답셋을 채점용 색인으로. reachable 이 nil 이 아니면 도달 불가 정답은 expect 에서 뺀다.
+func indexGT(gt GroundTruth, reachable map[string]bool) (expect, notExpect, siteWide map[string]bool) {
+	expect, notExpect, siteWide = map[string]bool{}, map[string]bool{}, map[string]bool{}
+	for _, v := range gt.SiteWide {
+		siteWide[v] = true
+	}
+	for _, t := range gt.Targets {
+		for _, v := range t.Expect {
+			if reachable != nil && !reachable[v] {
+				continue
+			}
+			expect[pairKey(t.Path, v)] = true
+		}
+		for _, v := range t.NotExpect {
+			notExpect[pairKey(t.Path, v)] = true
+		}
+	}
+	return expect, notExpect, siteWide
 }
 
 // pairKey — 채점 단위: "canon(path) vulnDef".
