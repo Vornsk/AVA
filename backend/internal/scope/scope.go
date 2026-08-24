@@ -13,6 +13,7 @@ package scope
 
 import (
 	"net"
+	"net/url"
 	"regexp"
 	"strings"
 	"sync"
@@ -85,7 +86,7 @@ func (e *Enforcer) hostMatch(host string) bool { // 호출자가 락 보유
 }
 
 func (e *Enforcer) Add(h string) bool {
-	h = strings.ToLower(strings.TrimSpace(h))
+	h = NormalizeHost(h) // 관용 입력 허용 (URL 통째로 넣어도 호스트만)
 	if h == "" {
 		return false
 	}
@@ -164,12 +165,46 @@ func HostOnly(hostport string) string {
 func cleanHosts(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, h := range in {
-		h = strings.ToLower(strings.TrimSpace(h))
-		if h != "" {
+		if h = NormalizeHost(h); h != "" {
 			out = append(out, h)
 		}
 	}
 	return out
+}
+
+// NormalizeHost — 스코프 입력을 호스트명 하나로 정규화한다 (관용 입력 허용).
+//
+// 스코프는 호스트 화이트리스트인데, 사용자가 "http://192.168.100.5/" 처럼 URL 을 통째로
+// 넣으면 hostMatch(요청의 u.Hostname() 과 문자열 비교)가 영영 어긋나 크롤·프록시가 전부
+// "스코프 밖" 으로 버려진다 — 링크를 다 찾고도 엔드포인트 0개가 되는 함정. 그래서 스킴·경로·
+// 포트를 벗겨 호스트만 남긴다. 어느 형식으로 넣어도 동작하게 만드는 게 목적이다.
+//
+//	http://192.168.100.5/           → 192.168.100.5
+//	https://example.com/path?q=1    → example.com
+//	example.com:8080                → example.com   (hostMatch 는 포트를 안 보므로 제거)
+//	EXAMPLE.com                     → example.com
+func NormalizeHost(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	probe := s
+	if !strings.Contains(probe, "//") { // 스킴 없으면 url.Parse 가 호스트로 인식하도록
+		probe = "//" + probe
+	}
+	if u, err := url.Parse(probe); err == nil {
+		if h := u.Hostname(); h != "" {
+			return strings.ToLower(h)
+		}
+	}
+	// 폴백: 경로 자르고 포트 제거
+	if i := strings.IndexAny(s, `/\?`); i >= 0 {
+		s = s[:i]
+	}
+	if h, _, err := net.SplitHostPort(s); err == nil {
+		s = h
+	}
+	return strings.ToLower(s)
 }
 
 func compile(pats []string) []*regexp.Regexp {

@@ -744,15 +744,27 @@ func projectsHandler(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			return
 		}
-		mainURL := in.MainURL
-		if mainURL == "" && len(in.Scope) > 0 {
-			mainURL = "https://" + in.Scope[0]
+		// 스코프는 호스트만 저장한다. URL 을 통째로 넣어도 크롤이 되도록 정규화한다 —
+		// 안 그러면 hostMatch 가 어긋나 링크를 다 찾고도 엔드포인트 0개가 된다.
+		scopeHosts := make([]string, 0, len(in.Scope))
+		for _, h := range in.Scope {
+			if n := scope.NormalizeHost(h); n != "" {
+				scopeHosts = append(scopeHosts, n)
+			}
+		}
+		// main_url 은 스킴을 정확히 한 번만 붙인다. 예전엔 "https://" + 스코프원문 이라
+		// 스코프에 URL 을 넣으면 "https://http://..." 이중 스킴이 됐다.
+		mainURL := strings.TrimSpace(in.MainURL)
+		if mainURL == "" && len(scopeHosts) > 0 {
+			mainURL = "https://" + scopeHosts[0]
+		} else if mainURL != "" && !strings.Contains(mainURL, "://") {
+			mainURL = "https://" + mainURL
 		}
 		if _, err := llm.ResolvePolicy(in.JudgePrompt, in.JudgePromptCustom); err != nil { // 잘못된 정책은 생성 단계에서 거른다
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		p := project.Create(project.Project{Owner: u.ID, Name: in.Name, MainURL: mainURL, Scope: in.Scope, Schemes: in.Schemes,
+		p := project.Create(project.Project{Owner: u.ID, Name: in.Name, MainURL: mainURL, Scope: scopeHosts, Schemes: in.Schemes,
 			JudgePrompt: in.JudgePrompt, JudgePromptCustom: in.JudgePromptCustom})
 		audit.Record(u.Name, string(u.Role), "project:create", p.ID, "ok", p.Name)
 		log.Printf("[WEB ] %s(%s) create_project %s (%s)", u.Name, u.Role, p.ID, p.Name)
