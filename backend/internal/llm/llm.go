@@ -26,8 +26,22 @@ func New(provider, model, endpoint, apiKey string) Provider {
 	case "ollama":
 		return NewOllama(model, endpoint)
 	case "anthropic":
+		// ★ 키 없이 기동하면 전건이 401 → fail-open 으로 흡수돼 가드레일이 조용히 죽는다
+		// (이슈 #56). anthropic.go 주석이 약속한 대로 mock 으로 강등하고 경고를 남긴다.
+		if strings.TrimSpace(apiKey) == "" {
+			log.Printf("경고: llm.provider=anthropic 인데 api_key 가 비어 있다 → mock 으로 강등. " +
+				"키를 넣지 않으면 판단 스테이지는 아무것도 막지 못한다(전건 401 → 기본 허용)")
+			return MockProvider{}
+		}
 		return NewAnthropic(apiKey, model, endpoint)
 	case "openai":
+		// 엔드포인트를 바꾼 경우(vLLM·LM Studio·Ollama 호환)는 키가 필요 없을 수 있으므로
+		// 기본 엔드포인트(api.openai.com) + 빈 키 조합만 강등한다.
+		if strings.TrimSpace(apiKey) == "" && strings.TrimSpace(endpoint) == "" {
+			log.Printf("경고: llm.provider=openai 인데 api_key 와 endpoint 가 모두 비어 있다 → mock 으로 강등. " +
+				"자체 호스팅 엔드포인트라면 endpoint 를 지정할 것")
+			return MockProvider{}
+		}
 		return NewOpenAI(apiKey, model, endpoint)
 	case "mock", "":
 		return MockProvider{}
@@ -62,6 +76,9 @@ type Verdict struct {
 	Model      string  `json:"model"`
 	Prompt     string  `json:"prompt,omitempty"`      // 판단 프롬프트 ID (strict|balanced|permissive|custom)
 	PromptHash string  `json:"prompt_hash,omitempty"` // 프롬프트 지문 — 캐시 키 구성요소
+	// Degraded — 판단하지 못하고 정책으로 흡수한 판정 (이슈 #56).
+	// 프로바이더 미설정·호출 실패·verdict 파싱 실패. "안전하다고 판단함" 과 구분해야 한다.
+	Degraded bool `json:"degraded,omitempty"`
 }
 
 // Provider — LLM 프로바이더 추상화 (mock/anthropic/ollama/openai/… 교체 가능).
@@ -136,7 +153,11 @@ func sig(in JudgeInput, pol Policy) string {
 	return pol.Hash + "|" + in.Method + " " + in.Path + " [" + strings.Join(keys, ",") + "] " + in.ContentType
 }
 
-// Judge — 캐시 확인 → 프로바이더 호출 → 로깅. 프로바이더 오류 시 가용성 위해 기본 허용.
+// Judge — 캐시 확인 → 프로바이더 호출 → 로깅.
+//
+// 프로바이더 오류 시 가용성을 위해 기본 허용한다(§1원칙: 진단 대상을 죽이지 않는다).
+// 다만 그 판정은 Degraded 로 표시하고 **캐시하지 않는다** (이슈 #56) — 판단 불능은
+// 안전 판정이 아니므로 프로바이더가 살아나면 즉시 다시 물어야 한다.
 func Judge(ctx context.Context, in JudgeInput) Verdict {
 	pol := JudgePolicy()
 	key := sig(in, pol)
@@ -153,9 +174,9 @@ func Judge(ctx context.Context, in JudgeInput) Verdict {
 
 	var v Verdict
 	if p == nil {
-		v = Verdict{Allow: true, Reason: "프로바이더 없음 — 기본 허용", Provider: "none"}
+		v = Verdict{Allow: true, Reason: "프로바이더 없음 — 기본 허용", Provider: "none", Degraded: true}
 	} else if content, err := p.Complete(ctx, pol.System, promptUser(in)); err != nil {
-		v = Verdict{Allow: true, Reason: "프로바이더 오류(" + err.Error() + ") — 가용성 위해 기본 허용", Provider: p.Name()}
+		v = Verdict{Allow: true, Reason: "프로바이더 오류(" + err.Error() + ") — 가용성 위해 기본 허용", Provider: p.Name(), Degraded: true}
 	} else {
 		var vj struct {
 			Allow      bool    `json:"allow"`
@@ -163,7 +184,7 @@ func Judge(ctx context.Context, in JudgeInput) Verdict {
 			Confidence float64 `json:"confidence"`
 		}
 		if e := json.Unmarshal([]byte(extractJSON(content)), &vj); e != nil {
-			v = Verdict{Allow: true, Reason: "verdict 파싱 실패 — 기본 허용", Provider: p.Name()}
+			v = Verdict{Allow: true, Reason: "verdict 파싱 실패 — 기본 허용", Provider: p.Name(), Degraded: true}
 		} else {
 			v = Verdict{Allow: vj.Allow, Reason: vj.Reason, Confidence: normConf(vj.Confidence), Provider: p.Name()}
 		}
@@ -171,7 +192,12 @@ func Judge(ctx context.Context, in JudgeInput) Verdict {
 	v.Prompt, v.PromptHash = pol.ID, pol.Hash // 어떤 정책의 판단인지 로그·감사에 남긴다
 
 	mu.Lock()
-	cache[key] = v
+	// ★ 실패 판정은 캐시하지 않는다 (이슈 #56). 캐시하면 프로바이더가 곧바로 되살아나도
+	// 같은 시그니처는 프로세스가 사는 동안 계속 통과한다 — 가드레일이 켜져 있는 것처럼
+	// 보이면서 아무것도 막지 않는 상태가 고착된다. 다음 요청에 다시 물어본다.
+	if !v.Degraded {
+		cache[key] = v
+	}
 	seq++
 	decisions = appendCapped(decisions, Decision{ID: seq, Input: in, Verdict: v, Cached: false})
 	mu.Unlock()
