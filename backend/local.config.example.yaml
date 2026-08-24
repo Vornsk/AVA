@@ -16,11 +16,12 @@ web_addr: 127.0.0.1:8090    # 웹 GUI (생략 시 기본 :8090)
 # ── LLM 판단 스테이지 / 오탐 검토 ──
 # provider: mock | ollama | anthropic | openai
 #  - mock    : LLM 없이 동작(개발·오프라인). api_key 불필요
-#  - ollama  : 로컬 모델. `ollama pull llama3.2:1b` 후 endpoint 지정. api_key 불필요
+#  - ollama  : 로컬 모델. `ollama pull qwen2.5:3b` 후 endpoint 지정. api_key 불필요
+#              (llama3.2:1b 은 판단 품질이 부족하다 — docs/00-아키텍처.md §4 참고)
 #  - anthropic / openai : 클라우드. api_key 필요(각자 발급해 채울 것)
 llm:
   provider: mock
-  model: llama3.2:1b
+  model: qwen2.5:3b
   endpoint: http://127.0.0.1:11434   # ollama일 때
   api_key: ""                          # anthropic/openai 사용 시 본인 키 입력. 커밋 금지!
 
