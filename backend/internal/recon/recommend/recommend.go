@@ -172,7 +172,7 @@ func recommendSys(allowIDs []string) string {
 	b.WriteString("5. A param name suggesting raw command/query/template input (cmd, exec, query, filter, template) -> add cmd-injection, ssti, ldap-injection, ssi-injection, xxe.\n")
 	b.WriteString("6. auth-required=true -> add idor, privesc, sensitive-data.\n")
 	b.WriteString("7. label \"admin\" -> add idor, privesc. label \"pii\" or \"payment\" -> add sensitive-data.\n")
-	b.WriteString("8. Method is POST/PUT/DELETE/PATCH -> add csrf.\n")
+	b.WriteString("8. ONLY if method is POST, PUT, DELETE, or PATCH -> add csrf. Never add csrf for GET, HEAD, or OPTIONS.\n")
 	b.WriteString("9. Path looks like a directory (ends in \"/\" or has no file extension) -> add dir-indexing.\n")
 	b.WriteString("10. A static asset path with no params (image/css/js/font extension) -> ONLY the baseline from rule 1, skip everything else.\n")
 	b.WriteString("11. sqli-time is much slower than other checks — only include it if you already included sqli or sqli-blind for this endpoint AND the params clearly look database-backed (id/search/filter-like); otherwise omit it.\n")
