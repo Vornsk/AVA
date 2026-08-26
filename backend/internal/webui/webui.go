@@ -36,6 +36,7 @@ import (
 	"proxypoc/internal/proxyengine"
 	"proxypoc/internal/recon/discover"
 	"proxypoc/internal/recon/parammine"
+	"proxypoc/internal/recon/recommend"
 	"proxypoc/internal/recon/regmap"
 	"proxypoc/internal/report"
 	"proxypoc/internal/retention"
@@ -120,6 +121,7 @@ func Serve(addr string) error {
 		return map[string]any{"headless_available": crawler.HeadlessAvailable()}
 	}))
 	mux.HandleFunc("/api/scan", scanHandler)                                // POST: 스캔 시작(캡처된 공격면 대상, §5.3)
+	mux.HandleFunc("/api/scan/recommend", scanRecommendHandler)             // POST: 대상별 탐지기 추천(LLM, HITL 검토용)
 	mux.HandleFunc("POST /api/scanruns/{id}/pause", scanControl("pause"))   // FR-3.8 일시정지
 	mux.HandleFunc("POST /api/scanruns/{id}/resume", scanControl("resume")) // FR-3.8 재개
 	mux.HandleFunc("POST /api/scanruns/{id}/cancel", scanControl("cancel")) // FR-3.8 취소
@@ -345,9 +347,10 @@ func scanHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Detectors        []string `json:"detectors"`
-		AllowDestructive bool     `json:"allow_destructive"`
-		LLMReview        bool     `json:"llm_review"`
+		Detectors        []string            `json:"detectors"`
+		AllowDestructive bool                `json:"allow_destructive"`
+		LLMReview        bool                `json:"llm_review"`
+		PerTarget        map[string][]string `json:"per_target,omitempty"` // AI 추천 편집 결과(선택). 없으면 기존 전역 방식.
 	}
 	_ = json.NewDecoder(r.Body).Decode(&in)
 	targets := endpoints.Targets()
@@ -356,10 +359,32 @@ func scanHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sr := scanengine.Start(targets, detector.Select(in.Detectors),
-		scanengine.Options{AllowDestructive: in.AllowDestructive, LLMReview: in.LLMReview})
+		scanengine.Options{AllowDestructive: in.AllowDestructive, LLMReview: in.LLMReview, PerTarget: in.PerTarget})
 	audit.Record(u.Name, string(u.Role), "scan:run", sr.ID, "ok", fmt.Sprintf("대상 %d · 탐지기 %d", sr.Targets, len(sr.Detectors)))
 	log.Printf("[WEB ] %s(%s) scan %s (대상 %d)", u.Name, u.Role, sr.ID, sr.Targets)
 	writeJSON(w, sr)
+}
+
+// scanRecommendHandler — POST: 캡처된 대상마다 관련 탐지기를 LLM 이 추천한다(scan:run 과 동일 권한).
+// 결과는 초안일 뿐 — 실제 실행은 사람이 검토·수정한 뒤 POST /api/scan(per_target)으로 시작한다(HITL).
+func scanRecommendHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST 필요", http.StatusMethodNotAllowed)
+		return
+	}
+	u, ok := authorize(w, r, "scan:run", "scan")
+	if !ok {
+		return
+	}
+	targets := endpoints.Targets()
+	if len(targets) == 0 {
+		http.Error(w, "공격면이 비어 있습니다 — 먼저 자동 크롤 또는 프록시 트래픽으로 엔드포인트를 캡처하세요", http.StatusBadRequest)
+		return
+	}
+	res := recommend.Recommend(r.Context(), targets, detector.Catalog())
+	audit.Record(u.Name, string(u.Role), "scan:recommend", "", "ok",
+		fmt.Sprintf("대상 %d · source=%s degraded=%v", len(targets), res.Source, res.Degraded))
+	writeJSON(w, res)
 }
 
 // ruleAdoptHandler — POST: LLM 추천 후보(signature)를 결정론적 룰로 채택 (rule:promote, 리더 전용).

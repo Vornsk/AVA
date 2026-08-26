@@ -52,6 +52,10 @@ func (MockProvider) Complete(_ context.Context, system, user string) (string, er
 		b, _ := json.Marshal(map[string][]string{"labels": labels})
 		return string(b), nil
 	}
+	// 엔드포인트별 탐지기 추천(recommend, HITL 스캔 계획) — 파라미터·라벨 유무로 휴리스틱 추천.
+	if !judgeTask && strings.Contains(system, "security-scan planner") {
+		return mockRecommendDetectors(user), nil
+	}
 	// 오탐 검토(Review) — 응답 증적으로 휴리스틱 판정 (실제 LLM 대체 데모)
 	if !judgeTask && strings.Contains(system, "triage") {
 		low := strings.ToLower(user)
@@ -84,6 +88,53 @@ func (MockProvider) Complete(_ context.Context, system, user string) (string, er
 		}
 	}
 	return `{"allow":true,"reason":"위험 신호 없음","confidence":0.6}`, nil
+}
+
+// mockRecommendDetectors — recommend.recommendUser 가 만든 JSON 배열을 파싱해 대상마다
+// 파라미터·라벨 유무로 탐지기 id를 휴리스틱 배정한다(실제 LLM 대체 데모). 목적은 정확성이
+// 아니라 오프라인 기본 설정에서도 "llm 성공 경로"(수동 검증)를 실제로 볼 수 있게 하는 것.
+func mockRecommendDetectors(user string) string {
+	var eps []struct {
+		Key    string `json:"key"`
+		Method string `json:"method"`
+		Params []struct {
+			Name string `json:"name"`
+		} `json:"params"`
+		Labels []string `json:"labels"`
+		Auth   bool     `json:"auth"`
+	}
+	if json.Unmarshal([]byte(user), &eps) != nil {
+		return `{"items":[]}`
+	}
+	type outItem struct {
+		Key       string   `json:"key"`
+		Detectors []string `json:"detectors"`
+	}
+	items := make([]outItem, 0, len(eps))
+	for _, e := range eps {
+		dets := []string{"sec-headers", "sensitive-data", "cookie-security", "http-method"}
+		if len(e.Params) > 0 {
+			dets = append(dets, "sqli", "sqli-blind", "reflected-input", "path-traversal", "open-redirect")
+		}
+		hasLabel := func(l string) bool {
+			for _, x := range e.Labels {
+				if x == l {
+					return true
+				}
+			}
+			return false
+		}
+		if e.Auth || hasLabel("auth") {
+			dets = append(dets, "idor", "privesc")
+		}
+		switch strings.ToUpper(e.Method) {
+		case "POST", "PUT", "PATCH", "DELETE":
+			dets = append(dets, "csrf")
+		}
+		items = append(items, outItem{Key: e.Key, Detectors: dets})
+	}
+	b, _ := json.Marshal(map[string]any{"items": items})
+	return string(b)
 }
 
 // isXSSFinding / nonRenderingType — XSS 계열 발견인데 응답이 렌더링되지 않는 미디어타입인가

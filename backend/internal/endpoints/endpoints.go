@@ -458,6 +458,11 @@ func (t Target) Interesting() bool {
 	return len(t.Params) > 0 || t.Auth || t.Verdict != ""
 }
 
+// Key — 대상 식별 키(호스트+경로). Targets()는 트리 노드당 1개만 내놓으므로 이 안에서 유일하다.
+// AI 탐지기 추천(POST /api/scan/recommend)과 스캔 시작(POST /api/scan) 두 API 호출 사이에서
+// 같은 대상을 매칭하는 안정 키로 쓴다.
+func (t Target) Key() string { return t.Host + "|" + t.Path }
+
 // Targets — 스캔 대상 목록 (메서드가 있는 실제 엔드포인트만).
 // Targets — 스캔 대상 목록. 라이브니스 프로브에서 실재가 확인되지 않은 노드(unverified)는
 // 기본 제외한다 (이슈 #26). 강등이지 삭제가 아니므로 트리에는 남아 있고 TargetsAll 로 볼 수 있다.

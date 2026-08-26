@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Radar, Cpu, ShieldCheck, FlaskConical, Wrench, Inbox, Play, Pause, PlayCircle, Square } from 'lucide-react'
+import { Radar, Cpu, ShieldCheck, FlaskConical, Wrench, Inbox, Play, Pause, PlayCircle, Square, SlidersHorizontal, Sparkles } from 'lucide-react'
 import { usePoll, apiPost, type ScanRun, type DetectorInfo, type Stats, type Target } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
+import { ScanRecommend } from '../components/ScanRecommend'
 import { useT } from '../i18n'
 
 interface Payloads { version: string; xss: string[]; sensitive_patterns: string[] }
@@ -15,13 +16,15 @@ const scanColor = (s: string) => SCAN_STATUS[s] ?? 'var(--muted)'
 // ScanControl — 탐지기 선택 + 스캔 시작 (AppScan Test 대응, 진단 정책).
 function ScanControl({ targetCount, dets }: { targetCount: number; dets: DetectorInfo[] }) {
   const t = useT()
+  const [mode, setMode] = useState<'manual' | 'ai'>('manual')
   const [llm, setLlm] = useState(false)
   const [destructive, setDestructive] = useState(false)
   const [busy, setBusy] = useState(false)
   const [sel, setSel] = useState<Set<string>>(new Set())
   const [inited, setInited] = useState(false)
+  const [aiPlan, setAiPlan] = useState<Record<string, string[]> | null>(null)
 
-  // 탐지기 목록 로드되면 기본 전체 선택 (1회).
+  // 탐지기 목록 로드되면 기본 전체 선택 (1회, 수동 모드용).
   useEffect(() => {
     if (!inited && dets.length > 0) { setSel(new Set(dets.map((d) => d.id))); setInited(true) }
   }, [dets, inited])
@@ -32,40 +35,67 @@ function ScanControl({ targetCount, dets }: { targetCount: number; dets: Detecto
 
   async function start() {
     setBusy(true)
-    try { await apiPost('/api/scan', { detectors: [...sel], allow_destructive: destructive, llm_review: llm }) }
-    catch (e) { alert(t('scan.startFail') + ': ' + e) } finally { setBusy(false) }
+    try {
+      if (mode === 'ai' && aiPlan) {
+        // detectors 는 실제 쓰이는 모든 id 의 합집합이어야 한다(서버는 per_target을 이 안에서만 클립).
+        const detectors = [...new Set(Object.values(aiPlan).flat())]
+        await apiPost('/api/scan', { detectors, per_target: aiPlan, allow_destructive: destructive, llm_review: llm })
+      } else {
+        await apiPost('/api/scan', { detectors: [...sel], allow_destructive: destructive, llm_review: llm })
+      }
+    } catch (e) { alert(t('scan.startFail') + ': ' + e) } finally { setBusy(false) }
   }
 
   const nSel = sel.size
+  const canStart = mode === 'manual' ? nSel > 0 : !!aiPlan
 
   return (
     <Card title={t('scan.start.title')} icon={Radar}
           right={<span className="text-[11px] text-[var(--muted)]">{t('scan.start.surfacePre')}<b className="text-[var(--text)]">{targetCount}</b>{t('scan.start.surfacePost')}</span>}>
-      {/* 탐지기 선택 */}
-      <div className="mb-3">
-        <div className="mb-1.5 flex items-center gap-2 text-xs">
-          <span className="text-[var(--muted)]">{t('scan.start.detectorsPre')} <b className="text-[var(--text)]">{nSel}</b>/{dets.length} {t('scan.start.selected')}</span>
-          <button onClick={allOn} className="text-[var(--muted)] underline">{t('scan.start.selectAll')}</button>
-          <button onClick={allOff} className="text-[var(--muted)] underline">{t('scan.start.deselectAll')}</button>
-        </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
-          {dets.map((d) => (
-            <label key={d.id} className="flex cursor-pointer items-center gap-1.5 text-xs"
-                   title={d.tool && d.available === false ? t('scan.start.toolMissingTitle') : d.name}>
-              <input type="checkbox" checked={sel.has(d.id)} onChange={() => toggle(d.id)} />
-              <span className="font-mono">{d.id}</span>
-              {d.destructive && <Badge text="D" color="var(--red)" />}
-              {d.tool && d.available === false && <span className="text-[10px]" style={{ color: 'var(--amber)' }}>{t('scan.start.missing')}</span>}
-            </label>
-          ))}
-        </div>
+      {/* 모드 탭: 수동 선택(전체 그리드) vs AI 추천(엔드포인트별) */}
+      <div className="mb-3 flex items-center gap-1 text-xs">
+        <button onClick={() => setMode('manual')}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold"
+                style={{ background: mode === 'manual' ? 'var(--panel-2)' : 'transparent', color: mode === 'manual' ? 'var(--text)' : 'var(--muted)' }}>
+          <SlidersHorizontal size={12} /> {t('scan.mode.manual')}
+        </button>
+        <button onClick={() => setMode('ai')}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-semibold"
+                style={{ background: mode === 'ai' ? 'var(--panel-2)' : 'transparent', color: mode === 'ai' ? 'var(--text)' : 'var(--muted)' }}>
+          <Sparkles size={12} /> {t('scan.mode.ai')}
+        </button>
       </div>
 
+      {mode === 'manual' ? (
+        <div className="mb-3">
+          <div className="mb-1.5 flex items-center gap-2 text-xs">
+            <span className="text-[var(--muted)]">{t('scan.start.detectorsPre')} <b className="text-[var(--text)]">{nSel}</b>/{dets.length} {t('scan.start.selected')}</span>
+            <button onClick={allOn} className="text-[var(--muted)] underline">{t('scan.start.selectAll')}</button>
+            <button onClick={allOff} className="text-[var(--muted)] underline">{t('scan.start.deselectAll')}</button>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-3">
+            {dets.map((d) => (
+              <label key={d.id} className="flex cursor-pointer items-center gap-1.5 text-xs"
+                     title={d.tool && d.available === false ? t('scan.start.toolMissingTitle') : d.name}>
+                <input type="checkbox" checked={sel.has(d.id)} onChange={() => toggle(d.id)} />
+                <span className="font-mono">{d.id}</span>
+                {d.destructive && <Badge text="D" color="var(--red)" />}
+                {d.tool && d.available === false && <span className="text-[10px]" style={{ color: 'var(--amber)' }}>{t('scan.start.missing')}</span>}
+              </label>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="mb-3">
+          <ScanRecommend dets={dets} allowDestructive={destructive} onPlanChange={setAiPlan} />
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center gap-3 border-t border-[var(--border)] pt-3">
-        <button onClick={start} disabled={busy || targetCount === 0 || nSel === 0}
+        <button onClick={start} disabled={busy || targetCount === 0 || !canStart}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
-          <Play size={13} /> {busy ? t('scan.start.starting') : t('scan.start.scanWithN', { n: nSel })}
+          <Play size={13} /> {busy ? t('scan.start.starting') : mode === 'manual' ? t('scan.start.scanWithN', { n: nSel }) : t('scan.start.scanAiPlan')}
         </button>
         <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]" title={t('scan.start.llmTitle')}>
           <input type="checkbox" checked={llm} onChange={(e) => setLlm(e.target.checked)} /> {t('scan.start.llmReview')}
@@ -74,7 +104,8 @@ function ScanControl({ targetCount, dets }: { targetCount: number; dets: Detecto
           <input type="checkbox" checked={destructive} onChange={(e) => setDestructive(e.target.checked)} /> {t('scan.start.destructive')}
         </label>
         {targetCount === 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.start.noTargets')}</span>}
-        {nSel === 0 && targetCount > 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.start.noDetectors')}</span>}
+        {mode === 'manual' && nSel === 0 && targetCount > 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.start.noDetectors')}</span>}
+        {mode === 'ai' && !aiPlan && targetCount > 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.ai.noPlan')}</span>}
       </div>
     </Card>
   )

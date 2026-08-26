@@ -29,6 +29,11 @@ type Options struct {
 	AllowDestructive bool
 	LLMReview        bool
 	Inj              *auth.Injector // 인증 주입기(테넌트별). nil 이면 기본 인스턴스(§5.1 Phase 2).
+	// PerTarget — endpoints.Target.Key() → 탐지기 ID 목록(override, AI 추천 HITL 검토 결과).
+	// nil 이면 모든 대상에 dets 전체를 적용한다(기존 전역 스캔과 100% 동일, 하위호환).
+	// 있는 대상만 좁히고, 맵에 없는 대상은 여전히 dets 전체를 쓴다(부분 override 허용).
+	// 파괴성 게이트(AllowDestructive)를 통과한 집합 밖의 id는 여기서도 조용히 제외된다.
+	PerTarget map[string][]string
 }
 
 // ScanRun — 진단 실행 단위 (§3 ScanRun). 진행률·상태 포함(FR-3.8).
@@ -108,6 +113,25 @@ func Start(targets []endpoints.Target, dets []detector.Detector, opts Options) S
 		pid = p.ID // 귀속 프로젝트 (§5.1)
 	}
 
+	// 대상별 탐지기 배정: PerTarget override 가 있으면(파괴성 게이트를 통과한 used 안에서만)
+	// 그 목록을, 없으면 오늘과 동일하게 used 전체를 쓴다(부분 override, 하위호환).
+	byID := map[string]detector.Detector{}
+	for _, d := range used {
+		byID[d.ID()] = d
+	}
+	perTarget := make([][]detector.Detector, len(targets))
+	total := 0
+	for i, t := range targets {
+		list := used
+		if opts.PerTarget != nil {
+			if ids, ok := opts.PerTarget[t.Key()]; ok {
+				list = pickKnown(byID, ids)
+			}
+		}
+		perTarget[i] = list
+		total += len(list)
+	}
+
 	mu.Lock()
 	seq++
 	id := fmt.Sprintf("SR-%d", seq)
@@ -116,7 +140,7 @@ func Start(targets []endpoints.Target, dets []detector.Detector, opts Options) S
 		pid: pid,
 		run: ScanRun{
 			ID: id, ProjectID: pid, Status: "진행", Targets: len(targets), Detectors: usedIDs,
-			Skipped: skipped, Total: len(used) * len(targets), SafeMode: safe,
+			Skipped: skipped, Total: total, SafeMode: safe,
 		},
 		ctx: ctx, cancel: cancel,
 	}
@@ -124,18 +148,30 @@ func Start(targets []endpoints.Target, dets []detector.Detector, opts Options) S
 	order = append(order, id)
 	mu.Unlock()
 
-	go j.execute(targets, used, opts)
+	go j.execute(targets, perTarget, opts)
 	return j.snapshot()
 }
 
-func (j *job) execute(targets []endpoints.Target, dets []detector.Detector, opts Options) {
+// pickKnown — id 목록을 byID(이미 파괴성 게이트를 통과한 집합)에서만 골라낸다.
+// 알 수 없는/파괴적 id는 조용히 제외 — 서버 사이드 방어(프론트만 믿지 않음).
+func pickKnown(byID map[string]detector.Detector, ids []string) []detector.Detector {
+	var out []detector.Detector
+	for _, id := range ids {
+		if d, ok := byID[id]; ok {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+func (j *job) execute(targets []endpoints.Target, perTarget [][]detector.Detector, opts Options) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	inj := opts.Inj
 	if inj == nil {
 		inj = auth.Default() // 비테넌트 스캔은 기본(활성 프로젝트) 인증 상태 사용
 	}
-	for _, d := range dets {
-		for _, t := range targets {
+	for ti, t := range targets {
+		for _, d := range perTarget[ti] {
 			if j.ctx.Err() != nil {
 				j.setStatus("중단")
 				return
@@ -166,7 +202,7 @@ func (j *job) execute(targets []endpoints.Target, dets []detector.Detector, opts
 					})
 					f.LLMVerdict, f.LLMReason, f.Remediation = rr.Verdict, rr.Reason, rr.Remediation
 					// 주석만 — 상태는 사람이 결정(HITL). 약한 모델이 오판해도 진짜 취약을 숨기지 않는다.
-					// (LLM 판정은 UI 배지/필터로 노출돼 검토를 돕는 '제안'일 뿐, 자동 조치 아님.)
+					// (LLM 판정은 UI 배지/필터로 노출돼 검토를 돕는 '제안'일 뿐, 자동 조치 아니다.)
 					if rr.Verdict == "false_positive" {
 						j.inc(&j.run.LLMFlagged) // LLM이 오탐으로 '표시'한 건수(상태 미변경, 참고용)
 					}
@@ -179,7 +215,7 @@ func (j *job) execute(targets []endpoints.Target, dets []detector.Detector, opts
 	}
 	j.setStatus("완료")
 	persistRuns() // 완료 이력 저장 (재시작 후 유지)
-	log.Printf("[SCAN] %s 완료: 대상 %d × 탐지기 %d → finding %d개", j.run.ID, j.run.Targets, len(dets), j.run.Findings)
+	log.Printf("[SCAN] %s 완료: 대상 %d, 배정 단위 %d → finding %d개", j.run.ID, j.run.Targets, j.run.Total, j.run.Findings)
 }
 
 // ── 잡 제어 (FR-3.8) ──────────────────────────────────────────────

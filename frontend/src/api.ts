@@ -141,6 +141,22 @@ export interface DetectorInfo {
   available?: boolean
   version?: string
 }
+// 엔드포인트별 AI 탐지기 추천 (HITL 스캔 계획) — 대상 1건.
+export interface RecommendItem {
+  key: string // endpoints.Target.Key() — /api/scan 의 per_target 과 매칭
+  host: string
+  path: string
+  methods?: string[]
+  recommended: string[]
+  fallback?: boolean // 이 항목만 개별 폴백(LLM 응답에서 누락)
+}
+export interface RecommendResult {
+  items: RecommendItem[]
+  source: 'llm' | 'fallback'
+  degraded: boolean
+  reason?: string
+  provider?: string
+}
 export interface LLMDecision {
   id: number
   input: { method: string; path: string; param_keys?: string[]; content_type?: string; hint?: string }

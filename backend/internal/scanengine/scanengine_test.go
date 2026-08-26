@@ -201,3 +201,62 @@ func TestScanPauseResume(t *testing.T) {
 		t.Errorf("status after resume+wait = %q, want 완료", s3.Status)
 	}
 }
+
+// PerTarget override 는 대상별로 탐지기를 좁혀야 한다(AI 추천 HITL).
+func TestPerTargetOverrideNarrowsAssignment(t *testing.T) {
+	SetSafeMode(false)
+	finding.Reset()
+	targets := []endpoints.Target{{Host: "a"}, {Host: "b"}}
+	dets := []detector.Detector{findingDet{det: "det-a"}, findingDet{det: "det-b"}}
+	// a 는 det-a 만, b 는 override 없음(기존처럼 dets 전체).
+	sr := Start(targets, dets, Options{PerTarget: map[string][]string{"a|": {"det-a"}}})
+	if sr.Total != 3 { // a: 1개, b: 2개
+		t.Fatalf("Total=%d, want 3 (1 + 2)", sr.Total)
+	}
+	waitDone(sr.ID)
+
+	// a는 det-a만(override), b는 override 없음→dets 전체(det-a+det-b) 실행돼야 한다.
+	// 즉 det-a는 두 대상 모두에서(2건), det-b는 b에서만(1건) 나와야 한다.
+	counts := map[string]int{}
+	for _, f := range finding.ByScanRun(sr.ID) {
+		counts[f.Detector]++
+	}
+	if counts["det-a"] != 2 {
+		t.Errorf("det-a findings=%d, want 2 (a: override, b: full set)", counts["det-a"])
+	}
+	if counts["det-b"] != 1 {
+		t.Errorf("det-b findings=%d, want 1 (only b: full set, a는 override로 제외)", counts["det-b"])
+	}
+}
+
+// PerTarget이 nil이면(기존 API 호출자) 오늘과 완전히 동일하게 동작해야 한다 — 회귀 고정.
+func TestPerTargetOverrideBackwardCompatible(t *testing.T) {
+	defer SetSafeMode(false)
+	targets := []endpoints.Target{{Host: "a"}}
+	dets := []detector.Detector{destructiveDet{}}
+
+	SetSafeMode(false)
+	sr := Start(targets, dets, Options{AllowDestructive: true}) // PerTarget 미설정
+	if len(sr.Detectors) != 1 || len(sr.Skipped) != 0 || sr.Total != 1 {
+		t.Errorf("PerTarget=nil 인데 결과가 다름: detectors=%v skipped=%v total=%d", sr.Detectors, sr.Skipped, sr.Total)
+	}
+}
+
+// PerTarget이 파괴적 탐지기를 가리켜도(allow_destructive=false) 게이트가 막아야 한다 — 서버측 방어.
+func TestPerTargetOverrideRespectsDestructiveGate(t *testing.T) {
+	defer SetSafeMode(false)
+	SetSafeMode(false)
+	targets := []endpoints.Target{{Host: "a"}}
+	dets := []detector.Detector{destructiveDet{}, findingDet{det: "det-a"}}
+
+	sr := Start(targets, dets, Options{
+		AllowDestructive: false, // 파괴적 미허용
+		PerTarget:        map[string][]string{"a|": {"destructive", "det-a"}},
+	})
+	if sr.Total != 1 {
+		t.Fatalf("Total=%d, want 1 (destructive 는 서버측에서 제외돼야)", sr.Total)
+	}
+	if len(sr.Skipped) != 1 || sr.Skipped[0] != "destructive" {
+		t.Errorf("Skipped=%v, want [destructive]", sr.Skipped)
+	}
+}
