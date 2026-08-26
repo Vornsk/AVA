@@ -125,6 +125,7 @@ func Serve(addr string) error {
 	mux.HandleFunc("POST /api/scanruns/{id}/pause", scanControl("pause"))   // FR-3.8 일시정지
 	mux.HandleFunc("POST /api/scanruns/{id}/resume", scanControl("resume")) // FR-3.8 재개
 	mux.HandleFunc("POST /api/scanruns/{id}/cancel", scanControl("cancel")) // FR-3.8 취소
+	mux.HandleFunc("GET /api/scanruns/{id}/log/stream", scanLogStream)      // 이슈 #59: 실시간 요청 로그(SSE)
 	mux.HandleFunc("/api/traffic", jsonHandler(func() any { return traffic.Recent(50) }))
 	mux.HandleFunc("/api/rules", jsonHandler(func() any { return rules.Snapshot() }))
 	mux.HandleFunc("/api/detectors", jsonHandler(func() any { return detector.Catalog() }))
@@ -571,6 +572,53 @@ func scanControl(op string) http.HandlerFunc {
 		log.Printf("[WEB ] %s(%s) scan:%s %s", u.Name, u.Role, op, id)
 		sr, _ := scanengine.Status(id)
 		writeJSON(w, sr)
+	}
+}
+
+// scanLogStream — 실행 중 스캔의 요청 단위 실시간 로그 (SSE, 이슈 #59).
+// 구독 시작 시 최근분(RecentLog)을 먼저 흘려보내 백필하고, 이후 신규 이벤트를 그대로 push한다.
+func scanLogStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	id := r.PathValue("id")
+	ch, cancel := scanengine.SubscribeLog(id)
+	defer cancel()
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Connection", "keep-alive")
+	w.WriteHeader(http.StatusOK)
+
+	write := func(e scanengine.LogEntry) bool {
+		b, err := json.Marshal(e)
+		if err != nil {
+			return true
+		}
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", b); err != nil {
+			return false
+		}
+		flusher.Flush()
+		return true
+	}
+	for _, e := range scanengine.RecentLog(id) {
+		if !write(e) {
+			return
+		}
+	}
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case e := <-ch:
+			if !write(e) {
+				return
+			}
+		}
 	}
 }
 
