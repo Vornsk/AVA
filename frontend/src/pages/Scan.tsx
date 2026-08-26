@@ -189,12 +189,17 @@ export function Scan() {
   const { data: targets } = usePoll<Target[]>('/api/endpoints', 5000)
 
   const tools = (dets ?? []).filter((d) => d.tool)
-  const activeRun = runs?.find((r) => r.status === '진행' || r.status === '일시정지')
+  // 실행 중인 스캔이 있으면 그걸, 없으면 가장 최근 스캔(완료됐어도)의 로그를 계속 볼 수 있게.
+  // 서버는 완료된 실행의 로그도 재시작 전까지 메모리에 들고 있어 재생 가능하다 — 새 스캔을
+  // 시작하기 전까진 직전 스캔 로그가 화면에서 사라지지 않는다.
+  const runningRun = runs?.find((r) => r.status === '진행' || r.status === '일시정지')
+  const latestRun = runs && runs.length > 0 ? runs[runs.length - 1] : undefined
+  const logRun = runningRun ?? latestRun
 
   return (
     <div className="space-y-5">
       <ScanControl targetCount={targets?.length ?? 0} dets={dets ?? []} />
-      <ScanLogPanel run={activeRun} />
+      <ScanLogPanel run={logRun} />
       {/* Scan Runs (FR-3.8) */}
       <Card title={`${tr('scan.runs.title')}${runs ? ` (${runs.length})` : ''}`} icon={Radar}>
         {!runs || runs.length === 0 ? (
