@@ -41,6 +41,7 @@ var perms = map[string][]Role{
 	"rule:promote":        {RoleLeader},
 	"finding:confirm":     {RoleLeader, RoleAnalyst},
 	"finding:clear":       {RoleLeader}, // 도출 항목 전체 초기화 — 파괴적, 리더 전용
+	"endpoint:clear":      {RoleLeader}, // 공격면(엔드포인트) 전체 초기화/개별 삭제 — 파괴적, 리더 전용
 	"user:manage":         {RoleLeader},
 	"proxy:control":       {RoleLeader}, // 공용 프록시 캡처 on/off — 리더 전용 (이슈 #5)
 	"llm:policy":          {RoleLeader}, // 판단 프롬프트 정책 변경 — 리더 전용 (이슈 #53)

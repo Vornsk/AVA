@@ -114,6 +114,8 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/endpoints", endpointsListHandler)                                                        // 필터·검색·페이징 (이슈 #7, 무필터=하위호환)
 	mux.HandleFunc("GET /api/endpoints/tree", jsonHandler(func() any { return endpoints.Snapshot() }))            // 풍부한 트리 (이슈 #7)
 	mux.HandleFunc("GET /api/endpoints/detail", endpointDetailHandler)                                            // 단일 엔드포인트 상세 (이슈 #7)
+	mux.HandleFunc("POST /api/endpoints/clear", endpointsClearHandler)                                            // 전체 초기화 (endpoint:clear, 리더, 파괴적)
+	mux.HandleFunc("POST /api/endpoints/delete", endpointDeleteHandler)                                           // 노드 1개 삭제(자식 포함) (endpoint:clear, 리더)
 	mux.HandleFunc("GET /api/proxy", jsonHandler(proxyStatus))                                                    // 공용 프록시 상태 (이슈 #5)
 	mux.HandleFunc("POST /api/proxy/capture", proxyCaptureHandler)                                                // 캡처 on/off (proxy:control, 리더)
 	mux.HandleFunc("/api/crawl", crawlHandler)                                                                    // GET: 크롤 실행목록 / POST: 크롤 시작(Explore)
@@ -987,6 +989,43 @@ func endpointDetailHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	n.Children = nil // 단일 노드 상세 (자식 제외)
 	writeJSON(w, n)
+}
+
+// endpointsClearHandler — POST: 엔드포인트 트리 전체 초기화 (파괴적, 리더 전용, 감사 기록).
+// 크롤/트래픽 캡처로 계속 쌓이기만 하던 공격면을 사용자가 명시적으로 리셋한다.
+func endpointsClearHandler(w http.ResponseWriter, r *http.Request) {
+	u, ok := authorize(w, r, "endpoint:clear", "all")
+	if !ok {
+		return
+	}
+	n := endpoints.Clear()
+	audit.Record(u.Name, string(u.Role), "endpoint:clear", "all", "ok", itoa(n)+"건 삭제")
+	log.Printf("[WEB ] %s(%s) clear_endpoints (%d건)", u.Name, u.Role, n)
+	writeJSON(w, map[string]int{"cleared": n})
+}
+
+// endpointDeleteHandler — POST: 엔드포인트 트리에서 노드 1개(자식 서브트리 포함) 삭제
+// (파괴적, 리더 전용, 감사 기록). path 가 빈 문자열이면 host 전체를 지운다.
+func endpointDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	u, ok := authorize(w, r, "endpoint:clear", "all")
+	if !ok {
+		return
+	}
+	var in struct {
+		Host string `json:"host"`
+		Path string `json:"path"`
+	}
+	if json.NewDecoder(r.Body).Decode(&in) != nil || in.Host == "" {
+		http.Error(w, "host 필요", http.StatusBadRequest)
+		return
+	}
+	if !endpoints.Delete(in.Host, in.Path) {
+		http.Error(w, "해당 엔드포인트를 찾을 수 없습니다", http.StatusNotFound)
+		return
+	}
+	audit.Record(u.Name, string(u.Role), "endpoint:clear", in.Host+in.Path, "ok", "")
+	log.Printf("[WEB ] %s(%s) delete_endpoint %s%s", u.Name, u.Role, in.Host, in.Path)
+	writeJSON(w, map[string]bool{"deleted": true})
 }
 
 // containsFold — 대소문자 무시 문자열 슬라이스 포함 검사.

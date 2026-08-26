@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, ChevronDown, Clock, Server, Copy, Check, Power, Crosshair, ScanLine, ClipboardCheck, Settings } from 'lucide-react'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, ChevronDown, Clock, Server, Copy, Check, Power, Crosshair, ScanLine, ClipboardCheck, Settings, Trash2, Eraser } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me, type ReconRegmap } from '../api'
 import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
@@ -253,8 +253,10 @@ function sourceMeta(src?: string) {
   return SOURCE_META[src || 'traffic'] ?? SOURCE_META['traffic']
 }
 
-function EndpointTree({ targets }: { targets: Target[] | null }) {
+function EndpointTree({ targets, onChanged }: { targets: Target[] | null; onChanged: () => void }) {
   const tr = useT() // 콜백 파라미터 t(Target)와의 섀도잉 회피
+  const { data: me } = usePoll<Me>('/api/me', 30000)
+  const canClear = !!me?.can?.includes('endpoint:clear')
   const [q, setQ] = useState('')
   const [method, setMethod] = useState('')
   const [authOnly, setAuthOnly] = useState(false)
@@ -263,6 +265,21 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
   const [behindAuth, setBehindAuth] = useState(false) // 인증 뒤에만 보이는 표면만 (#38)
   const [label, setLabel] = useState('') // 의미 라벨 필터 (#43)
   const [open, setOpen] = useState<string | null>(null)
+  const [busyKey, setBusyKey] = useState<string | null>(null) // 진행 중인 개별 삭제/전체초기화 key
+
+  async function clearAll() {
+    if (!confirm(tr('recon.tree.clearAllConfirm'))) return
+    setBusyKey('__all__')
+    try { await apiPost('/api/endpoints/clear', {}); onChanged() }
+    catch (e) { alert(tr('recon.tree.clearFail') + ': ' + e) } finally { setBusyKey(null) }
+  }
+
+  async function deleteNode(host: string, path: string, key: string) {
+    if (!confirm(tr('recon.tree.deleteConfirm', { path }))) return
+    setBusyKey(key)
+    try { await apiPost('/api/endpoints/delete', { host, path }); onChanged() }
+    catch (e) { alert(tr('recon.tree.deleteFail') + ': ' + e) } finally { setBusyKey(null) }
+  }
 
   const all = targets ?? []
   const methods = Array.from(new Set(all.flatMap((t) => t.methods ?? []))).sort()
@@ -297,7 +314,14 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
   const inp = 'rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1.5 text-xs'
 
   return (
-    <Card title={`${tr('recon.tree.title')}${count ? ` (${count})` : ''}`} icon={Network}>
+    <Card title={`${tr('recon.tree.title')}${count ? ` (${count})` : ''}`} icon={Network}
+          right={canClear && all.length > 0 ? (
+            <button type="button" onClick={clearAll} disabled={busyKey === '__all__'}
+                    title={tr('recon.tree.clearAllTitle')}
+                    className="inline-flex items-center gap-1 text-[11px] text-[var(--muted)] hover:text-[var(--red)] disabled:opacity-50">
+              <Eraser size={12} /> {busyKey === '__all__' ? tr('recon.tree.clearing') : tr('recon.tree.clearAll')}
+            </button>
+          ) : undefined}>
       {/* 필터 바 */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <div className="relative min-w-[180px] flex-1">
@@ -429,11 +453,17 @@ function EndpointTree({ targets }: { targets: Target[] | null }) {
                       </button>
                       {isOpen && (
                         <div className="border-t border-[var(--border)] bg-[var(--panel-2)] px-3 py-2.5 pl-8 text-xs">
-                          <div className="mb-2 flex flex-wrap gap-x-5 gap-y-1 text-[var(--muted)]">
+                          <div className="mb-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-[var(--muted)]">
                             <span>{tr('recon.tree.hits')} <b className="text-[var(--text)]">{t.count ?? 0}</b></span>
                             <span className="inline-flex items-center gap-1"><Clock size={11} /> {tr('recon.tree.first')} <b className="text-[var(--text)]">{fmtTime(t.first_seen)}</b></span>
                             <span className="inline-flex items-center gap-1"><Clock size={11} /> {tr('recon.tree.last')} <b className="text-[var(--text)]">{fmtTime(t.last_seen)}</b></span>
                             <span>{tr('recon.tree.authLabel')} <b className="text-[var(--text)]">{t.auth_required ? tr('recon.tree.needed') : '—'}</b></span>
+                            {canClear && (
+                              <button type="button" onClick={() => deleteNode(host, t.path, key)} disabled={busyKey === key}
+                                      className="ml-auto inline-flex items-center gap-1 text-[var(--muted)] hover:text-[var(--red)] disabled:opacity-50">
+                                <Trash2 size={12} /> {busyKey === key ? tr('recon.tree.deleting') : tr('recon.tree.deleteNode')}
+                              </button>
+                            )}
                           </div>
                           {t.verdict && <div className="mb-2 text-[var(--muted)]">{tr('recon.tree.verdictLabel')}: <span className="text-[var(--text)]">{t.verdict}</span></div>}
                           {t.params && t.params.length > 0 ? (
@@ -594,7 +624,7 @@ function RegMapCard() {
 
 export function Recon() {
   const t = useT()
-  const { data: targets } = usePoll<Target[]>('/api/endpoints?include_unverified=true', 4000)
+  const { data: targets, refetch: refetchTargets } = usePoll<Target[]>('/api/endpoints?include_unverified=true', 4000)
   const { data: rules } = usePoll<Rule[]>('/api/rules', 8000)
   const { data: stats } = usePoll<Stats>('/api/stats', 5000)
   const { data: auth } = usePoll<AuthSummary>('/api/auth', 8000)
@@ -609,7 +639,7 @@ export function Recon() {
       <div className="space-y-5">
         <ProxyTool stats={stats} />
         <CrawlExplore />
-        <EndpointTree targets={targets} />
+        <EndpointTree targets={targets} onChanged={refetchTargets} />
         <RegMapCard />
       </div>
 

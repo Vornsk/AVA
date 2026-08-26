@@ -538,6 +538,78 @@ func (t *Tree) MarkAuthOnly(host, path string) bool {
 // MarkAuthOnly — 기본(전역) 트리에 위임.
 func MarkAuthOnly(host, path string) bool { return def.MarkAuthOnly(host, path) }
 
+// Delete — host+path 가 가리키는 엔드포인트 1개를 지운다. 그 노드가 하위 경로(자식)를 가지면
+// 서브트리째 제거한다(파일트리에서 폴더를 지우는 것과 같은 감각). path 가 호스트 루트("/")를
+// 가리키면 — 즉 그 자체가 엔드포인트인 경우 — 루트 노드 자체는 남기고 그 노드의 엔드포인트
+// 데이터(methods·파라미터 등)만 지운다: 루트 노드는 호스트의 다른 모든 자식(진짜 다른
+// 엔드포인트들)의 부모이기도 하므로, 여기서 t.roots[host] 를 통째로 지우면 "/" 하나만
+// 지우려다 그 호스트의 나머지 엔드포인트 전부가 함께 사라진다. "호스트 전체 삭제"가 필요하면
+// Clear() 나 반복 삭제로 하고, 이 함수는 항상 "엔드포인트 1개"만 지운다.
+// 성공하면 즉시 파일에 반영한다(감사 로그는 호출자가 남긴다).
+func (t *Tree) Delete(host, path string) bool {
+	norm := NormalizePath(path)
+	t.mu.Lock()
+	found := false
+	if len(splitSegs(norm)) == 0 {
+		if root, ok := t.roots[host]; ok && len(root.methods) > 0 {
+			clearNodeData(root)
+			if len(root.children) == 0 {
+				delete(t.roots, host) // 다른 자식이 없으면 빈 루트까지 정리
+			}
+			found = true
+		}
+	} else if parent, key, n := t.lookupParent(host, norm); n != nil {
+		delete(parent.children, key)
+		found = true
+	}
+	t.mu.Unlock()
+	if found {
+		t.dump() // dump 는 자체적으로 t.mu 를 다시 잠그므로 반드시 unlock 이후에 호출한다
+	}
+	return found
+}
+
+// clearNodeData — 노드 자신의 엔드포인트 데이터만 비운다(children 은 보존). 호스트 루트가
+// 곧 "/" 엔드포인트인 경우처럼, 노드 자체는 지울 수 없지만(자식의 부모라서) 그 노드가
+// "엔드포인트였다"는 사실만 지워야 할 때 쓴다.
+func clearNodeData(n *node) {
+	n.methods = map[string]bool{}
+	n.params = map[string]*paramAgg{}
+	n.lastPath, n.scheme, n.count = "", "", 0
+	n.auth, n.verdict = false, ""
+	n.firstSeen, n.lastSeen = "", ""
+	n.labels, n.authOnly, n.unverified = nil, false, false
+}
+
+// Delete — 기본(전역) 트리에 위임.
+func Delete(host, path string) bool { return def.Delete(host, path) }
+
+// Clear — 엔드포인트 트리 전체를 비우고 즉시 파일에 반영한다(전체 초기화, 파괴적, 명시적 요청
+// 전용). Reset()과 달리 파일도 함께 비워 재시작 후 되살아나지 않는다. 지워진 엔드포인트 수를 반환.
+func (t *Tree) Clear() int {
+	t.mu.Lock()
+	n := 0
+	var walk func(nd *node)
+	walk = func(nd *node) {
+		if len(nd.methods) > 0 {
+			n++
+		}
+		for _, c := range nd.children {
+			walk(c)
+		}
+	}
+	for _, r := range t.roots {
+		walk(r)
+	}
+	t.roots = map[string]*node{}
+	t.mu.Unlock()
+	t.dump()
+	return n
+}
+
+// Clear — 기본(전역) 트리에 위임.
+func Clear() int { return def.Clear() }
+
 // AddMinedParam — 파라미터 마이닝(#40)이 발견한 hidden 파라미터를 노드에 붙인다.
 // 관측이 아니므로 seen 을 올리지 않고(Required=false) mined 로 표시한다. 노드가 없으면 false.
 // In 이 "" 면 query 로 본다. detector.injectable 이 query 를 자동으로 스캔 대상에 포함한다.
@@ -613,6 +685,30 @@ func (t *Tree) lookup(host, path string) *node {
 		cur = ch
 	}
 	return cur
+}
+
+// lookupParent — lookup 과 같은 하강 규칙으로 (부모, 자식맵 키, 노드)를 찾는다(호출자가 t.mu 보유).
+// Delete 가 부모의 children 에서 지울 정확한 키를 알아야 해서 필요하다(흡수로 세그먼트가 바뀔 수 있음).
+func (t *Tree) lookupParent(host, path string) (parent *node, key string, n *node) {
+	root, ok := t.roots[host]
+	if !ok {
+		return nil, "", nil
+	}
+	cur := root
+	for _, s := range splitSegs(path) {
+		ch, ok := cur.children[s]
+		if !ok {
+			if seg, redirected := absorb(cur, s, ""); redirected {
+				ch, ok = cur.children[seg]
+				s = seg
+			}
+		}
+		if !ok {
+			return nil, "", nil
+		}
+		parent, key, cur = cur, s, ch
+	}
+	return parent, key, cur
 }
 
 // outParams — 노드의 파라미터를 []Param 로 (toOut과 공유 로직).

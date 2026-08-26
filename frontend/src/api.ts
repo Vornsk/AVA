@@ -371,11 +371,13 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 }
 
 // usePoll — 주기적으로 API 를 폴링해 라이브 느낌. 컴포넌트 언마운트 시 정지.
+// refetch — 다음 폴링 틱을 기다리지 않고 즉시 재조회(예: 삭제/초기화 직후 화면 갱신).
 export function usePoll<T>(path: string, ms = 4000) {
   const [data, setData] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const timer = useRef<number | undefined>(undefined)
+  const tickRef = useRef<() => void>(() => {})
   const { lang } = useI18n() // 언어 변경 시 즉시 재요청(X-Lang 반영)
 
   useEffect(() => {
@@ -390,12 +392,14 @@ export function usePoll<T>(path: string, ms = 4000) {
         if (alive) setLoading(false)
       }
     }
+    tickRef.current = tick
     tick()
     timer.current = window.setInterval(tick, ms)
     return () => { alive = false; window.clearInterval(timer.current) }
   }, [path, ms, lang])
 
-  return { data, error, loading }
+  const refetch = useCallback(() => tickRef.current(), [])
+  return { data, error, loading, refetch }
 }
 
 // useScanLog — 스캔 실행 중 요청 단위 실시간 로그 구독(SSE, 이슈 #59).
