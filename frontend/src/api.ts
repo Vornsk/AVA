@@ -280,6 +280,8 @@ export interface CrawlResult {
   errors: number
   mined?: number      // 파라미터 마이닝으로 발견한 hidden 파라미터 수 (#40)
   labeled?: number    // 의미 라벨이 붙은 엔드포인트 수 (분류, #41)
+  discovered?: number // 능동 콘텐츠 발견으로 등록한 엔드포인트 수 (#27)
+  suggested?: number  // 그중 AI가 이 대상 맞춤으로 제안한 후보 수
   started: string
 }
 

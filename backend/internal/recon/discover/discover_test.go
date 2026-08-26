@@ -10,9 +10,15 @@ import (
 	"testing"
 
 	"proxypoc/internal/endpoints"
+	"proxypoc/internal/llm"
 	"proxypoc/internal/recon/liveness"
 	"proxypoc/internal/scope"
 )
+
+type stubLLM struct{ reply string }
+
+func (s *stubLLM) Name() string                                             { return "stub" }
+func (s *stubLLM) Complete(context.Context, string, string) (string, error) { return s.reply, nil }
 
 // spaBody — 없는 경로에도 돌려주는 SPA 셸. Juice Shop 은 이걸 9393바이트로 준다.
 const spaBody = `<!DOCTYPE html><html><head><title>SPA</title></head>` +
@@ -112,7 +118,7 @@ func TestDiscoverFindsUnlinked(t *testing.T) {
 	})
 	tree := setup(t, srv)
 
-	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0)
+	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0, false)
 	got := tree.Targets()
 	for _, want := range []string{"/support/logs", "/encryptionkeys", "/.well-known/security.txt"} {
 		if !has(got, want) {
@@ -143,7 +149,7 @@ func TestDiscoverTagsSourceDiscover(t *testing.T) {
 		},
 	})
 	tree := setup(t, srv)
-	Run(context.Background(), tree, srv.URL, srv.Client(), 0)
+	Run(context.Background(), tree, srv.URL, srv.Client(), 0, false)
 
 	for _, tg := range tree.Targets() {
 		if tg.Source != endpoints.SrcDiscover {
@@ -176,7 +182,7 @@ func TestDiscoverHonest404(t *testing.T) {
 	defer srv.Close()
 	tree := setup(t, srv)
 
-	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0)
+	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0, false)
 	if rep.Baseline != "" {
 		t.Errorf("정직한 404 서버인데 기준 지문을 잡았다: %q", rep.Baseline)
 	}
@@ -197,7 +203,7 @@ func TestDiscoverAuthWallCountsAsFound(t *testing.T) {
 		},
 	})
 	tree := setup(t, srv)
-	Run(context.Background(), tree, srv.URL, srv.Client(), 0)
+	Run(context.Background(), tree, srv.URL, srv.Client(), 0, false)
 	if !has(tree.Targets(), "/admin") {
 		t.Error("401 을 주는 /admin 을 버렸다 — 인증 벽 뒤 표면을 통째로 놓친다")
 	}
@@ -217,7 +223,7 @@ func TestDiscoverRejects5xx(t *testing.T) {
 		},
 	})
 	tree := setup(t, srv)
-	Run(context.Background(), tree, srv.URL, srv.Client(), 0)
+	Run(context.Background(), tree, srv.URL, srv.Client(), 0, false)
 	if has(tree.Targets(), "/api") {
 		t.Error("500 을 주는 /api 를 등록했다 — 프레임워크 오류 페이지는 엔드포인트가 아니다")
 	}
@@ -231,7 +237,7 @@ func TestDiscoverBudget(t *testing.T) {
 	srv, hits := catchAll(t, nil)
 	tree := setup(t, srv)
 
-	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 10)
+	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 10, false)
 	if rep.Probed > 10 {
 		t.Errorf("예산 10건인데 %d건을 보냈다", rep.Probed)
 	}
@@ -252,7 +258,7 @@ func TestDiscoverScopeHard(t *testing.T) {
 	scope.Configure([]string{"other.example"}, nil, nil) // 대상 호스트를 넣지 않는다
 	defer scope.Configure(nil, nil, nil)
 
-	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0)
+	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0, false)
 	hits.Range(func(k, _ any) bool {
 		t.Errorf("스코프 밖으로 요청이 나갔다: %v", k)
 		return true
@@ -261,3 +267,134 @@ func TestDiscoverScopeHard(t *testing.T) {
 		t.Errorf("스코프 밖에서 %d건을 등록했다", rep.Found)
 	}
 }
+
+// ── LLM 맞춤 후보 (이슈 #27 확장) ──────────────────────────────────
+
+// SuggestWords 는 프로바이더가 없거나 관찰된 경로가 없으면 LLM을 부르지 않고 fail-open 한다.
+func TestSuggestWordsFailOpen(t *testing.T) {
+	llm.SetProvider(nil)
+	if got := SuggestWords(context.Background(), "a.example", []string{"/m_login.php"}); got != nil {
+		t.Errorf("provider 없음인데 %v 반환", got)
+	}
+
+	stub := &stubLLM{reply: `{"paths":["/m_admin.php"]}`}
+	llm.SetProvider(stub)
+	defer llm.SetProvider(nil)
+	if got := SuggestWords(context.Background(), "a.example", nil); got != nil {
+		t.Errorf("관찰된 경로 없음인데 %v 반환 — LLM을 부르면 안 됨", got)
+	}
+}
+
+// SuggestWords 가 LLM 응답을 그대로 신뢰하지 않고 필터링하는지 — 전체 URL/쿼리스트링/
+// 트래버설/파괴적 단어/개수 상한을 다 검사한다.
+func TestSuggestWordsSanitizes(t *testing.T) {
+	stub := &stubLLM{reply: `{"paths":[
+		"/m_admin.php",
+		"http://a.example/m_config.php?x=1",
+		"../../etc/passwd",
+		"/m_logout.php",
+		"m_backup.php",
+		"/m_admin.php"
+	]}`}
+	llm.SetProvider(stub)
+	defer llm.SetProvider(nil)
+
+	got := SuggestWords(context.Background(), "a.example", []string{"/m_login.php"})
+	want := []string{"/m_admin.php", "/m_config.php", "/m_backup.php"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("[%d] got %q, want %q (전체: %v)", i, got[i], w, got)
+		}
+	}
+}
+
+func TestSuggestWordsCapsCount(t *testing.T) {
+	var paths []string
+	for i := 0; i < 100; i++ {
+		paths = append(paths, `"/p`+string(rune('a'+i%26))+string(rune('0'+i/26))+`"`)
+	}
+	stub := &stubLLM{reply: `{"paths":[` + strings.Join(paths, ",") + `]}`}
+	llm.SetProvider(stub)
+	defer llm.SetProvider(nil)
+
+	got := SuggestWords(context.Background(), "a.example", []string{"/x"})
+	if len(got) != maxSuggested {
+		t.Errorf("got %d candidates, want %d(상한)", len(got), maxSuggested)
+	}
+}
+
+func TestMergeWords(t *testing.T) {
+	got := mergeWords([]string{"/a", "/b"}, []string{"/b", "/c"})
+	want := []string{"/a", "/b", "/c"}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i, w := range want {
+		if got[i] != w {
+			t.Errorf("[%d] got %q, want %q", i, got[i], w)
+		}
+	}
+}
+
+// TestRunWithLLMMergesSuggestedWords — ★ 통합: useLLM=true 면 정적 wordlist에 없는 경로도
+// LLM 제안을 거쳐 실제로 프로브되고, 실재가 확인되면 등록까지 된다.
+func TestRunWithLLMMergesSuggestedWords(t *testing.T) {
+	const suggested = "/m_secret_area.php" // 고정 wordlist.txt 에는 없는, 이 앱만의 네이밍
+	srv, _ := catchAll(t, map[string]func(http.ResponseWriter){
+		suggested: func(w http.ResponseWriter) { _, _ = w.Write([]byte("secret area")) },
+	})
+	tree := setup(t, srv)
+	u, _ := url.Parse(srv.URL)
+	tree.Record("http", u.Host, "GET", "/m_login.php", nil, false, "") // 관찰된 경로(패턴 힌트)
+
+	stub := &stubLLM{reply: `{"paths":["` + suggested + `"]}`}
+	llm.SetProvider(stub)
+	defer llm.SetProvider(nil)
+
+	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0, true)
+	if rep.Suggested != 1 {
+		t.Errorf("Suggested=%d, want 1", rep.Suggested)
+	}
+	if !has(tree.Targets(), suggested) {
+		t.Errorf("LLM 제안 경로가 wordlist 에 합쳐져 프로브·등록되지 않음: %v", paths(tree.Targets()))
+	}
+}
+
+// LLM 이 실패해도(에러 반환) 발견 자체는 기존 wordlist만으로 평소처럼 계속돼야 한다.
+func TestRunLLMFailureFailsOpen(t *testing.T) {
+	dir := func(w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><title>listing directory</title></html>"))
+	}
+	srv, _ := catchAll(t, map[string]func(http.ResponseWriter){"/backup": dir})
+	tree := setup(t, srv)
+	u, _ := url.Parse(srv.URL)
+	tree.Record("http", u.Host, "GET", "/x", nil, false, "")
+
+	llm.SetProvider(&erroringLLM{})
+	defer llm.SetProvider(nil)
+
+	rep := Run(context.Background(), tree, srv.URL, srv.Client(), 0, true)
+	if rep.Suggested != 0 {
+		t.Errorf("Suggested=%d, want 0 (LLM 오류)", rep.Suggested)
+	}
+	if !has(tree.Targets(), "/backup") {
+		t.Error("LLM 오류에도 정적 wordlist 발견은 계속돼야 한다")
+	}
+}
+
+type erroringLLM struct{}
+
+func (e *erroringLLM) Name() string { return "erroring" }
+func (e *erroringLLM) Complete(context.Context, string, string) (string, error) {
+	return "", assertErr
+}
+
+var assertErr = &discoverTestErr{"boom"}
+
+type discoverTestErr struct{ s string }
+
+func (e *discoverTestErr) Error() string { return e.s }

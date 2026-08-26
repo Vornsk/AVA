@@ -664,15 +664,16 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var in struct {
-			Seed       string `json:"seed"`
-			MaxPages   int    `json:"max_pages"`
-			MaxDepth   int    `json:"max_depth"`
-			Mode       string `json:"mode"`
-			Discover   bool   `json:"discover"`    // 능동 콘텐츠 발견 옵트인 (#27)
-			Budget     int    `json:"budget"`      // 능동 발견 요청 예산 (0 = 기본값)
-			ParamMine  bool   `json:"param_mine"`  // 파라미터 마이닝 옵트인 (#40)
-			MineBudget int    `json:"mine_budget"` // 파라미터 마이닝 요청 예산 (0 = 기본값)
-			AuthDelta  bool   `json:"auth_delta"`  // 인증 델타 크롤 — 로그인 뒤 표면 식별 (#38)
+			Seed        string `json:"seed"`
+			MaxPages    int    `json:"max_pages"`
+			MaxDepth    int    `json:"max_depth"`
+			Mode        string `json:"mode"`
+			Discover    bool   `json:"discover"`     // 능동 콘텐츠 발견 옵트인 (#27)
+			Budget      int    `json:"budget"`       // 능동 발견 요청 예산 (0 = 기본값)
+			DiscoverLLM bool   `json:"discover_llm"` // 발견된 경로 패턴 기반 LLM 맞춤 후보 추가 (Discover 부속 옵트인)
+			ParamMine   bool   `json:"param_mine"`   // 파라미터 마이닝 옵트인 (#40)
+			MineBudget  int    `json:"mine_budget"`  // 파라미터 마이닝 요청 예산 (0 = 기본값)
+			AuthDelta   bool   `json:"auth_delta"`   // 인증 델타 크롤 — 로그인 뒤 표면 식별 (#38)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&in); err != nil || in.Seed == "" {
 			http.Error(w, "seed URL 필요", http.StatusBadRequest)
@@ -690,7 +691,7 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		res := crawler.Start(in.Seed, crawler.Options{
 			MaxPages: in.MaxPages, MaxDepth: in.MaxDepth, Mode: in.Mode,
-			Discover: in.Discover, Budget: in.Budget,
+			Discover: in.Discover, Budget: in.Budget, DiscoverLLM: in.DiscoverLLM,
 			ParamMine: in.ParamMine, MineBudget: in.MineBudget,
 			AuthDelta: in.AuthDelta,
 		})
@@ -701,9 +702,12 @@ func crawlHandler(w http.ResponseWriter, r *http.Request) {
 			if budget <= 0 {
 				budget = discover.DefaultBudget
 			}
-			audit.Record(u.Name, string(u.Role), "crawl:discover", in.Seed, "ok",
-				fmt.Sprintf("%s wordlist=%d budget=%d", res.ID, len(discover.Words()), budget))
-			log.Printf("[WEB ] %s(%s) crawl:discover %s budget=%d → %s", u.Name, u.Role, in.Seed, budget, res.ID)
+			detail := fmt.Sprintf("%s wordlist=%d budget=%d", res.ID, len(discover.Words()), budget)
+			if in.DiscoverLLM {
+				detail += " +llm"
+			}
+			audit.Record(u.Name, string(u.Role), "crawl:discover", in.Seed, "ok", detail)
+			log.Printf("[WEB ] %s(%s) crawl:discover %s budget=%d llm=%v → %s", u.Name, u.Role, in.Seed, budget, in.DiscoverLLM, res.ID)
 		}
 		// 파라미터 마이닝도 능동 주입이라 별도 감사 (#40).
 		if in.ParamMine {

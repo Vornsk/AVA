@@ -34,36 +34,38 @@ import (
 
 // Options — 크롤 상한.
 type Options struct {
-	MaxPages   int    // 가져올 최대 페이지 (기본 200)
-	MaxDepth   int    // 시작 URL로부터 최대 깊이 (기본 5)
-	Mode       string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
-	NoIngest   bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
-	NoVerify   bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
-	Discover   bool   // 능동 콘텐츠 발견(wordlist 프로브) 옵트인 — 기본 꺼짐 (#27)
-	Budget     int    // 능동 발견 요청 예산 (0 = 기본값 discover.DefaultBudget)
-	AuthDelta  bool   // 인증 델타 크롤 — 비인증→인증 두 패스로 "인증 뒤에만 보이는 표면" 식별 (#38)
-	ParamMine  bool   // 파라미터 마이닝(hidden 파라미터 주입) 옵트인 — 기본 꺼짐 (#40)
-	MineBudget int    // 파라미터 마이닝 요청 예산 (0 = 기본값 parammine.DefaultBudget)
+	MaxPages    int    // 가져올 최대 페이지 (기본 200)
+	MaxDepth    int    // 시작 URL로부터 최대 깊이 (기본 5)
+	Mode        string // "static"(기본) | "headless"(Chrome로 JS 렌더 크롤, 옵트인) | "ingest"(명세만, #25)
+	NoIngest    bool   // true 면 크롤 시작 시의 명세 인제스트를 건너뛴다 (#25, 측정·디버깅용)
+	NoVerify    bool   // true 면 크롤 종료 시의 라이브니스 검증을 건너뛴다 (#26, 측정·디버깅용)
+	Discover    bool   // 능동 콘텐츠 발견(wordlist 프로브) 옵트인 — 기본 꺼짐 (#27)
+	Budget      int    // 능동 발견 요청 예산 (0 = 기본값 discover.DefaultBudget)
+	DiscoverLLM bool   // 발견된 경로 패턴 기반 LLM 맞춤 후보 추가 — Discover 위의 부속 옵트인
+	AuthDelta   bool   // 인증 델타 크롤 — 비인증→인증 두 패스로 "인증 뒤에만 보이는 표면" 식별 (#38)
+	ParamMine   bool   // 파라미터 마이닝(hidden 파라미터 주입) 옵트인 — 기본 꺼짐 (#40)
+	MineBudget  int    // 파라미터 마이닝 요청 예산 (0 = 기본값 parammine.DefaultBudget)
 }
 
 // Result — 크롤 실행 단위 + 진행률.
 type Result struct {
-	ID       string `json:"id"`
-	Seed     string `json:"seed"`
-	Status   string `json:"status"`     // 진행 | 완료 | 중단
-	Pages    int    `json:"pages"`      // 가져온 페이지 수
-	Found    int    `json:"found"`      // 발견한 고유 엔드포인트 수
-	JS       int    `json:"js"`         // 분석한 JS 번들 수 (SPA 정적 추출)
-	Spec     int    `json:"spec"`       // 명세 인제스트로 등록한 엔드포인트 수 (#25)
-	Demoted  int    `json:"demoted"`    // 라이브니스 검증에서 강등한 엔드포인트 수 (#26)
-	Found2   int    `json:"discovered"` // 능동 발견으로 등록한 엔드포인트 수 (#27)
-	AuthOnly int    `json:"auth_only"`  // 인증 뒤에만 보이는 표면 수 (인증 델타, #38)
-	Mined    int    `json:"mined"`      // 파라미터 마이닝으로 발견한 hidden 파라미터 수 (#40)
-	Labeled  int    `json:"labeled"`    // 의미 라벨이 붙은 엔드포인트 수 (분류, #41)
-	Mode     string `json:"mode"`       // static | headless | ingest
-	Queued   int    `json:"queued"`     // 남은 큐
-	Errors   int    `json:"errors"`
-	Started  string `json:"started"`
+	ID        string `json:"id"`
+	Seed      string `json:"seed"`
+	Status    string `json:"status"`              // 진행 | 완료 | 중단
+	Pages     int    `json:"pages"`               // 가져온 페이지 수
+	Found     int    `json:"found"`               // 발견한 고유 엔드포인트 수
+	JS        int    `json:"js"`                  // 분석한 JS 번들 수 (SPA 정적 추출)
+	Spec      int    `json:"spec"`                // 명세 인제스트로 등록한 엔드포인트 수 (#25)
+	Demoted   int    `json:"demoted"`             // 라이브니스 검증에서 강등한 엔드포인트 수 (#26)
+	Found2    int    `json:"discovered"`          // 능동 발견으로 등록한 엔드포인트 수 (#27)
+	Suggested int    `json:"suggested,omitempty"` // 그중 LLM이 이 대상 맞춤으로 제안한 후보 수
+	AuthOnly  int    `json:"auth_only"`           // 인증 뒤에만 보이는 표면 수 (인증 델타, #38)
+	Mined     int    `json:"mined"`               // 파라미터 마이닝으로 발견한 hidden 파라미터 수 (#40)
+	Labeled   int    `json:"labeled"`             // 의미 라벨이 붙은 엔드포인트 수 (분류, #41)
+	Mode      string `json:"mode"`                // static | headless | ingest
+	Queued    int    `json:"queued"`              // 남은 큐
+	Errors    int    `json:"errors"`
+	Started   string `json:"started"`
 }
 
 type job struct {
@@ -199,10 +201,11 @@ func (j *job) discoverOnce(seed string, opts Options, client *http.Client) {
 	if !opts.Discover || j.ctx.Err() != nil {
 		return
 	}
-	rep := discover.Run(j.ctx, endpoints.Default(), seed, client, opts.Budget)
+	rep := discover.Run(j.ctx, endpoints.Default(), seed, client, opts.Budget, opts.DiscoverLLM)
 	j.mu.Lock()
 	j.res.Found2 = rep.Found
 	j.res.Found += rep.Found
+	j.res.Suggested = rep.Suggested
 	j.res.Errors += rep.Errors
 	j.mu.Unlock()
 }

@@ -115,6 +115,8 @@ function CrawlExplore() {
   const [headless, setHeadless] = useState(false)
   const [paramMine, setParamMine] = useState(false) // 파라미터 마이닝 옵트인 (#40)
   const [authDelta, setAuthDelta] = useState(false) // 인증 델타 크롤 (#38)
+  const [discover, setDiscover] = useState(false) // 능동 콘텐츠 발견 옵트인 (#27)
+  const [discoverLLM, setDiscoverLLM] = useState(false) // AI 맞춤 후보 추가 — discover 부속 옵트인
   const { data: runs } = usePoll<CrawlResult[]>('/api/crawl', 2000)
   const { data: modes } = usePoll<{ headless_available: boolean }>('/api/crawl-modes', 30000)
   const hlOK = modes?.headless_available === true
@@ -124,7 +126,12 @@ function CrawlExplore() {
   async function start() {
     if (!seed.trim()) return
     setBusy(true)
-    try { await apiPost('/api/crawl', { seed: seed.trim(), mode: headless ? 'headless' : 'static', param_mine: paramMine, auth_delta: authDelta }) }
+    try {
+      await apiPost('/api/crawl', {
+        seed: seed.trim(), mode: headless ? 'headless' : 'static', param_mine: paramMine, auth_delta: authDelta,
+        discover, discover_llm: discover && discoverLLM,
+      })
+    }
     catch (e) { alert(t('recon.crawl.startFail') + ': ' + e) } finally { setBusy(false) }
   }
 
@@ -158,6 +165,19 @@ function CrawlExplore() {
         <input type="checkbox" checked={authDelta} onChange={(e) => setAuthDelta(e.target.checked)} />
         {t('recon.crawl.authDelta')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
       </label>
+      <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
+             title={t('recon.crawl.discoverTitle')}>
+        <input type="checkbox" checked={discover}
+               onChange={(e) => { setDiscover(e.target.checked); if (!e.target.checked) setDiscoverLLM(false) }} />
+        {t('recon.crawl.discover')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
+      </label>
+      {discover && (
+        <label className="mt-1 ml-5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
+               title={t('recon.crawl.discoverLLMTitle')}>
+          <input type="checkbox" checked={discoverLLM} onChange={(e) => setDiscoverLLM(e.target.checked)} />
+          {t('recon.crawl.discoverLLM')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
+        </label>
+      )}
       {latest && (
         <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs">
           <Dot text={latest.status} color={latest.status === '진행' ? 'var(--amber)' : latest.status === '완료' ? 'var(--green)' : 'var(--muted)'} />
@@ -167,6 +187,12 @@ function CrawlExplore() {
           {latest.js > 0 && <span className="text-[var(--muted)]">JS <b className="text-[var(--text)]">{latest.js}</b></span>}
           {!!latest.mined && latest.mined > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.mined')} <b>{latest.mined}</b></span>}
           {!!latest.labeled && latest.labeled > 0 && <span className="text-[var(--muted)]">{t('recon.crawl.labeled')} <b className="text-[var(--text)]">{latest.labeled}</b></span>}
+          {!!latest.discovered && latest.discovered > 0 && (
+            <span style={{ color: '#a78bfa' }}>
+              {t('recon.crawl.discoveredCount')} <b>{latest.discovered}</b>
+              {!!latest.suggested && latest.suggested > 0 && <span className="text-[10px]"> (AI {latest.suggested})</span>}
+            </span>
+          )}
           <span className="text-[var(--muted)]">{t('recon.crawl.queued')} {latest.queued}</span>
           {latest.errors > 0 && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.errors')} {latest.errors}</span>}
           <span className="font-mono text-[10px] text-[var(--muted)]">{latest.seed}</span>

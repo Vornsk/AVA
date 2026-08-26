@@ -22,6 +22,7 @@ import (
 	"bufio"
 	"context"
 	_ "embed"
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/url"
@@ -30,6 +31,7 @@ import (
 
 	"proxypoc/internal/auth"
 	"proxypoc/internal/endpoints"
+	"proxypoc/internal/llm"
 	"proxypoc/internal/recon/probe"
 )
 
@@ -46,9 +48,10 @@ type Report struct {
 	Found     int      `json:"found"`    // 실재가 확인돼 등록한 수
 	Rejected  int      `json:"rejected"` // 프로브했으나 실재하지 않아 버린 수
 	Errors    int      `json:"errors"`
-	Budget    int      `json:"budget"`    // 적용된 요청 예산
-	Exhausted bool     `json:"exhausted"` // 예산 소진으로 중단했는가
-	Baseline  string   `json:"baseline"`  // 잡아낸 soft-404 기준 ("" = 없음)
+	Budget    int      `json:"budget"`              // 적용된 요청 예산
+	Suggested int      `json:"suggested,omitempty"` // LLM이 이 대상 맞춤으로 제안해 wordlist에 합쳐진 후보 수 (0=미사용/실패)
+	Exhausted bool     `json:"exhausted"`           // 예산 소진으로 중단했는가
+	Baseline  string   `json:"baseline"`            // 잡아낸 soft-404 기준 ("" = 없음)
 	FoundList []string `json:"found_list,omitempty"`
 	Duration  string   `json:"duration"`
 }
@@ -77,24 +80,34 @@ func Words() []string {
 //
 // budget 이 0 이하면 DefaultBudget 을 쓴다. 예산은 기준 지문 확보 요청까지 포함해 센다 —
 // "이 기능이 대상 서버에 몇 건을 보내는가"가 사용자가 알아야 할 숫자이기 때문이다.
-func Run(ctx context.Context, tree *endpoints.Tree, seed string, client *http.Client, budget int) Report {
+//
+// useLLM=true 면 이 호스트에서 이미 발견된 경로 패턴을 보고 SuggestWords 로 맞춤 후보를
+// 추가로 받아 wordlist 와 합친다(중복 제거). 실패해도 fail-open — 기존 wordlist 만으로
+// 평소처럼 진행한다.
+func Run(ctx context.Context, tree *endpoints.Tree, seed string, client *http.Client, budget int, useLLM bool) Report {
 	start := time.Now()
 	if budget <= 0 {
 		budget = DefaultBudget
 	}
-	words := Words()
-	rep := Report{Words: len(words), Budget: budget}
 
 	base, err := url.Parse(seed)
 	if err != nil || base.Host == "" {
-		rep.Errors++
-		rep.Duration = time.Since(start).String()
-		return rep
+		return Report{Errors: 1, Duration: time.Since(start).String()}
 	}
 	scheme := base.Scheme
 	if scheme == "" {
 		scheme = "https"
 	}
+
+	words := Words()
+	suggested := 0
+	if useLLM {
+		if extra := SuggestWords(ctx, base.Host, observedPaths(tree, base.Host)); len(extra) > 0 {
+			words = mergeWords(words, extra)
+			suggested = len(extra)
+		}
+	}
+	rep := Report{Words: len(words), Budget: budget, Suggested: suggested}
 
 	p := probe.New(ctx, client)
 	sig404 := p.Calibrate(scheme, base.Host)
@@ -147,4 +160,142 @@ func exhaustedMark(b bool) string {
 		return "(소진)"
 	}
 	return ""
+}
+
+// ── LLM 맞춤 후보 (이슈 #27 확장) ──────────────────────────────────
+// 고정 wordlist는 모든 대상에 동일하다. 이미 발견된 경로의 네이밍 패턴(접두사·확장자·관례)을
+// 보고 "이 대상엔 이런 것도 있을 법하다"를 LLM이 제안하게 해, 대상마다 맞춤 후보를 더한다.
+
+// suggestDenylist — LLM이 제안해도 서버에서 한 번 더 거른다. wordlist.txt 자체의 원칙과
+// 동일: 능동 탐색은 GET 으로 읽어도 상태가 안 바뀌는 것만 찔러본다.
+var suggestDenylist = []string{"logout", "signout", "delete", "reset", "purge", "shutdown", "destroy", "remove", "drop", "kill"}
+
+// maxSuggested — 프로브 예산을 이 기능 하나가 다 잡아먹지 않도록 상한.
+const maxSuggested = 40
+
+// SuggestWords — host에서 이미 관찰된 경로(observed)의 네이밍 패턴을 보고 LLM이 추가 후보를
+// 제안한다. 프로바이더가 없거나 관찰된 경로가 없거나 호출이 실패하면 빈 목록(fail-open —
+// 발견 자체는 기존 wordlist만으로 계속된다).
+func SuggestWords(ctx context.Context, host string, observed []string) []string {
+	if !llm.Available() || len(observed) == 0 {
+		return nil
+	}
+	content, err := llm.Complete(ctx, suggestSys(), suggestUser(host, observed))
+	if err != nil {
+		return nil
+	}
+	var parsed struct {
+		Paths []string `json:"paths"`
+	}
+	if json.Unmarshal([]byte(extractJSONObj(content)), &parsed) != nil {
+		return nil
+	}
+	return sanitizeSuggestions(parsed.Paths)
+}
+
+func suggestSys() string {
+	return "You are a web recon assistant. Given a host and a list of URL paths already observed on it, " +
+		"suggest additional path candidates that plausibly exist there too, based on the naming convention you see " +
+		"(shared prefix, extension, numbering, common sibling/admin/backup pages for that pattern). " +
+		"Only suggest paths safe to fetch with a read-only GET — never suggest anything that sounds state-changing " +
+		"(logout, delete, reset, admin actions, etc). Do not invent paths from an unrelated framework/CMS convention " +
+		"you don't see evidence of. " +
+		`Reply with ONLY compact JSON: {"paths":[string,...]}, each starting with "/", no full URLs, no query strings, at most 30 items.`
+}
+
+func suggestUser(host string, observed []string) string {
+	b, _ := json.Marshal(struct {
+		Host  string   `json:"host"`
+		Paths []string `json:"observed_paths"`
+	}{Host: host, Paths: observed})
+	return string(b)
+}
+
+// sanitizeSuggestions — LLM 응답을 신뢰하지 않는다: 스킴/호스트가 섞여 있으면 경로만 뽑고,
+// 쿼리스트링·트래버설은 버리고, 파괴적으로 들리는 단어는 차단하고, 개수를 상한으로 자른다.
+func sanitizeSuggestions(paths []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, raw := range paths {
+		p := strings.TrimSpace(raw)
+		if p == "" {
+			continue
+		}
+		if u, err := url.Parse(p); err == nil && u.Path != "" {
+			p = u.Path // 전체 URL을 줬어도 경로만 쓴다
+		}
+		if i := strings.IndexAny(p, "?#"); i >= 0 {
+			p = p[:i]
+		}
+		if !strings.HasPrefix(p, "/") {
+			p = "/" + p
+		}
+		if strings.Contains(p, "..") {
+			continue // 트래버설 시도는 발견 후보가 아니다
+		}
+		lp := strings.ToLower(p)
+		blocked := false
+		for _, bad := range suggestDenylist {
+			if strings.Contains(lp, bad) {
+				blocked = true
+				break
+			}
+		}
+		if blocked || seen[p] {
+			continue
+		}
+		seen[p] = true
+		out = append(out, p)
+		if len(out) >= maxSuggested {
+			break
+		}
+	}
+	return out
+}
+
+// mergeWords — 순서 유지 + 중복 제거하며 합친다(기존 wordlist 우선순위 유지).
+func mergeWords(base, extra []string) []string {
+	seen := make(map[string]bool, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, w := range base {
+		if !seen[w] {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	for _, w := range extra {
+		if !seen[w] {
+			seen[w] = true
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+// observedPaths — 이 host에서 지금까지 발견된 경로들(값 없이 경로만). 프롬프트 크기를
+// 절제하려 상한을 둔다 — 패턴을 보여주는 데는 전부 다 필요하지 않다.
+func observedPaths(tree *endpoints.Tree, host string) []string {
+	const maxObserved = 60
+	var out []string
+	for _, t := range tree.Targets() {
+		if t.Host != host {
+			continue
+		}
+		out = append(out, t.Path)
+		if len(out) >= maxObserved {
+			break
+		}
+	}
+	return out
+}
+
+// extractJSONObj — 응답에서 첫 { … 마지막 } 구간만(모델이 앞뒤로 말을 붙이는 경우).
+// recommend 패키지의 extractJSON과 동일한 원칙, 패키지가 달라 로컬로 둔다.
+func extractJSONObj(s string) string {
+	i := strings.IndexByte(s, '{')
+	j := strings.LastIndexByte(s, '}')
+	if i < 0 || j < 0 || j < i {
+		return s
+	}
+	return s[i : j+1]
 }
