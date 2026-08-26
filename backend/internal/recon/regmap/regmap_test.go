@@ -1,6 +1,8 @@
 package regmap
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"proxypoc/internal/checklist"
@@ -173,5 +175,41 @@ func TestGapsMappableUniverse(t *testing.T) {
 	if len(want) >= len(checklist.CheckItemsByScheme(checklist.SchemeFinance)) {
 		t.Errorf("전자금융 전체(%d) 대비 라벨 도달 가능(%d) — 모수가 좁아야 공백이 신호가 된다",
 			len(checklist.CheckItemsByScheme(checklist.SchemeFinance)), len(want))
+	}
+}
+
+// TestItemsNeverNilWhenSchemeHasOnlyGaps — 실서비스 회귀 재현: 엔드포인트가 없어서(또는
+// 라벨이 하나도 안 붙어서) 어떤 스킴의 실제 후보(Items)가 0건이고 공백(Gaps)만 있으면,
+// byScheme 맵 조회가 nil 슬라이스를 돌려주고 그게 그대로 SchemeReport.Items 에 들어간다.
+// Items 필드엔 omitempty 가 없어 nil 이면 JSON이 "items:null"이 되고, 프론트 s.items.map()이
+// "Cannot read properties of null" 로 죽는다(실제로 겪음 — 공격면이 거의 비었을 때 발생).
+func TestItemsNeverNilWhenSchemeHasOnlyGaps(t *testing.T) {
+	checklist.SetSelected([]checklist.Scheme{checklist.SchemeFinance})
+	defer checklist.SetSelected(nil)
+
+	rep := Build(nil) // 엔드포인트 0개 → 모든 매핑 가능 항목이 공백, 실제 후보(Items)는 0건
+
+	var fin SchemeReport
+	found := false
+	for _, s := range rep.Schemes {
+		if s.Scheme == checklist.SchemeFinance {
+			fin, found = s, true
+		}
+	}
+	if !found {
+		t.Fatal("공백만 있어도 스킴 자체는 리포트에 나와야 한다")
+	}
+	if fin.Applicable != 0 || len(fin.Gaps) == 0 {
+		t.Fatalf("Applicable=%d Gaps=%d — 후보 0·공백 있음 케이스가 아님(테스트 전제 확인 필요)", fin.Applicable, len(fin.Gaps))
+	}
+	if fin.Items == nil {
+		t.Fatal("Items 가 nil — JSON 직렬화 시 null 이 돼 프론트 .map() 이 깨진다")
+	}
+	b, err := json.Marshal(fin)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if got := string(b); !strings.Contains(got, `"items":[]`) {
+		t.Errorf("직렬화 결과에 \"items\":[] 가 없음(null 이 됐을 가능성): %s", got)
 	}
 }

@@ -590,7 +590,7 @@ function RegMapCard() {
               <span className="text-[var(--muted)]">{t('recon.regmap.applicable')} {s.applicable} / {s.mappable}</span>
             </div>
             <div className="flex flex-wrap gap-1.5">
-              {s.items.map((it) => (
+              {(s.items ?? []).map((it) => (
                 <Tooltip key={it.check_item.id} label={`${it.vuln_name} · ${it.labels.join(', ')}`}>
                   <span className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px]"
                         style={{ borderColor: it.access_control ? 'var(--red)' : 'var(--border)', color: it.access_control ? 'var(--red)' : 'var(--muted)' }}>

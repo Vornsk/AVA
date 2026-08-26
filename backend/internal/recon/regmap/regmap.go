@@ -132,6 +132,9 @@ func Build(targets []endpoints.Target) Report {
 		if len(its) == 0 && len(gaps) == 0 {
 			continue
 		}
+		if its == nil {
+			its = []ItemCandidates{} // Items 는 omitempty 가 없어 nil 이면 JSON null 이 되고, 프론트 s.items.map 이 깨진다
+		}
 		sortItems(its)
 		sortItems(gaps)
 		rep.Schemes = append(rep.Schemes, SchemeReport{
