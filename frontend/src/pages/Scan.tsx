@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
-import { Radar, Cpu, ShieldCheck, FlaskConical, Wrench, Inbox, Play, Pause, PlayCircle, Square, SlidersHorizontal, Sparkles } from 'lucide-react'
-import { usePoll, apiPost, type ScanRun, type DetectorInfo, type Stats, type Target } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { Radar, Cpu, ShieldCheck, FlaskConical, Wrench, Inbox, Play, Pause, PlayCircle, Square, SlidersHorizontal, Sparkles, Terminal } from 'lucide-react'
+import { usePoll, apiPost, useScanLog, type ScanRun, type DetectorInfo, type Stats, type Target } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
 import { ScanRecommend } from '../components/ScanRecommend'
 import { useT } from '../i18n'
@@ -138,6 +138,41 @@ function RunControls({ r }: { r: ScanRun }) {
   )
 }
 
+// ScanLogPanel — 실행 중인 스캔의 요청 단위 실시간 로그 (SSE, 이슈 #59).
+// 진행/일시정지 상태인 run 이 있으면 구독하고, 없으면 유휴 상태 안내만 보여준다.
+function ScanLogPanel({ run }: { run?: ScanRun }) {
+  const t = useT()
+  const lines = useScanLog(run?.id)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const el = boxRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [lines])
+
+  return (
+    <Card title={t('scan.log.title')} icon={Terminal}
+          right={run && <Dot text={run.status} color={scanColor(run.status)} />}>
+      <div ref={boxRef} className="h-64 overflow-y-auto rounded-lg bg-[var(--panel-2)] p-2.5 font-mono text-[11px] leading-relaxed">
+        {!run ? (
+          <div className="text-[var(--muted)]">{t('scan.log.idle')}</div>
+        ) : lines.length === 0 ? (
+          <div className="text-[var(--muted)]">{t('scan.log.waiting')}</div>
+        ) : (
+          lines.map((l, i) => (
+            <div key={i} className="whitespace-pre-wrap break-all"
+                 style={{ color: l.message.includes('발견') ? 'var(--red)' : 'var(--text)' }}>
+              <span className="text-[var(--muted)]">{new Date(l.time).toLocaleTimeString()}</span>{' '}
+              {l.detector && <span style={{ color: 'var(--blue)' }}>[{l.detector}]</span>}{' '}
+              {l.message}
+            </div>
+          ))
+        )}
+      </div>
+    </Card>
+  )
+}
+
 export function Scan() {
   const tr = useT() // 외부도구 map 의 t(tool) 파라미터와 섀도잉 회피
   const { data: runs } = usePoll<ScanRun[]>('/api/scanruns', 2000)
@@ -147,10 +182,12 @@ export function Scan() {
   const { data: targets } = usePoll<Target[]>('/api/endpoints', 5000)
 
   const tools = (dets ?? []).filter((d) => d.tool)
+  const activeRun = runs?.find((r) => r.status === '진행' || r.status === '일시정지')
 
   return (
     <div className="space-y-5">
       <ScanControl targetCount={targets?.length ?? 0} dets={dets ?? []} />
+      <ScanLogPanel run={activeRun} />
       {/* Scan Runs (FR-3.8) */}
       <Card title={`${tr('scan.runs.title')}${runs ? ` (${runs.length})` : ''}`} icon={Radar}>
         {!runs || runs.length === 0 ? (

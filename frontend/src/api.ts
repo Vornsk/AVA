@@ -70,6 +70,13 @@ export interface ScanRun {
   safe_mode?: boolean
 }
 
+// 스캔 실행 중 요청 단위 실시간 로그 한 줄 (SSE, 이슈 #59).
+export interface ScanLogEntry {
+  time: string
+  detector?: string
+  message: string
+}
+
 export interface CheckItem {
   id: string
   scheme: string
@@ -388,6 +395,29 @@ export function usePoll<T>(path: string, ms = 4000) {
   }, [path, ms, lang])
 
   return { data, error, loading }
+}
+
+// useScanLog — 스캔 실행 중 요청 단위 실시간 로그 구독(SSE, 이슈 #59).
+// runID 가 없으면(스캔 미실행) 구독하지 않는다. runID 가 바뀌면 이전 구독을 닫고 새로 연다.
+export function useScanLog(runID: string | undefined, max = 500) {
+  const [lines, setLines] = useState<ScanLogEntry[]>([])
+
+  useEffect(() => {
+    setLines([])
+    if (!runID) return
+    const es = new EventSource(`/api/scanruns/${encodeURIComponent(runID)}/log/stream`)
+    es.onmessage = (ev) => {
+      let e: ScanLogEntry
+      try { e = JSON.parse(ev.data) } catch { return } // 파싱 실패 줄은 버림
+      setLines((prev) => {
+        const next = prev.length >= max ? prev.slice(prev.length - max + 1) : prev
+        return [...next, e]
+      })
+    }
+    return () => es.close()
+  }, [runID, max])
+
+  return lines
 }
 
 // ── 취약점 카탈로그 로케일 (#18) ──
