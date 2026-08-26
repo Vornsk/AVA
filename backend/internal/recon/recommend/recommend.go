@@ -15,11 +15,17 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"proxypoc/internal/detector"
 	"proxypoc/internal/endpoints"
 	"proxypoc/internal/llm"
 )
+
+// recommendTimeout — 배치 하나에 대상 전체를 실어 보내는 호출이라 llm 패키지 기본(60초)보다
+// 여유를 둔다. ctx에 이미 데드라인이 없을 때만 적용되므로 다른 LLM 호출(판단·트리아지)에는
+// 영향이 없다.
+const recommendTimeout = 180 * time.Second
 
 // ParamShape — LLM 입력용 파라미터 모양(키만, 값 없음).
 type ParamShape struct {
@@ -34,8 +40,9 @@ type Item struct {
 	Host        string   `json:"host"`
 	Path        string   `json:"path"`
 	Methods     []string `json:"methods,omitempty"`
-	Recommended []string `json:"recommended"`         // 비파괴 탐지기 ID만(카탈로그 allow-list 필터 통과분)
-	Fallback    bool     `json:"fallback,omitempty"`  // 이 항목만 개별 폴백(LLM 응답에서 누락된 키)
+	Recommended []string `json:"recommended"`        // 비파괴 탐지기 ID만(카탈로그 allow-list 필터 통과분)
+	Fallback    bool     `json:"fallback,omitempty"` // 이 항목만 개별 폴백(LLM 응답에서 누락된 키 또는 전체 폴백)
+	Reason      string   `json:"reason,omitempty"`   // 왜 이 탐지기들인지(LLM 근거 또는 폴백 사유)
 }
 
 // Result — 배치 추천 결과.
@@ -61,7 +68,13 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 		return fallbackAll(targets, allowIDs, "프로바이더 없음 — 기본값(비파괴 전체) 사용")
 	}
 
-	content, err := llm.Complete(ctx, recommendSys(allowIDs), recommendUser(targets))
+	rctx := ctx
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		rctx, cancel = context.WithTimeout(ctx, recommendTimeout)
+		defer cancel()
+	}
+	content, err := llm.Complete(rctx, recommendSys(allowIDs), recommendUser(targets))
 	if err != nil {
 		return fallbackAll(targets, allowIDs, "프로바이더 오류("+err.Error()+") — 기본값 사용")
 	}
@@ -70,28 +83,33 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 		Items []struct {
 			Key       string   `json:"key"`
 			Detectors []string `json:"detectors"`
+			Reason    string   `json:"reason"`
 		} `json:"items"`
 	}
 	if json.Unmarshal([]byte(extractJSON(content)), &parsed) != nil {
 		return fallbackAll(targets, allowIDs, "추천 응답 파싱 실패 — 기본값 사용")
 	}
 
-	byKey := map[string][]string{}
+	type entry struct {
+		detectors []string
+		reason    string
+	}
+	byKey := map[string]entry{}
 	for _, it := range parsed.Items {
-		byKey[it.Key] = it.Detectors
+		byKey[it.Key] = entry{detectors: it.Detectors, reason: it.Reason}
 	}
 
 	items := make([]Item, 0, len(targets))
 	for _, t := range targets {
 		key := t.Key()
-		raw, ok := byKey[key]
+		e, ok := byKey[key]
 		if !ok { // LLM이 이 대상을 누락 — 이 항목만 개별 폴백(전체 Degraded는 아님)
 			items = append(items, Item{Key: key, Host: t.Host, Path: t.Path, Methods: t.Methods,
-				Recommended: allowIDs, Fallback: true})
+				Recommended: allowIDs, Fallback: true, Reason: "LLM 응답에 이 엔드포인트 누락 — 기본값(비파괴 전체) 사용"})
 			continue
 		}
 		items = append(items, Item{Key: key, Host: t.Host, Path: t.Path, Methods: t.Methods,
-			Recommended: filterAllowed(raw, allowSet)}) // 환각/파괴성 id 는 조용히 버림
+			Recommended: filterAllowed(e.detectors, allowSet), Reason: e.reason}) // 환각/파괴성 id 는 조용히 버림
 	}
 	return Result{Items: items, Source: "llm", Provider: llm.ProviderName()}
 }
@@ -99,7 +117,8 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 func fallbackAll(targets []endpoints.Target, allowIDs []string, reason string) Result {
 	items := make([]Item, 0, len(targets))
 	for _, t := range targets {
-		items = append(items, Item{Key: t.Key(), Host: t.Host, Path: t.Path, Methods: t.Methods, Recommended: allowIDs})
+		items = append(items, Item{Key: t.Key(), Host: t.Host, Path: t.Path, Methods: t.Methods,
+			Recommended: allowIDs, Fallback: true, Reason: reason})
 	}
 	return Result{Items: items, Source: "fallback", Degraded: true, Reason: reason}
 }
@@ -143,7 +162,8 @@ func recommendSys(allowIDs []string) string {
 	b.WriteString("and a catalog of available non-destructive vulnerability detector ids. ")
 	b.WriteString("For each endpoint, choose only the detector ids that are plausibly relevant to test given its shape. ")
 	b.WriteString("Only use ids from the given catalog — never invent new ids. When unsure, prefer including a detector over excluding it. ")
-	b.WriteString(`Reply with ONLY compact JSON: {"items":[{"key":string,"detectors":[string,...]}, ...]} covering every input key exactly once. `)
+	b.WriteString(`Reply with ONLY compact JSON: {"items":[{"key":string,"detectors":[string,...],"reason":string}, ...]} covering every input key exactly once. `)
+	b.WriteString(`"reason" is a short Korean phrase (under 15 words) explaining why THIS endpoint's shape (params/labels/auth) warrants those detectors. `)
 	b.WriteString("Catalog ids: " + strings.Join(allowIDs, ", "))
 	return b.String()
 }

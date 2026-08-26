@@ -88,6 +88,7 @@ export function ScanRecommend({ dets, allowDestructive, onPlanChange }: ScanReco
                 {it.fallback ? <Badge text={t('scan.ai.fallbackBadge')} color="var(--amber)" /> : <Badge text={t('scan.ai.aiBadge')} color="var(--blue)" />}
                 <span className="ml-auto text-[11px] text-[var(--muted)]">{(sel[it.key]?.size ?? 0)}/{chips.length}</span>
               </div>
+              {it.reason && <p className="mb-1.5 text-[11px] text-[var(--muted)]">{it.reason}</p>}
               <div className="flex flex-wrap gap-1.5">
                 {chips.map((d) => {
                   const on = sel[it.key]?.has(d.id) ?? false

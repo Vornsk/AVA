@@ -155,7 +155,8 @@ export interface RecommendItem {
   path: string
   methods?: string[]
   recommended: string[]
-  fallback?: boolean // 이 항목만 개별 폴백(LLM 응답에서 누락)
+  fallback?: boolean // 이 항목만 개별 폴백(LLM 응답에서 누락 또는 전체 폴백)
+  reason?: string     // 왜 이 탐지기들인지(LLM 근거 또는 폴백 사유)
 }
 export interface RecommendResult {
   items: RecommendItem[]
