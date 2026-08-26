@@ -13,6 +13,10 @@ const SCAN_STATUS: Record<string, string> = {
 }
 const scanColor = (s: string) => SCAN_STATUS[s] ?? 'var(--muted)'
 
+// 기본 선택에서 빼는 탐지기 — sqli-time은 요청마다 딜레이를 재는 시간 기반 블라인드라 스캔이 크게 느려짐.
+// "전체선택" 버튼으로는 여전히 켤 수 있다.
+const DEFAULT_EXCLUDED = new Set(['sqli-time'])
+
 // ScanControl — 탐지기 선택 + 스캔 시작 (AppScan Test 대응, 진단 정책).
 function ScanControl({ targetCount, dets }: { targetCount: number; dets: DetectorInfo[] }) {
   const t = useT()
@@ -24,9 +28,12 @@ function ScanControl({ targetCount, dets }: { targetCount: number; dets: Detecto
   const [inited, setInited] = useState(false)
   const [aiPlan, setAiPlan] = useState<Record<string, string[]> | null>(null)
 
-  // 탐지기 목록 로드되면 기본 전체 선택 (1회, 수동 모드용).
+  // 탐지기 목록 로드되면 기본 선택 (1회, 수동 모드용) — DEFAULT_EXCLUDED 는 빼고 시작.
   useEffect(() => {
-    if (!inited && dets.length > 0) { setSel(new Set(dets.map((d) => d.id))); setInited(true) }
+    if (!inited && dets.length > 0) {
+      setSel(new Set(dets.filter((d) => !DEFAULT_EXCLUDED.has(d.id)).map((d) => d.id)))
+      setInited(true)
+    }
   }, [dets, inited])
 
   const toggle = (id: string) => setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
