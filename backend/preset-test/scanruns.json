@@ -1,0 +1,62 @@
+[
+  {
+    "id": "SR-1",
+    "project_id": "p-1",
+    "status": "완료",
+    "targets": 7,
+    "detectors": [
+      "reflected-input",
+      "sqli"
+    ],
+    "total": 14,
+    "done": 14,
+    "findings": 3
+  },
+  {
+    "id": "SR-2",
+    "project_id": "p-1",
+    "status": "완료",
+    "targets": 7,
+    "detectors": [
+      "reflected-input",
+      "sqli",
+      "cookie-security",
+      "http-method"
+    ],
+    "total": 28,
+    "done": 28,
+    "findings": 3
+  },
+  {
+    "id": "SR-3",
+    "project_id": "p-1",
+    "status": "중단",
+    "targets": 7,
+    "detectors": [
+      "sec-headers",
+      "reflected-input",
+      "dom-xss",
+      "sensitive-data",
+      "idor",
+      "privesc",
+      "sqli",
+      "sqli-blind",
+      "sqli-time",
+      "path-traversal",
+      "open-redirect",
+      "cmd-injection",
+      "ssrf",
+      "ssti",
+      "xxe",
+      "ldap-injection",
+      "ssi-injection",
+      "csrf",
+      "cookie-security",
+      "http-method",
+      "dir-indexing"
+    ],
+    "total": 147,
+    "done": 97,
+    "findings": 8
+  }
+]

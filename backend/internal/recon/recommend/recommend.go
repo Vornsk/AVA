@@ -155,15 +155,31 @@ func filterAllowed(ids []string, allow map[string]bool) []string {
 // ── LLM ─────────────────────────────────────────────────────────────
 
 // recommendSys — 시스템 프롬프트. 카탈로그를 id 나열로 준다(토큰 절감을 위해 이름 생략).
+//
+// "When unsure, include" 한 줄짜리 기준만으로는 로컬 소형 모델(qwen2.5:3b 등)이 파라미터·라벨을
+// 활용한 변별을 못 하고 매 엔드포인트에 카탈로그 전체를 반복하는 경향이 있었다(실측). 구체적인
+// 신호→탐지기 매핑 규칙을 명시해 "패턴 매칭"에 가깝게 만들고, baseline(항상 포함)과 조건부
+// 항목을 분리한다 — 판단·트리아지 프롬프트와 같은 원칙(양방향 기준: 넣을 때/뺄 때를 각각 명시).
 func recommendSys(allowIDs []string) string {
 	var b strings.Builder
-	b.WriteString("You are a security-scan planner. You are given a JSON array of HTTP endpoints ")
+	b.WriteString("You are a security-scan planner assigning detector ids to HTTP endpoints, given a JSON array of endpoints ")
 	b.WriteString("(key, method, path, parameter names+location+type only — never values — plus semantic labels and auth-required) ")
-	b.WriteString("and a catalog of available non-destructive vulnerability detector ids. ")
-	b.WriteString("For each endpoint, choose only the detector ids that are plausibly relevant to test given its shape. ")
-	b.WriteString("Only use ids from the given catalog — never invent new ids. When unsure, prefer including a detector over excluding it. ")
+	b.WriteString("and a catalog of non-destructive detector ids. Follow these rules mechanically, in order:\n")
+	b.WriteString("1. Baseline, always include for every endpoint: sec-headers, http-method, cookie-security.\n")
+	b.WriteString("2. If the endpoint has ANY params (query/body/path), also include: reflected-input, sqli, sqli-blind, dom-xss.\n")
+	b.WriteString("3. A param name suggesting a file/path (file, path, filename, doc, page) -> add path-traversal.\n")
+	b.WriteString("4. A param name suggesting a URL/redirect target (url, redirect, next, return, callback) -> add open-redirect, ssrf.\n")
+	b.WriteString("5. A param name suggesting raw command/query/template input (cmd, exec, query, filter, template) -> add cmd-injection, ssti, ldap-injection, ssi-injection, xxe.\n")
+	b.WriteString("6. auth-required=true -> add idor, privesc, sensitive-data.\n")
+	b.WriteString("7. label \"admin\" -> add idor, privesc. label \"pii\" or \"payment\" -> add sensitive-data.\n")
+	b.WriteString("8. Method is POST/PUT/DELETE/PATCH -> add csrf.\n")
+	b.WriteString("9. Path looks like a directory (ends in \"/\" or has no file extension) -> add dir-indexing.\n")
+	b.WriteString("10. A static asset path with no params (image/css/js/font extension) -> ONLY the baseline from rule 1, skip everything else.\n")
+	b.WriteString("11. sqli-time is much slower than other checks — only include it if you already included sqli or sqli-blind for this endpoint AND the params clearly look database-backed (id/search/filter-like); otherwise omit it.\n")
+	b.WriteString("12. openssl-tls and sslscan test the whole host's TLS config, not this one endpoint — include them for only ONE endpoint per distinct host in the input, skip for that host's other endpoints.\n")
+	b.WriteString("Only use ids from the given catalog — never invent new ids. If no rule above applies to an endpoint, use only the rule-1 baseline for it. ")
 	b.WriteString(`Reply with ONLY compact JSON: {"items":[{"key":string,"detectors":[string,...],"reason":string}, ...]} covering every input key exactly once. `)
-	b.WriteString(`"reason" is a short Korean phrase (under 15 words) explaining why THIS endpoint's shape (params/labels/auth) warrants those detectors. `)
+	b.WriteString(`"reason" is a short Korean phrase (under 15 words) naming the concrete rule/signal used (e.g. "id 파라미터 있어 idor/sqli 후보"). `)
 	b.WriteString("Catalog ids: " + strings.Join(allowIDs, ", "))
 	return b.String()
 }

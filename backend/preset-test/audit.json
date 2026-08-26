@@ -1,0 +1,19 @@
+[
+  {
+    "time": "2026-08-26 11:28:17",
+    "user": "leader",
+    "role": "leader",
+    "action": "user:login",
+    "target": "u-1",
+    "result": "ok"
+  },
+  {
+    "time": "2026-08-26 11:29:04",
+    "user": "leader",
+    "role": "leader",
+    "action": "scan:recommend",
+    "target": "",
+    "result": "ok",
+    "detail": "대상 7 · source=llm degraded=false"
+  }
+]

@@ -1,0 +1,145 @@
+[
+  {
+    "segment": "127.0.0.1:9099",
+    "last_path": "/",
+    "scheme": "http",
+    "methods": [
+      "GET"
+    ],
+    "count": 1,
+    "first_seen": "2026-08-26T02:00:46Z",
+    "last_seen": "2026-08-26T02:00:46Z",
+    "labels": [
+      "other"
+    ],
+    "children": [
+      {
+        "segment": "admin",
+        "path": "/admin",
+        "last_path": "/admin",
+        "scheme": "http",
+        "methods": [
+          "GET"
+        ],
+        "count": 2,
+        "first_seen": "2026-08-26T02:00:46Z",
+        "last_seen": "2026-08-26T02:00:47Z",
+        "source": "crawl-link",
+        "labels": [
+          "admin"
+        ]
+      },
+      {
+        "segment": "dashboard",
+        "path": "/dashboard",
+        "last_path": "/dashboard",
+        "scheme": "http",
+        "methods": [
+          "GET"
+        ],
+        "count": 2,
+        "first_seen": "2026-08-26T02:00:46Z",
+        "last_seen": "2026-08-26T02:00:46Z",
+        "source": "crawl-link",
+        "labels": [
+          "other"
+        ]
+      },
+      {
+        "segment": "orders",
+        "path": "/orders",
+        "last_path": "/orders",
+        "scheme": "http",
+        "methods": [
+          "GET"
+        ],
+        "count": 2,
+        "first_seen": "2026-08-26T02:00:46Z",
+        "last_seen": "2026-08-26T02:00:47Z",
+        "source": "crawl-link",
+        "labels": [
+          "payment"
+        ]
+      },
+      {
+        "segment": "product",
+        "path": "/product",
+        "last_path": "/product",
+        "scheme": "http",
+        "methods": [
+          "GET"
+        ],
+        "params": [
+          {
+            "name": "cat",
+            "ins": [
+              "query"
+            ],
+            "type": "string",
+            "sample": "books",
+            "seen": 2
+          },
+          {
+            "name": "id",
+            "ins": [
+              "query"
+            ],
+            "type": "int",
+            "sample": "1",
+            "seen": 2
+          }
+        ],
+        "count": 2,
+        "first_seen": "2026-08-26T02:00:46Z",
+        "last_seen": "2026-08-26T02:00:46Z",
+        "source": "crawl-link",
+        "labels": [
+          "static"
+        ]
+      },
+      {
+        "segment": "profile",
+        "path": "/profile",
+        "last_path": "/profile",
+        "scheme": "http",
+        "methods": [
+          "GET"
+        ],
+        "count": 2,
+        "first_seen": "2026-08-26T02:00:46Z",
+        "last_seen": "2026-08-26T02:00:46Z",
+        "source": "crawl-link",
+        "labels": [
+          "pii"
+        ]
+      },
+      {
+        "segment": "search",
+        "path": "/search",
+        "last_path": "/search",
+        "scheme": "http",
+        "methods": [
+          "GET"
+        ],
+        "params": [
+          {
+            "name": "q",
+            "ins": [
+              "query"
+            ],
+            "type": "string",
+            "sample": "hello",
+            "seen": 2
+          }
+        ],
+        "count": 2,
+        "first_seen": "2026-08-26T02:00:46Z",
+        "last_seen": "2026-08-26T02:00:46Z",
+        "source": "crawl-link",
+        "labels": [
+          "search"
+        ]
+      }
+    ]
+  }
+]
