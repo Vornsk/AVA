@@ -219,8 +219,8 @@ func TestRecommendCarriesPerItemReason(t *testing.T) {
 	}
 }
 
-// ctx에 데드라인이 없으면 recommendTimeout(180초)짜리 데드라인을 씌워 llm.Complete를 불러야 한다 —
-// 이 배치 호출은 대상 전체를 한 번에 실어 보내 llm 패키지 기본(60초)보다 오래 걸릴 수 있다.
+// ctx에 데드라인이 없으면 recommendTimeout 짜리 데드라인을 씌워 llm.Complete를 불러야 한다 —
+// 이 배치 호출은 대상 전체를 한 번에 실어 보내 다른 LLM 호출보다 오래 걸릴 수 있다.
 func TestRecommendAppliesLongerTimeoutWhenCtxHasNoDeadline(t *testing.T) {
 	stub := &deadlineStub{reply: `{"items":[{"key":"a.example|/login","detectors":["sec-headers"]},{"key":"a.example|/search","detectors":["sqli"]}]}`}
 	llm.SetProvider(stub)

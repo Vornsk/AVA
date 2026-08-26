@@ -29,7 +29,10 @@ func NewOllama(model, endpoint string) *OllamaProvider {
 	return &OllamaProvider{
 		Model:    model,
 		Endpoint: strings.TrimRight(endpoint, "/"),
-		client:   &http.Client{Timeout: 60 * time.Second},
+		// recommend.go의 배치 추천(엔드포인트 다건을 한 프롬프트로)처럼 오래 걸리는 호출이
+		// 있어 넉넉하게 잡는다. 개별 호출은 각자 context 데드라인으로 더 짧게 끊을 수 있다
+		// (예: recommendTimeout). 이 값은 그 위의 최종 안전장치일 뿐이다.
+		client: &http.Client{Timeout: 10 * time.Minute},
 	}
 }
 

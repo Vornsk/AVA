@@ -23,10 +23,11 @@ import (
 	"proxypoc/internal/llm"
 )
 
-// recommendTimeout — 배치 하나에 대상 전체를 실어 보내는 호출이라 llm 패키지 기본(60초)보다
-// 여유를 둔다. ctx에 이미 데드라인이 없을 때만 적용되므로 다른 LLM 호출(판단·트리아지)에는
-// 영향이 없다.
-const recommendTimeout = 180 * time.Second
+// recommendTimeout — 배치 하나에 대상 전체를 실어 보내는 호출이라 넉넉하게 잡는다. ctx에
+// 이미 데드라인이 없을 때만 적용되므로 다른 LLM 호출(판단·트리아지)에는 영향이 없다.
+// (참고: ollama 프로바이더의 http.Client.Timeout도 이 값 이상으로 맞춰뒀다 — 클라이언트
+// 자체 타임아웃이 컨텍스트 데드라인보다 먼저 끊으면 여기서 아무리 늘려도 소용없다.)
+const recommendTimeout = 10 * time.Minute
 
 // ParamShape — LLM 입력용 파라미터 모양(키만, 값 없음).
 type ParamShape struct {
