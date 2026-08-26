@@ -51,7 +51,9 @@ func (p *stubProvider) Complete(_ context.Context, system, user string) (string,
 	return p.reply, p.err
 }
 
-func TestRecommendNoProviderFallsBackToFullCatalog(t *testing.T) {
+// 폴백은 더 이상 "카탈로그 전체 덤프"가 아니라 mechanicalRecommend(결정론적 규칙)다 —
+// 파라미터 없는 엔드포인트는 injection 계열을 안 받고, 파라미터 있는 엔드포인트만 받는다.
+func TestRecommendNoProviderFallsBackToMechanicalRules(t *testing.T) {
 	llm.SetProvider(nil)
 	res := Recommend(context.Background(), sampleTargets(), sampleCatalog())
 	if res.Source != "fallback" || !res.Degraded {
@@ -60,13 +62,23 @@ func TestRecommendNoProviderFallsBackToFullCatalog(t *testing.T) {
 	if len(res.Items) != 2 {
 		t.Fatalf("Items=%d, want 2", len(res.Items))
 	}
+	byKey := map[string]Item{}
 	for _, it := range res.Items {
-		if !has(it.Recommended, "sqli") || !has(it.Recommended, "reflected-input") || !has(it.Recommended, "sec-headers") {
-			t.Errorf("Item %s missing non-destructive ids: %v", it.Key, it.Recommended)
-		}
+		byKey[it.Key] = it
 		if has(it.Recommended, "file-upload") {
 			t.Errorf("Item %s includes destructive id in fallback: %v", it.Key, it.Recommended)
 		}
+	}
+	login := byKey["a.example|/login"] // 파라미터 없음
+	if !has(login.Recommended, "sec-headers") {
+		t.Errorf("login should at least get the sec-headers baseline: %v", login.Recommended)
+	}
+	if has(login.Recommended, "sqli") || has(login.Recommended, "reflected-input") {
+		t.Errorf("login has no params — should not get injection detectors: %v", login.Recommended)
+	}
+	search := byKey["a.example|/search"] // q 쿼리 파라미터 있음
+	if !has(search.Recommended, "sqli") || !has(search.Recommended, "reflected-input") {
+		t.Errorf("search has a param — should get sqli/reflected-input: %v", search.Recommended)
 	}
 }
 
@@ -155,12 +167,18 @@ func TestRecommendPartialCoverageFillsPerItemFallback(t *testing.T) {
 	if !login.Fallback {
 		t.Errorf("login item should be individually fallback: %+v", login)
 	}
-	if !has(login.Recommended, "sec-headers") || !has(login.Recommended, "sqli") {
-		t.Errorf("fallback item should get full non-destructive catalog: %v", login.Recommended)
+	if !has(login.Recommended, "sec-headers") {
+		t.Errorf("fallback item should at least get the mechanical baseline: %v", login.Recommended)
+	}
+	if has(login.Recommended, "sqli") {
+		t.Errorf("login has no params — mechanical fallback should not add sqli: %v", login.Recommended)
 	}
 	search := byKey["a.example|/search"]
 	if search.Fallback {
 		t.Errorf("search item should not be fallback: %+v", search)
+	}
+	if !has(search.Recommended, "sqli") {
+		t.Errorf("search item should carry the LLM-recommended sqli: %v", search.Recommended)
 	}
 }
 
@@ -243,6 +261,133 @@ func (p *deadlineStub) Name() string { return "deadline-stub" }
 func (p *deadlineStub) Complete(ctx context.Context, _, _ string) (string, error) {
 	p.deadline, _ = ctx.Deadline()
 	return p.reply, nil
+}
+
+func richAllow() map[string]bool {
+	return toSet([]string{
+		"sec-headers", "http-method", "cookie-security", "reflected-input", "sqli", "sqli-blind", "dom-xss",
+		"idor", "privesc", "sensitive-data", "csrf", "dir-indexing", "path-traversal", "open-redirect", "ssrf",
+		"openssl-tls", "sslscan",
+	})
+}
+
+// mechanicalRecommend 규칙 하나하나가 실제로 그렇게 동작하는지 — recommendSys 프롬프트의
+// 규칙표를 코드로도 똑같이 계산한다(#59 이후 품질 개선: LLM 이 규칙을 놓쳐도 최소 보장).
+func TestMechanicalRecommend(t *testing.T) {
+	allow := richAllow()
+
+	t.Run("static asset gets only baseline", func(t *testing.T) {
+		got := mechanicalRecommend(endpoints.Target{Host: "a", Path: "/assets/logo.png", Methods: []string{"GET"}}, allow, false)
+		if !has(got, "sec-headers") {
+			t.Errorf("want baseline sec-headers: %v", got)
+		}
+		if has(got, "sqli") || has(got, "reflected-input") {
+			t.Errorf("static asset should not get injection detectors: %v", got)
+		}
+	})
+
+	t.Run("admin label adds idor/privesc", func(t *testing.T) {
+		got := mechanicalRecommend(endpoints.Target{Host: "a", Path: "/admin", Methods: []string{"GET"}, Labels: []string{"admin"}}, allow, false)
+		if !has(got, "idor") || !has(got, "privesc") {
+			t.Errorf("admin label should add idor/privesc: %v", got)
+		}
+	})
+
+	t.Run("state-changing method adds csrf, GET does not", func(t *testing.T) {
+		if got := mechanicalRecommend(endpoints.Target{Host: "a", Path: "/save", Methods: []string{"POST"}}, allow, false); !has(got, "csrf") {
+			t.Errorf("POST should add csrf: %v", got)
+		}
+		if got := mechanicalRecommend(endpoints.Target{Host: "a", Path: "/save", Methods: []string{"GET"}}, allow, false); has(got, "csrf") {
+			t.Errorf("GET should not add csrf: %v", got)
+		}
+	})
+
+	t.Run("file-like param adds path-traversal", func(t *testing.T) {
+		t2 := endpoints.Target{Host: "a", Path: "/download", Methods: []string{"GET"}, Params: []endpoints.Param{{Name: "filename", In: "query"}}}
+		if got := mechanicalRecommend(t2, allow, false); !has(got, "path-traversal") {
+			t.Errorf("filename param should add path-traversal: %v", got)
+		}
+	})
+
+	t.Run("url-like param adds open-redirect/ssrf", func(t *testing.T) {
+		t2 := endpoints.Target{Host: "a", Path: "/go", Methods: []string{"GET"}, Params: []endpoints.Param{{Name: "redirect", In: "query"}}}
+		got := mechanicalRecommend(t2, allow, false)
+		if !has(got, "open-redirect") || !has(got, "ssrf") {
+			t.Errorf("redirect param should add open-redirect/ssrf: %v", got)
+		}
+	})
+
+	t.Run("includeTLS gates openssl-tls/sslscan", func(t *testing.T) {
+		ep := endpoints.Target{Host: "a", Path: "/", Methods: []string{"GET"}}
+		if got := mechanicalRecommend(ep, allow, false); has(got, "openssl-tls") {
+			t.Errorf("includeTLS=false should not add openssl-tls: %v", got)
+		}
+		if got := mechanicalRecommend(ep, allow, true); !has(got, "openssl-tls") || !has(got, "sslscan") {
+			t.Errorf("includeTLS=true should add openssl-tls/sslscan: %v", got)
+		}
+	})
+
+	t.Run("auth-required adds idor/privesc/sensitive-data", func(t *testing.T) {
+		ep := endpoints.Target{Host: "a", Path: "/me", Methods: []string{"GET"}, Auth: true}
+		got := mechanicalRecommend(ep, allow, false)
+		if !has(got, "idor") || !has(got, "privesc") || !has(got, "sensitive-data") {
+			t.Errorf("auth-required should add idor/privesc/sensitive-data: %v", got)
+		}
+	})
+
+	t.Run("directory-like path adds dir-indexing", func(t *testing.T) {
+		ep := endpoints.Target{Host: "a", Path: "/uploads/", Methods: []string{"GET"}}
+		if got := mechanicalRecommend(ep, allow, false); !has(got, "dir-indexing") {
+			t.Errorf("directory-like path should add dir-indexing: %v", got)
+		}
+	})
+}
+
+// LLM이 파라미터 있는 엔드포인트를 잘못 분류해도(실측 사례: 정적 자산으로 오분류) 결정론적
+// mechanical 레이어가 최소한을 채워 넣어야 한다 — union이지 LLM 응답을 그대로 신뢰하지 않는다.
+func TestRecommendMechanicalFillsGapsWhenLLMUnderRecommends(t *testing.T) {
+	stub := &stubProvider{reply: `{"items":[
+		{"key":"a.example|/login","detectors":[]},
+		{"key":"a.example|/search","detectors":[],"reason":"이 모델은 실수로 정적 자산이라고 답했다"}
+	]}`}
+	llm.SetProvider(stub)
+	defer llm.SetProvider(nil)
+
+	res := Recommend(context.Background(), sampleTargets(), sampleCatalog())
+	byKey := map[string]Item{}
+	for _, it := range res.Items {
+		byKey[it.Key] = it
+	}
+	search := byKey["a.example|/search"]
+	if !has(search.Recommended, "sqli") || !has(search.Recommended, "reflected-input") {
+		t.Errorf("search has a query param — mechanical layer should add sqli/reflected-input even though LLM returned none: %v", search.Recommended)
+	}
+}
+
+// openssl-tls/sslscan 은 호스트당 딱 하나의 엔드포인트에만 실려야 한다(호스트 전체 설정 점검이라
+// 엔드포인트마다 반복하면 스캔만 느려진다).
+func TestRecommendIncludesTLSOnlyOncePerHost(t *testing.T) {
+	targets := []endpoints.Target{
+		{Host: "a.example", Path: "/one", Methods: []string{"GET"}},
+		{Host: "a.example", Path: "/two", Methods: []string{"GET"}},
+		{Host: "b.example", Path: "/three", Methods: []string{"GET"}},
+	}
+	catalog := []detector.Info{{ID: "sec-headers", Name: "x"}, {ID: "openssl-tls", Name: "y"}, {ID: "sslscan", Name: "z"}}
+	llm.SetProvider(nil)
+	res := Recommend(context.Background(), targets, catalog)
+
+	tlsCount := map[string]int{}
+	for _, it := range res.Items {
+		if has(it.Recommended, "openssl-tls") {
+			tlsCount[it.Host]++
+		}
+	}
+	if tlsCount["a.example"] != 1 {
+		t.Errorf("a.example TLS-carrying items=%d, want 1", tlsCount["a.example"])
+	}
+	if tlsCount["b.example"] != 1 {
+		t.Errorf("b.example TLS-carrying items=%d, want 1", tlsCount["b.example"])
+	}
 }
 
 func TestRecommendNoTargets(t *testing.T) {
