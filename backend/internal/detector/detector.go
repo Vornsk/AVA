@@ -28,6 +28,7 @@ import (
 	"proxypoc/internal/finding"
 	"proxypoc/internal/masking"
 	"proxypoc/internal/payload"
+	"proxypoc/internal/scanlog"
 )
 
 // 스캔 요청 rate limit (FR-3.2 가드레일): 대상 서버를 몰아치지 않도록 간격 유지.
@@ -179,8 +180,10 @@ func doOnce(ctx context.Context, client *http.Client, inj *auth.Injector, pr pro
 	inj.Inject(req)
 	resp, err := client.Do(req)
 	if err != nil {
+		scanlog.Emit(ctx, "%s %s → 오류: %v", pr.method, masking.Mask(pr.url), err)
 		return nil, "", err
 	}
+	scanlog.Emit(ctx, "%s %s → %d", pr.method, masking.Mask(pr.url), resp.StatusCode)
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	return resp, string(body), nil
@@ -196,8 +199,10 @@ func fetchAs(ctx context.Context, client *http.Client, method, rawURL string, id
 	id.Apply(req)
 	resp, err := client.Do(req)
 	if err != nil {
+		scanlog.Emit(ctx, "%s %s → 오류: %v", method, masking.Mask(rawURL), err)
 		return nil, "", err
 	}
+	scanlog.Emit(ctx, "%s %s → %d", method, masking.Mask(rawURL), resp.StatusCode)
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	return resp, string(body), nil
@@ -440,8 +445,10 @@ func postForm(ctx context.Context, c *http.Client, inj *auth.Injector, rawURL st
 	inj.Inject(req)
 	resp, err := c.Do(req)
 	if err != nil {
+		scanlog.Emit(ctx, "POST %s → 오류: %v", masking.Mask(rawURL), err)
 		return false
 	}
+	scanlog.Emit(ctx, "POST %s → %d", masking.Mask(rawURL), resp.StatusCode)
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	resp.Body.Close()
 	return true
@@ -829,8 +836,10 @@ func fetchTimedProbe(ctx context.Context, c *http.Client, inj *auth.Injector, pr
 	start := time.Now()
 	resp, err := c.Do(req)
 	if err != nil {
+		scanlog.Emit(ctx, "%s %s → 오류: %v", pr.method, masking.Mask(pr.url), err)
 		return 0, err
 	}
+	scanlog.Emit(ctx, "%s %s → %d (%s)", pr.method, masking.Mask(pr.url), resp.StatusCode, time.Since(start).Round(time.Millisecond))
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
 	resp.Body.Close()
 	return time.Since(start), nil
@@ -846,7 +855,13 @@ func fetchProbeNoRedirect(ctx context.Context, c *http.Client, inj *auth.Injecto
 	inj.Inject(req)
 	nf := *c
 	nf.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return nf.Do(req)
+	resp, err := nf.Do(req)
+	if err != nil {
+		scanlog.Emit(ctx, "%s %s → 오류: %v", pr.method, masking.Mask(pr.url), err)
+		return nil, err
+	}
+	scanlog.Emit(ctx, "%s %s → %d", pr.method, masking.Mask(pr.url), resp.StatusCode)
+	return resp, nil
 }
 
 // probeLine — 증적용 재현 요청 라인(마스킹). 바디가 있으면 함께 표기.
@@ -1509,8 +1524,10 @@ func fetchUpload(ctx context.Context, c *http.Client, inj *auth.Injector, rawURL
 	inj.Inject(req)
 	resp, err := c.Do(req)
 	if err != nil {
+		scanlog.Emit(ctx, "POST %s → 오류: %v", masking.Mask(rawURL), err)
 		return nil, "", err
 	}
+	scanlog.Emit(ctx, "POST %s → %d", masking.Mask(rawURL), resp.StatusCode)
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	return resp, string(b), nil

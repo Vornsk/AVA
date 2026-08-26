@@ -22,6 +22,7 @@ import (
 	"proxypoc/internal/finding"
 	"proxypoc/internal/llm"
 	"proxypoc/internal/project"
+	"proxypoc/internal/scanlog"
 )
 
 // Options — 스캔 가드레일(FR-3.2) + LLM 검토(FR-3.3).
@@ -82,6 +83,76 @@ type job struct {
 	paused bool
 	ctx    context.Context
 	cancel context.CancelFunc
+}
+
+// ── 실시간 로그 (이슈 #59) ──────────────────────────────────────────
+// 요청 단위 이벤트를 ScanRun별 인메모리 링버퍼에 모으고, 구독자(SSE)에 그대로 흘려보낸다.
+// 디스크에 저장하지 않는다 — 스캔당 수백~수천 건이라 audit.json 처럼 매번 파일에 쓰면 감당이 안 된다.
+
+// LogEntry — 실시간 로그 한 줄 (요청 결과 또는 진행 경계 이벤트).
+type LogEntry struct {
+	Time     time.Time `json:"time"`
+	Detector string    `json:"detector,omitempty"`
+	Message  string    `json:"message"`
+}
+
+const logBufCap = 2000 // run당 보관 줄 수 상한
+
+type logHub struct {
+	mu   sync.Mutex
+	buf  map[string][]LogEntry
+	subs map[string]map[chan LogEntry]struct{}
+}
+
+var scanLog = &logHub{buf: map[string][]LogEntry{}, subs: map[string]map[chan LogEntry]struct{}{}}
+
+func (h *logHub) publish(runID string, e LogEntry) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	buf := append(h.buf[runID], e)
+	if len(buf) > logBufCap {
+		buf = buf[len(buf)-logBufCap:]
+	}
+	h.buf[runID] = buf
+	for ch := range h.subs[runID] {
+		select {
+		case ch <- e:
+		default: // 느린 구독자는 건너뛴다 — 스캔 진행을 막지 않는다
+		}
+	}
+}
+
+// subscribe — runID의 신규 이벤트를 받는 채널과, 구독 해제 함수를 반환.
+func (h *logHub) subscribe(runID string) (chan LogEntry, func()) {
+	ch := make(chan LogEntry, 64)
+	h.mu.Lock()
+	if h.subs[runID] == nil {
+		h.subs[runID] = map[chan LogEntry]struct{}{}
+	}
+	h.subs[runID][ch] = struct{}{}
+	h.mu.Unlock()
+	return ch, func() {
+		h.mu.Lock()
+		delete(h.subs[runID], ch)
+		h.mu.Unlock()
+	}
+}
+
+func (h *logHub) recent(runID string) []LogEntry {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]LogEntry(nil), h.buf[runID]...)
+}
+
+// SubscribeLog — SSE 핸들러용: runID의 신규 로그 이벤트 채널 + 구독 해제 함수.
+func SubscribeLog(runID string) (<-chan LogEntry, func()) {
+	ch, cancel := scanLog.subscribe(runID)
+	return ch, cancel
+}
+
+// RecentLog — runID가 지금까지 쌓아온 로그(최근 logBufCap줄). 구독 시작 시 백필용.
+func RecentLog(runID string) []LogEntry {
+	return scanLog.recent(runID)
 }
 
 var (
@@ -183,7 +254,12 @@ func (j *job) execute(targets []endpoints.Target, perTarget [][]detector.Detecto
 				}
 				time.Sleep(150 * time.Millisecond)
 			}
-			for _, f := range d.Detect(j.ctx, t, client, inj) {
+			did := d.ID()
+			emit := func(msg string) { scanLog.publish(j.run.ID, LogEntry{Time: time.Now(), Detector: did, Message: msg}) }
+			emit(fmt.Sprintf("시작: %s %s%s", strings.Join(t.Methods, "/"), t.Host, t.Path))
+			ctx := scanlog.WithEmitter(j.ctx, emit)
+			var runFindings int
+			for _, f := range d.Detect(ctx, t, client, inj) {
 				f.ScanRun = j.run.ID
 				f.ProjectID = j.pid // 귀속 프로젝트 (§5.1)
 				// 점검항목표 연결 (§6): detector → VulnDef/CheckItem 태깅.
@@ -209,7 +285,10 @@ func (j *job) execute(targets []endpoints.Target, perTarget [][]detector.Detecto
 				}
 				finding.Add(f)
 				j.inc(&j.run.Findings)
+				runFindings++
+				emit(fmt.Sprintf("발견: %s (%s)", f.Vuln, f.Severity))
 			}
+			emit(fmt.Sprintf("완료: %d건 발견", runFindings))
 			j.inc(&j.run.Done)
 		}
 	}

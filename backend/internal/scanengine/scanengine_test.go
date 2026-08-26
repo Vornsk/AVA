@@ -3,6 +3,7 @@ package scanengine
 import (
 	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -258,5 +259,72 @@ func TestPerTargetOverrideRespectsDestructiveGate(t *testing.T) {
 	}
 	if len(sr.Skipped) != 1 || sr.Skipped[0] != "destructive" {
 		t.Errorf("Skipped=%v, want [destructive]", sr.Skipped)
+	}
+}
+
+// ── 실시간 로그 (이슈 #59) ──────────────────────────────────────────
+
+// logHub.publish/recent — 링버퍼가 상한(logBufCap)을 넘으면 오래된 줄부터 버려야 한다.
+func TestLogHubCapEviction(t *testing.T) {
+	h := &logHub{buf: map[string][]LogEntry{}, subs: map[string]map[chan LogEntry]struct{}{}}
+	for i := 0; i < logBufCap+10; i++ {
+		h.publish("SR-x", LogEntry{Message: "line"})
+	}
+	got := h.recent("SR-x")
+	if len(got) != logBufCap {
+		t.Fatalf("recent len=%d, want %d (cap 초과분은 버려져야)", len(got), logBufCap)
+	}
+}
+
+// logHub.subscribe — 구독 후 publish된 이벤트가 채널로 전달돼야 하고, 해제 후에는 더 안 와야 한다.
+func TestLogHubSubscribe(t *testing.T) {
+	h := &logHub{buf: map[string][]LogEntry{}, subs: map[string]map[chan LogEntry]struct{}{}}
+	ch, cancel := h.subscribe("SR-y")
+	h.publish("SR-y", LogEntry{Message: "hello"})
+	select {
+	case e := <-ch:
+		if e.Message != "hello" {
+			t.Fatalf("got %q, want %q", e.Message, "hello")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for subscribed event")
+	}
+	cancel()
+	h.publish("SR-y", LogEntry{Message: "after-cancel"}) // 구독 해제 후 — 패닉/블로킹 없이 조용히 버려져야
+}
+
+// 실제 스캔 실행 시 execute()가 시작/발견/완료 이벤트를 emit 하는지 (Detect() 안에서 실제 요청을 안 보내는
+// findingDet라 detector.go 안의 scanlog.Emit 호출은 안 타지만, execute() 자체의 경계 이벤트는 확인 가능).
+func TestExecuteEmitsBoundaryLogEvents(t *testing.T) {
+	targets := []endpoints.Target{{Host: "a", Path: "/x", Methods: []string{"GET"}}}
+	dets := []detector.Detector{findingDet{det: "det-a"}}
+	sr := Start(targets, dets, Options{})
+
+	deadline := time.Now().Add(2 * time.Second)
+	var lines []LogEntry
+	for time.Now().Before(deadline) {
+		lines = RecentLog(sr.ID)
+		if len(lines) >= 3 { // 시작 + 발견 + 완료
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(lines) < 3 {
+		t.Fatalf("got %d log lines, want >= 3 (시작/발견/완료): %+v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0].Message, "시작") {
+		t.Errorf("first line = %q, want it to mention 시작", lines[0].Message)
+	}
+	foundFinding, foundDone := false, false
+	for _, l := range lines {
+		if strings.Contains(l.Message, "발견") {
+			foundFinding = true
+		}
+		if strings.Contains(l.Message, "완료") {
+			foundDone = true
+		}
+	}
+	if !foundFinding || !foundDone {
+		t.Errorf("expected both 발견/완료 lines, got %+v", lines)
 	}
 }
