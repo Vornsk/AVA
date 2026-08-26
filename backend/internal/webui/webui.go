@@ -1202,6 +1202,23 @@ func activateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	p, _ := project.Get(in.ID)
+	pol, polErr := ApplyActiveProjectSettings(p)
+	if polErr != nil {
+		log.Printf("[WEB ] 판단 프롬프트 경고(%s): %v", p.ID, polErr)
+	}
+	audit.Record(u.Name, string(u.Role), "project:activate", p.ID, "ok", p.Name+" judge_prompt="+pol.String())
+	log.Printf("[WEB ] %s(%s) activate_project %s (%s, 판단 프롬프트 %s)", u.Name, u.Role, p.ID, p.Name, pol)
+	writeJSON(w, p)
+}
+
+// ApplyActiveProjectSettings — 프로젝트 하나를 "활성"으로 적용할 때 필요한 전역 상태를 전부
+// 재구성한다: 스코프·점검 스킴·인증정보 주입·판단 프롬프트 정책·판단불능 시 정책.
+// 사용자가 UI 에서 프로젝트를 전환할 때(activateHandler)와 서버가 재시작 뒤 활성 프로젝트를
+// 복원할 때(cmd/proxy/main.go) 양쪽에서 호출한다 — 두 경로가 서로 다른 부분집합만 적용하면
+// 상태가 갈라진다(실제로 겪은 버그: 재시작 후 스코프가 project.config.yaml 의 고정값으로
+// 남아, 활성 프로젝트의 실제 대상 호스트가 스코프 밖 처리돼 자동 크롤이 0건으로 조용히
+// 끝났다 — 에러도 없이).
+func ApplyActiveProjectSettings(p project.Project) (llm.Policy, error) {
 	scope.Configure(p.Scope, p.AllowPaths, p.ExcludePaths)
 	schemes := make([]checklist.Scheme, 0, len(p.Schemes))
 	for _, s := range p.Schemes {
@@ -1209,11 +1226,8 @@ func activateHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	checklist.SetSelected(schemes)
 	applyCredentials(p.ID) // 암호화 인증정보 복호화·주입 (§5.1 FR-1.4)
-	// 판단 프롬프트 정책 전환 (이슈 #53). 프로젝트가 미지정이면 기동 시 기본 정책으로 되돌아간다.
+	// 판단 프롬프트 정책 전환 (이슈 #53). 프로젝트가 미지정이면 기본 정책으로 되돌아간다.
 	pol, polErr := llm.ApplyProject(p.JudgePrompt, p.JudgePromptCustom)
-	if polErr != nil {
-		log.Printf("[WEB ] 판단 프롬프트 경고(%s): %v", p.ID, polErr)
-	}
 	// 판단 불능 시 정책 (이슈 #56). 미지정 프로젝트는 기본 allow 로 되돌린다 —
 	// 앞 프로젝트의 block 이 남아 다음 진단을 조용히 막는 일이 없어야 한다.
 	onErr := p.JudgeOnError
@@ -1223,9 +1237,7 @@ func activateHandler(w http.ResponseWriter, r *http.Request) {
 	if !llm.SetFailurePolicy(onErr) {
 		log.Printf("[WEB ] judge_on_error 경고(%s): %q 는 allow|block 이 아니다", p.ID, p.JudgeOnError)
 	}
-	audit.Record(u.Name, string(u.Role), "project:activate", p.ID, "ok", p.Name+" judge_prompt="+pol.String())
-	log.Printf("[WEB ] %s(%s) activate_project %s (%s, 판단 프롬프트 %s)", u.Name, u.Role, p.ID, p.Name, pol)
-	writeJSON(w, p)
+	return pol, polErr
 }
 
 // judgePromptHandler — 판단 프롬프트 정책 조회/변경 (이슈 #53).

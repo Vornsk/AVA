@@ -144,12 +144,16 @@ func main() {
 		log.Printf("기본 프로젝트 생성: %s (%s, owner=%s)", p.ID, p.Name, ownerID)
 	}
 	if ap, ok := projects.Active(); ok {
-		// 활성 프로젝트의 판단 프롬프트 정책 적용 (이슈 #53). 비면 위의 기본 정책 유지.
-		pol, err := llm.ApplyProject(ap.JudgePrompt, ap.JudgePromptCustom)
+		// 활성 프로젝트의 전역 상태(스코프·스킴·인증정보·판단 프롬프트) 전체 재적용.
+		// webui.activateHandler 와 같은 함수를 써야 한다 — 예전엔 판단 프롬프트만 여기서
+		// 다시 적용하고 스코프는 위 project.config.yaml(고정 설정) 값 그대로 남아있어서,
+		// 재시작할 때마다 활성 프로젝트의 실제 대상 호스트가 스코프 밖으로 밀려나
+		// 자동 크롤이 조용히 0건으로 끝나는 버그가 있었다.
+		pol, err := webui.ApplyActiveProjectSettings(ap)
 		if err != nil {
 			log.Printf("판단 프롬프트 경고(%s): %v", ap.ID, err)
 		}
-		log.Printf("활성 프로젝트: %s (%s, 판단 프롬프트 %s)", ap.ID, ap.Name, pol)
+		log.Printf("활성 프로젝트: %s (%s, 판단 프롬프트 %s, 스코프 %v)", ap.ID, ap.Name, pol, ap.Scope)
 	}
 
 	// 도출 항목·공격면·스캔 이력 복원 (재시작 시 유지).
