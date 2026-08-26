@@ -1,0 +1,652 @@
+# 점검항목표 — 공유/버전관리 (문서 §6, 3계층: VulnDef→CheckItem, detector는 코드)
+vulns:
+    - id: vuln.sqli
+      이름: SQL 인젝션
+      설명: 입력값 검증 미흡으로 악의적 SQL 구문 실행(에러/불린·시간 블라인드)
+      detector:
+        - sqli
+        - sqli-blind
+        - sqli-time
+      cwe: CWE-89
+    - id: vuln.xss
+      이름: 크로스사이트 스크립트(XSS)
+      설명: 입력값이 검증 없이 응답에 반사/저장되어 스크립트가 실행됨
+      detector:
+        - reflected-input
+        - stored-xss
+        - dom-xss
+      cwe: CWE-79
+    - id: vuln.csrf
+      이름: 크로스사이트 요청 위조(CSRF)
+      설명: 위조 요청 방지 토큰 부재로 사용자 의도와 무관한 요청 강제
+      detector:
+        - csrf
+      cwe: CWE-352
+    - id: vuln.file-upload
+      이름: 악성 파일 업로드
+      설명: 확장자·타입 검증 미흡으로 실행 가능 파일 업로드
+      detector:
+        - file-upload
+      cwe: CWE-434
+    - id: vuln.file-download
+      이름: 파일 다운로드 / 경로 순회
+      설명: 다운로드 경로 검증 미흡으로 경로 순회·시스템 파일 노출
+      detector:
+        - path-traversal
+      cwe: CWE-22
+    - id: vuln.access-control
+      이름: 접근통제 미흡(권한검증/관리자페이지 노출)
+      설명: 인증·권한 검증 미흡으로 타 사용자/상위 권한 자원 접근, 관리자 페이지 노출
+      detector:
+        - idor
+        - privesc
+      cwe: CWE-639
+    - id: vuln.info-exposure
+      이름: 정보 누출
+      설명: 주민등록번호·카드·계좌 등 민감정보가 응답에 노출됨
+      detector:
+        - sensitive-data
+      cwe: CWE-200
+    - id: vuln.code-injection
+      이름: 코드 인젝션
+      설명: 입력값이 코드/OS 명령으로 해석·실행됨
+      detector:
+        - cmd-injection
+      cwe: CWE-94
+    - id: vuln.dir-indexing
+      이름: 디렉터리 인덱싱
+      설명: 디렉터리 목록이 그대로 노출됨
+      detector:
+        - dir-indexing
+      cwe: CWE-548
+    - id: vuln.error-page
+      이름: 에러 페이지 적용 미흡
+      설명: 에러 페이지로 내부 정보 노출
+      detector: []
+      cwe: CWE-209
+    - id: vuln.ssrf
+      이름: 서버사이드 요청 위조(SSRF)
+      설명: 서버가 임의 목적지로 요청을 대신 수행
+      detector:
+        - ssrf
+      cwe: CWE-918
+    - id: vuln.weak-password
+      이름: 약한 비밀번호 정책
+      설명: 비밀번호 복잡도·정책 미흡
+      detector: []
+      cwe: CWE-521
+    - id: vuln.weak-auth
+      이름: 불충분한 인증 절차
+      설명: 인증 우회·미흡
+      detector: []
+      cwe: CWE-287
+    - id: vuln.weak-pw-recovery
+      이름: 취약한 비밀번호 복구 절차
+      설명: 비밀번호 재설정 로직 취약
+      detector: []
+      cwe: CWE-640
+    - id: vuln.process-validation
+      이름: 프로세스 검증 누락
+      설명: 업무 흐름·순서 검증 미흡(로직 우회)
+      detector: []
+      cwe: CWE-841
+    - id: vuln.weak-session
+      이름: 불충분한 세션 관리
+      설명: 세션 고정·만료·재사용 관리 미흡
+      detector: []
+      cwe: CWE-384
+    - id: vuln.plaintext
+      이름: 데이터 평문 전송
+      설명: 중요정보를 암호화 없이 전송
+      detector: []
+      cwe: CWE-319
+    - id: vuln.cookie-tampering
+      이름: 쿠키 변조
+      설명: 쿠키 무결성·보안속성 미흡으로 변조 가능
+      detector:
+        - cookie-security
+      cwe: CWE-565
+    - id: vuln.automation
+      이름: 자동화 공격
+      설명: 자동화 요청 차단(캡차·속도제한) 미흡
+      detector: []
+      cwe: CWE-799
+    - id: vuln.http-method
+      이름: 불필요한 Method 악용
+      설명: PUT/DELETE/TRACE 등 위험 메소드 허용
+      detector:
+        - http-method
+      cwe: CWE-650
+    - id: vuln.weak-tls
+      이름: 취약한 SSL/TLS 설정
+      설명: 구버전 프로토콜·취약 cipher 허용
+      detector:
+        - sslscan
+        - openssl-tls
+      cwe: CWE-326
+    - id: vuln.sec-headers
+      이름: 미흡한 보안 헤더
+      설명: HSTS/CSP/X-Frame-Options 등 보안 응답 헤더 누락
+      detector:
+        - sec-headers
+      cwe: CWE-693
+    - id: vuln.open-redirect
+      이름: 오픈 리다이렉트
+      설명: 리다이렉트 목적지 미검증으로 외부 악성 사이트 유도
+      detector:
+        - open-redirect
+      cwe: CWE-601
+    - id: vuln.xxe
+      이름: XML 외부객체 공격(XXE)
+      설명: XML 입력 검증 미흡으로 내부 자원 접근·외부 명령 실행
+      detector:
+        - xxe
+      cwe: CWE-611
+    - id: vuln.ldap-injection
+      이름: LDAP 인젝션
+      설명: LDAP 쿼리 입력 검증 미흡으로 데이터 유출·명령 실행
+      detector:
+        - ldap-injection
+      cwe: CWE-90
+    - id: vuln.ssi-injection
+      이름: SSI 인젝션
+      설명: 서버측 인클루드(SSI) 명령 삽입 실행
+      detector:
+        - ssi-injection
+      cwe: CWE-97
+    - id: vuln.ssti
+      이름: 서버측 템플릿 인젝션(SSTI)
+      설명: 입력이 서버 템플릿 엔진에 해석돼 임의 코드 실행
+      detector:
+        - ssti
+      cwe: CWE-1336
+    - id: vuln.buffer-overflow
+      이름: 버퍼 오버플로우
+      설명: 경계 검사 미흡으로 메모리 손상·프로그램 흐름 조작
+      detector: []
+      cwe: CWE-120
+    - id: vuln.format-string
+      이름: 포맷 스트링
+      설명: 포맷 인자 검증 미흡으로 메모리 변조·임의 접근
+      detector: []
+      cwe: CWE-134
+    - id: vuln.txn-security
+      이름: 전자금융 거래 보안
+      설명: 거래 인증수단·무결성·재사용 방지·소유주 검증 등 거래 프로세스 보안(수동)
+      detector: []
+    - id: vuln.auth-credential
+      이름: 인증정보 관리 미흡
+      설명: 인증정보 재사용·고정·유추 가능성
+      detector: []
+      cwe: CWE-287
+    - id: vuln.client-program
+      이름: 클라이언트 보안프로그램 미흡
+      설명: OS변조 탐지·악성코드 방지·보안프로그램·난독화·안티디버깅·무결성 등 단말 프로그램 보호(수동)
+      detector: []
+    - id: vuln.mobile-client
+      이름: 모바일 단말 보안 미흡
+      설명: 단말 저장·메모리·브라우저·소스코드·백그라운드·딥링크 등 모바일 클라이언트 보호(수동)
+      detector: []
+checkitems:
+    - id: CI
+      scheme: 주요정보통신기반시설
+      vuln: vuln.code-injection
+    - id: SI
+      scheme: 주요정보통신기반시설
+      vuln: vuln.sqli
+    - id: DI
+      scheme: 주요정보통신기반시설
+      vuln: vuln.dir-indexing
+    - id: EP
+      scheme: 주요정보통신기반시설
+      vuln: vuln.error-page
+    - id: IL
+      scheme: 주요정보통신기반시설
+      vuln: vuln.info-exposure
+    - id: XS
+      scheme: 주요정보통신기반시설
+      vuln: vuln.xss
+    - id: CF
+      scheme: 주요정보통신기반시설
+      vuln: vuln.csrf
+    - id: SF
+      scheme: 주요정보통신기반시설
+      vuln: vuln.ssrf
+    - id: BF
+      scheme: 주요정보통신기반시설
+      vuln: vuln.weak-password
+    - id: IA
+      scheme: 주요정보통신기반시설
+      vuln: vuln.weak-auth
+    - id: IN
+      scheme: 주요정보통신기반시설
+      vuln: vuln.access-control
+    - id: PR
+      scheme: 주요정보통신기반시설
+      vuln: vuln.weak-pw-recovery
+    - id: PV
+      scheme: 주요정보통신기반시설
+      vuln: vuln.process-validation
+    - id: FU
+      scheme: 주요정보통신기반시설
+      vuln: vuln.file-upload
+    - id: FD
+      scheme: 주요정보통신기반시설
+      vuln: vuln.file-download
+    - id: IS
+      scheme: 주요정보통신기반시설
+      vuln: vuln.weak-session
+    - id: SN
+      scheme: 주요정보통신기반시설
+      vuln: vuln.plaintext
+    - id: CC
+      scheme: 주요정보통신기반시설
+      vuln: vuln.cookie-tampering
+    - id: AE
+      scheme: 주요정보통신기반시설
+      vuln: vuln.access-control
+    - id: AU
+      scheme: 주요정보통신기반시설
+      vuln: vuln.automation
+    - id: WM
+      scheme: 주요정보통신기반시설
+      vuln: vuln.http-method
+    - id: "1"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 거래 인증수단 검증'
+      vuln: vuln.txn-security
+      위험도: 5
+    - id: "2"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 거래정보 무결성 검증'
+      vuln: vuln.txn-security
+      위험도: 5
+    - id: "3"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 거래정보 재사용 방지'
+      vuln: vuln.txn-security
+      위험도: 5
+    - id: "4"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 거래시 소유주 검증'
+      vuln: vuln.txn-security
+      위험도: 5
+    - id: "5"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 비밀번호 변경 시 본인확인 절차 수행'
+      vuln: vuln.weak-auth
+      위험도: 5
+    - id: "6"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 비밀번호 변경 시 이전 비밀번호 재사용 방지'
+      vuln: vuln.weak-password
+      위험도: 5
+    - id: "7"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] OS 변조 탐지 기능 적용'
+      vuln: vuln.client-program
+      위험도: 5
+    - id: "8"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 악성코드 방지'
+      vuln: vuln.client-program
+      위험도: 5
+    - id: "9"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 보안프로그램 동작 여부'
+      vuln: vuln.client-program
+      위험도: 5
+    - id: "10"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 보안프로그램 임의해제 방지'
+      vuln: vuln.client-program
+      위험도: 5
+    - id: "11"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 프로그램 실행 명령줄 내 중요정보 평문 노출 방지'
+      vuln: vuln.client-program
+      위험도: 5
+    - id: "12"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] HTS 구동시 실행 파라미터 재사용 방지'
+      vuln: vuln.client-program
+      위험도: 5
+    - id: "13"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 이용자 입력정보 보호'
+      vuln: vuln.client-program
+      위험도: 4
+    - id: "14"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 프로그램 무결성 검증'
+      vuln: vuln.client-program
+      위험도: 5
+    - id: "15"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 소스코드 난독화 적용'
+      vuln: vuln.client-program
+      위험도: 4
+    - id: "16"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 디버깅 탐지기능 적용'
+      vuln: vuln.client-program
+      위험도: 4
+    - id: "17"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 보안프로그램 구동시 최신 업데이트 수행'
+      vuln: vuln.client-program
+      위험도: 4
+    - id: "18"
+      scheme: 전자금융
+      통제구분: 전자금융 거래·단말
+      평가항목: '[전자금융] 접근매체 발급 시 실명확인 수행'
+      vuln: vuln.txn-security
+      위험도: 5
+    - id: "19"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: SQL Injection
+      vuln: vuln.sqli
+      위험도: 5
+    - id: "20"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 악성파일 업로드
+      vuln: vuln.file-upload
+      위험도: 5
+    - id: "21"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 부적절한 이용자 인가
+      vuln: vuln.access-control
+      위험도: 5
+    - id: "22"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 이용자 인증정보 재사용 방지
+      vuln: vuln.auth-credential
+      위험도: 5
+    - id: "23"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 고정된 인증정보 이용 방지
+      vuln: vuln.auth-credential
+      위험도: 5
+    - id: "24"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 유추 가능한 인증정보 이용 방지
+      vuln: vuln.auth-credential
+      위험도: 5
+    - id: "25"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 유추 가능한 초기화 비밀번호 이용 방지
+      vuln: vuln.weak-pw-recovery
+      위험도: 5
+    - id: "26"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 단말기 내 중요정보 저장 방지
+      vuln: vuln.mobile-client
+      위험도: 5
+    - id: "27"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 메모리 내 중요정보 노출 방지
+      vuln: vuln.mobile-client
+      위험도: 5
+    - id: "28"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 파일 다운로드
+      vuln: vuln.file-download
+      위험도: 5
+    - id: "29"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 외부사이트에 의한 시스템 운영정보 노출 여부
+      vuln: vuln.info-exposure
+      위험도: 5
+    - id: "30"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 유추 가능한 세션ID
+      vuln: vuln.weak-session
+      위험도: 5
+    - id: "31"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 쿠키변조
+      vuln: vuln.cookie-tampering
+      위험도: 5
+    - id: "32"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 운영체제 명령실행
+      vuln: vuln.code-injection
+      위험도: 5
+    - id: "33"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: XML 외부객체 공격 (XXE)
+      vuln: vuln.xxe
+      위험도: 5
+    - id: "34"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 리다이렉트 기능을 이용한 피싱 공격
+      vuln: vuln.open-redirect
+      위험도: 4
+    - id: "35"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: LDAP Injection
+      vuln: vuln.ldap-injection
+      위험도: 5
+    - id: "36"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: SSI Injection
+      vuln: vuln.ssi-injection
+      위험도: 5
+    - id: "37"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 불충분한 이용자 인증
+      vuln: vuln.weak-auth
+      위험도: 4
+    - id: "38"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 화면 내 중요정보 평문노출 방지
+      vuln: vuln.info-exposure
+      위험도: 5
+    - id: "39"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 무제한 요청 차단
+      vuln: vuln.automation
+      위험도: 5
+    - id: "40"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 버퍼오버플로우 (Buffer Overflow Attack)
+      vuln: vuln.buffer-overflow
+      위험도: 5
+    - id: "41"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 포맷스트링 (Format String Attack)
+      vuln: vuln.format-string
+      위험도: 5
+    - id: "42"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 단말기 브라우저 영역 내에서의 중요정보 노출 방지
+      vuln: vuln.mobile-client
+      위험도: 5
+    - id: "43"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 앱 소스코드 내 운영정보 노출 방지
+      vuln: vuln.mobile-client
+      위험도: 5
+    - id: "44"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 화면 강제실행에 의한 인증단계 우회 방지
+      vuln: vuln.mobile-client
+      위험도: 5
+    - id: "45"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 크로스사이트 요청변조 (CSRF)
+      vuln: vuln.csrf
+      위험도: 4
+    - id: "46"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 디렉토리 목록 노출 방지
+      vuln: vuln.dir-indexing
+      위험도: 4
+    - id: "47"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 서버 인증서 무결성 검증
+      vuln: vuln.weak-tls
+      위험도: 3
+    - id: "48"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 시스템 운영정보 노출 방지
+      vuln: vuln.error-page
+      위험도: 4
+    - id: "49"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 인증 오류 횟수 제한기능 제공
+      vuln: vuln.weak-auth
+      위험도: 3
+    - id: "50"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 세션종료 설정
+      vuln: vuln.weak-session
+      위험도: 4
+    - id: "51"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 취약한 HTTPS 프로토콜 이용 제한
+      vuln: vuln.weak-tls
+      위험도: 3
+    - id: "52"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 취약한 HTTPS 암호 알고리즘 이용
+      vuln: vuln.weak-tls
+      위험도: 3
+    - id: "53"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 취약한 HTTPS 컴포넌트 제거
+      vuln: vuln.weak-tls
+      위험도: 3
+    - id: "54"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 취약한 HTTPS 재협상 차단
+      vuln: vuln.weak-tls
+      위험도: 2
+    - id: "55"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 불필요한 웹 메서드 차단
+      vuln: vuln.http-method
+      위험도: 1
+    - id: "56"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 관리자 페이지 접근 통제 여부
+      vuln: vuln.access-control
+      위험도: 4
+    - id: "57"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 불필요한 파일 노출 여부
+      vuln: vuln.info-exposure
+      위험도: 4
+    - id: "58"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 크로스 사이트 스크립팅 (XSS)
+      vuln: vuln.xss
+      위험도: 4
+    - id: "59"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 디버그 로그 내 중요정보 노출 방지
+      vuln: vuln.info-exposure
+      위험도: 5
+    - id: "60"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 백그라운드 화면 보호
+      vuln: vuln.mobile-client
+      위험도: 3
+    - id: "61"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 서버 사이드 요청 위조 (SSRF)
+      vuln: vuln.ssrf
+      위험도: 4
+    - id: "62"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 세션정보 재사용 제한 여부
+      vuln: vuln.weak-session
+      위험도: 3
+    - id: "63"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 인증수단 소유자 검증
+      vuln: vuln.txn-security
+      위험도: 5
+    - id: "64"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 모바일 DeepLink 도용 제한 여부
+      vuln: vuln.mobile-client
+      위험도: 5
+    - id: "65"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 통신구간 암호화 적용
+      vuln: vuln.plaintext
+      위험도: 5
+    - id: "66"
+      scheme: 전자금융
+      통제구분: 애플리케이션
+      평가항목: 서버 사이드 템플릿 인젝션(SSTI)
+      vuln: vuln.ssti
+      위험도: 5
+    - id: MOB-01
+      scheme: 모바일
+      vuln: vuln.info-exposure

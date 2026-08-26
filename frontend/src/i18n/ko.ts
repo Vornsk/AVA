@@ -241,6 +241,7 @@ export const ko = {
   'recon.pipe.rule': '룰',
   'recon.pipe.forward': '전달',
   'recon.pipe.noRules': '기본 룰셋 없음',
+  'recon.settings.title': '스코프·인증·로그인',
   'recon.scope.title': '스코프 (화이트리스트)',
   'recon.authid.title': '인증·신원',
   'recon.authid.sessionInjection': '세션 주입',

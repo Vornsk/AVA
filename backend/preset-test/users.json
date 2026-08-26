@@ -1,0 +1,17 @@
+{
+  "users": [
+    {
+      "id": "u-1",
+      "name": "leader",
+      "role": "leader",
+      "hash": "$2a$10$nT85e82kKGdORrNVyAgOeeKr4fxDrGoLirHKjCqP1XWcf.Wu/MHmu"
+    },
+    {
+      "id": "u-2",
+      "name": "analyst",
+      "role": "analyst",
+      "hash": "$2a$10$GQWFQ9i5Hd1qD/MuBysB1ecBIUtC3NzC/WYfuZfF8gdEaUi9V1Sgu"
+    }
+  ],
+  "current": "u-1"
+}

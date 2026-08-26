@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, Clock, Server, Copy, Check, Power, Crosshair, ScanLine, ClipboardCheck } from 'lucide-react'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, ChevronDown, Clock, Server, Copy, Check, Power, Crosshair, ScanLine, ClipboardCheck, Settings } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me, type ReconRegmap } from '../api'
 import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
@@ -638,54 +638,63 @@ export function Recon() {
           </div>
         </Card>
 
-        {/* 스코프 (FR-2.1) */}
-        <Card title={t('recon.scope.title')} icon={Globe} collapsible defaultOpen={false} muted>
-          <div className="flex flex-wrap gap-1.5">
-            {(stats?.scope ?? []).map((s) => (
-              <span key={s} className="rounded-md border border-[var(--border)] px-2 py-0.5 font-mono text-xs">{s}</span>
-            ))}
-          </div>
-        </Card>
-
-        {/* 인증·신원 (FR-2.5 / FR-3.6) */}
-        <Card title={t('recon.authid.title')} icon={KeyRound} collapsible defaultOpen={false} muted>
-          <div className="flex items-center justify-between text-sm">
-            <span className="text-[var(--muted)]">{t('recon.authid.sessionInjection')}</span>
-            <Dot text={auth?.enabled ? t('common.enabled') : t('common.off')} color={auth?.enabled ? 'var(--green)' : 'var(--muted)'} />
-          </div>
-          {auth && (auth.cookies?.length || auth.headers?.length) ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {(auth.cookies ?? []).map((c) => <Badge key={c} text={`cookie:${c}`} color="var(--blue)" />)}
-              {(auth.headers ?? []).map((h) => <Badge key={h} text={`hdr:${h}`} color="var(--blue)" />)}
-            </div>
-          ) : null}
-          <div className="mt-3 border-t border-[var(--border)] pt-2.5">
-            <div className="eyebrow mb-1.5 flex items-center gap-1.5"><ShieldCheck size={12} /> {t('recon.auth.identities')}</div>
-            {auth?.identities?.length ? (
-              <div className="space-y-1">
-                {auth.identities.map((id) => (
-                  <div key={id.name} className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{id.name}</span>
-                    <span className="text-xs text-[var(--muted)]">{id.cookies.length + id.headers.length} creds</span>
-                  </div>
-                ))}
-              </div>
-            ) : <div className="text-xs text-[var(--muted)]">{t('recon.auth.noIdentities')}</div>}
-          </div>
-        </Card>
-
-        <LoginSeqCard />
+        {/* 스코프·인증·로그인 (FR-2.1 / FR-2.5 / FR-3.6) — 한 카드로 압축, 로그인 시퀀스만 아코디언 (#28) */}
+        <SettingsCard stats={stats} auth={auth} />
       </div>
       </div>
     </div>
   )
 }
 
-// LoginSeqCard — 세션 지속성(FR-2.5): 만료 시 자동 재로그인 절차 설정. 값은 마스킹, 저장은 리더 전용.
-function LoginSeqCard() {
+// SettingsCard — 스코프·인증·로그인 시퀀스를 카드 하나로 압축 (#28: 참고 정보는 한눈에, 로그인 시퀀스만 아코디언).
+// 세 항목 다 저마다 독립 Card(헤더+테두리+패딩)였는데, 평소 상태값은 한두 줄이라 chrome 이 내용보다 커 보였다.
+function SettingsCard({ stats, auth }: { stats?: Stats | null; auth?: AuthSummary | null }) {
+  const t = useT()
+  return (
+    <Card title={t('recon.settings.title')} icon={Settings} collapsible defaultOpen={false} muted>
+      <div className="space-y-2.5 text-xs">
+        {/* 스코프 (FR-2.1) */}
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="flex items-center gap-1 text-[var(--muted)]"><Globe size={12} /> {t('recon.scope.title')}</span>
+          {(stats?.scope ?? []).map((s) => (
+            <span key={s} className="rounded-md border border-[var(--border)] px-1.5 py-0.5 font-mono">{s}</span>
+          ))}
+          {!stats?.scope?.length && <span className="text-[var(--muted)]">—</span>}
+        </div>
+
+        {/* 인증·신원 (FR-2.5 / FR-3.6) */}
+        <div className="border-t border-[var(--border)] pt-2.5">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1 text-[var(--muted)]"><KeyRound size={12} /> {t('recon.authid.sessionInjection')}</span>
+            <Dot text={auth?.enabled ? t('common.enabled') : t('common.off')} color={auth?.enabled ? 'var(--green)' : 'var(--muted)'} />
+          </div>
+          {auth && (auth.cookies?.length || auth.headers?.length) ? (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {(auth.cookies ?? []).map((c) => <Badge key={c} text={`cookie:${c}`} color="var(--blue)" />)}
+              {(auth.headers ?? []).map((h) => <Badge key={h} text={`hdr:${h}`} color="var(--blue)" />)}
+            </div>
+          ) : null}
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="flex items-center gap-1 text-[var(--muted)]"><ShieldCheck size={12} /> {t('recon.auth.identities')}</span>
+            {auth?.identities?.length ? auth.identities.map((id) => (
+              <span key={id.name}><span className="font-medium">{id.name}</span> <span className="text-[var(--muted)]">{id.cookies.length + id.headers.length}</span></span>
+            )) : <span className="text-[var(--muted)]">{t('recon.auth.noIdentities')}</span>}
+          </div>
+        </div>
+
+        <LoginSeqRow />
+      </div>
+    </Card>
+  )
+}
+
+// LoginSeqRow — 세션 지속성(FR-2.5): 만료 시 자동 재로그인 절차 설정. 값은 마스킹, 저장은 리더 전용.
+// 편집 폼이 있는 항목만 아코디언으로 접어, 평소엔 상태 한 줄만 보인다.
+function LoginSeqRow() {
   const t = useT()
   const { data: info } = usePoll<LoginSeqInfo>('/api/login-seq', 10000)
-  const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+  const [editing, setEditing] = useState(false)
   const [url, setUrl] = useState('')
   const [loggedOut, setLoggedOut] = useState('')
   const [tokenURL, setTokenURL] = useState('')
@@ -701,7 +710,7 @@ function LoginSeqCard() {
       setUrl(info.url); setLoggedOut(info.logged_out); setTokenURL(info.token_url); setTokenField(info.token_field)
       if (info.fields.length) setRows(info.fields.map((k) => ({ k, v: '' })))
     }
-    setOpen(true); setMsg(''); setErr('')
+    setEditing(true); setMsg(''); setErr('')
   }
 
   async function save() {
@@ -713,70 +722,80 @@ function LoginSeqCard() {
         url, method: 'POST', logged_out: loggedOut,
         token_url: tokenURL, token_field: tokenField, token_param: tokenField, fields,
       })
-      setMsg(t('recon.loginseq.saved')); setOpen(false)
+      setMsg(t('recon.loginseq.saved')); setEditing(false)
     } catch (e) { setErr(String(e)) } finally { setBusy(false) }
   }
 
   const inp = 'w-full rounded-lg border border-[var(--border)] bg-[var(--panel-2)] px-2 py-1 text-xs'
 
   return (
-    <Card title={t('recon.loginseq.title')} icon={KeyRound}
-          right={<Dot text={info?.enabled ? t('common.enabled') : t('common.off')} color={info?.enabled ? 'var(--green)' : 'var(--muted)'} />}>
-      <p className="mb-2 text-[11px] text-[var(--muted)]">
-        {t('recon.loginseq.desc1')}<b className="text-[var(--text)]">{t('recon.loginseq.expiryMark')}</b>{t('recon.loginseq.desc2')}
-      </p>
-      {!open ? (
-        <div className="space-y-1.5 text-xs">
-          {info?.url ? (
-            <>
-              <Row2 k="URL" v={info.url} />
-              <Row2 k={t('recon.loginseq.expiryMarkShort')} v={info.logged_out || '—'} />
-              <Row2 k={t('recon.loginseq.fields')} v={info.fields.join(', ') || '—'} />
-              {info.token_field && <Row2 k={t('recon.loginseq.csrf')} v={info.token_field} />}
-            </>
-          ) : <div className="text-[var(--muted)]">{t('recon.loginseq.notSet')}</div>}
-          <button onClick={edit} className="mt-1 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold">
-            {info?.url ? t('common.edit') : t('recon.loginseq.setup')}
-          </button>
-          {msg && <div className="text-[11px]" style={{ color: 'var(--green)' }}>{msg}</div>}
-        </div>
-      ) : (
-        <div className="space-y-2">
-          <label className="block"><span className="eyebrow">{t('recon.loginseq.loginUrl')}</span>
-            <input className={inp} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://target/login.php" /></label>
-          <label className="block"><span className="eyebrow">{t('recon.loginseq.expiryMarkRegex')}</span>
-            <input className={inp} value={loggedOut} onChange={(e) => setLoggedOut(e.target.value)} placeholder="(?i)login\.php|please log in" /></label>
-          <div>
-            <span className="eyebrow">{t('recon.loginseq.formFields')}</span>
-            {rows.map((r, i) => (
-              <div key={i} className="mt-1 flex gap-1">
-                <input className={inp + ' w-1/3'} value={r.k} placeholder="name"
-                       onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} />
-                <input className={inp} type={/pass|pw|secret/i.test(r.k) ? 'password' : 'text'} value={r.v} placeholder="value" autoComplete="off"
-                       onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, v: e.target.value } : x))} />
-                <button className="px-1 text-[var(--muted)]" onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
+    <div className="border-t border-[var(--border)] pt-2.5">
+      <button type="button" onClick={() => setExpanded((v) => !v)} className="flex w-full items-center justify-between text-left">
+        <span className="flex items-center gap-1 text-[var(--muted)]">
+          <ChevronDown size={12} className={`transition-transform ${expanded ? '' : '-rotate-90'}`} />
+          <KeyRound size={12} /> {t('recon.loginseq.title')}
+        </span>
+        <Dot text={info?.enabled ? t('common.enabled') : t('common.off')} color={info?.enabled ? 'var(--green)' : 'var(--muted)'} />
+      </button>
+      {expanded && (
+        <div className="mt-2">
+          <p className="mb-2 text-[11px] text-[var(--muted)]">
+            {t('recon.loginseq.desc1')}<b className="text-[var(--text)]">{t('recon.loginseq.expiryMark')}</b>{t('recon.loginseq.desc2')}
+          </p>
+          {!editing ? (
+            <div className="space-y-1.5">
+              {info?.url ? (
+                <>
+                  <Row2 k="URL" v={info.url} />
+                  <Row2 k={t('recon.loginseq.expiryMarkShort')} v={info.logged_out || '—'} />
+                  <Row2 k={t('recon.loginseq.fields')} v={info.fields.join(', ') || '—'} />
+                  {info.token_field && <Row2 k={t('recon.loginseq.csrf')} v={info.token_field} />}
+                </>
+              ) : <div className="text-[var(--muted)]">{t('recon.loginseq.notSet')}</div>}
+              <button onClick={edit} className="mt-1 rounded-lg border border-[var(--border)] px-2.5 py-1 text-xs font-semibold">
+                {info?.url ? t('common.edit') : t('recon.loginseq.setup')}
+              </button>
+              {msg && <div className="text-[11px]" style={{ color: 'var(--green)' }}>{msg}</div>}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <label className="block"><span className="eyebrow">{t('recon.loginseq.loginUrl')}</span>
+                <input className={inp} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="http://target/login.php" /></label>
+              <label className="block"><span className="eyebrow">{t('recon.loginseq.expiryMarkRegex')}</span>
+                <input className={inp} value={loggedOut} onChange={(e) => setLoggedOut(e.target.value)} placeholder="(?i)login\.php|please log in" /></label>
+              <div>
+                <span className="eyebrow">{t('recon.loginseq.formFields')}</span>
+                {rows.map((r, i) => (
+                  <div key={i} className="mt-1 flex gap-1">
+                    <input className={inp + ' w-1/3'} value={r.k} placeholder="name"
+                           onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, k: e.target.value } : x))} />
+                    <input className={inp} type={/pass|pw|secret/i.test(r.k) ? 'password' : 'text'} value={r.v} placeholder="value" autoComplete="off"
+                           onChange={(e) => setRows(rows.map((x, j) => j === i ? { ...x, v: e.target.value } : x))} />
+                    <button className="px-1 text-[var(--muted)]" onClick={() => setRows(rows.filter((_, j) => j !== i))}>✕</button>
+                  </div>
+                ))}
+                <button className="mt-1 text-[11px] text-[var(--muted)] underline" onClick={() => setRows([...rows, { k: '', v: '' }])}>{t('recon.loginseq.addField')}</button>
               </div>
-            ))}
-            <button className="mt-1 text-[11px] text-[var(--muted)] underline" onClick={() => setRows([...rows, { k: '', v: '' }])}>{t('recon.loginseq.addField')}</button>
-          </div>
-          <details className="text-xs">
-            <summary className="cursor-pointer text-[var(--muted)]">{t('recon.loginseq.csrfOptional')}</summary>
-            <label className="mt-1 block"><span className="eyebrow">{t('recon.loginseq.tokenUrl')}</span>
-              <input className={inp} value={tokenURL} onChange={(e) => setTokenURL(e.target.value)} placeholder="http://target/login.php" /></label>
-            <label className="mt-1 block"><span className="eyebrow">{t('recon.loginseq.tokenInput')}</span>
-              <input className={inp} value={tokenField} onChange={(e) => setTokenField(e.target.value)} placeholder="user_token" /></label>
-          </details>
-          <div className="flex items-center gap-2">
-            <button onClick={save} disabled={busy || !url || !loggedOut}
-                    className="rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
-                    style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>{busy ? t('common.saving') : t('common.save')}</button>
-            <button onClick={() => setOpen(false)} className="text-xs text-[var(--muted)]">{t('common.cancel')}</button>
-          </div>
-          {err && <div className="text-[11px]" style={{ color: 'var(--red)' }}>{t('recon.loginseq.saveFail')}: {err}</div>}
-          <p className="text-[10px] text-[var(--muted)]">{t('recon.loginseq.note')}</p>
+              <details className="text-xs">
+                <summary className="cursor-pointer text-[var(--muted)]">{t('recon.loginseq.csrfOptional')}</summary>
+                <label className="mt-1 block"><span className="eyebrow">{t('recon.loginseq.tokenUrl')}</span>
+                  <input className={inp} value={tokenURL} onChange={(e) => setTokenURL(e.target.value)} placeholder="http://target/login.php" /></label>
+                <label className="mt-1 block"><span className="eyebrow">{t('recon.loginseq.tokenInput')}</span>
+                  <input className={inp} value={tokenField} onChange={(e) => setTokenField(e.target.value)} placeholder="user_token" /></label>
+              </details>
+              <div className="flex items-center gap-2">
+                <button onClick={save} disabled={busy || !url || !loggedOut}
+                        className="rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
+                        style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>{busy ? t('common.saving') : t('common.save')}</button>
+                <button onClick={() => setEditing(false)} className="text-xs text-[var(--muted)]">{t('common.cancel')}</button>
+              </div>
+              {err && <div className="text-[11px]" style={{ color: 'var(--red)' }}>{t('recon.loginseq.saveFail')}: {err}</div>}
+              <p className="text-[10px] text-[var(--muted)]">{t('recon.loginseq.note')}</p>
+            </div>
+          )}
         </div>
       )}
-    </Card>
+    </div>
   )
 }
 

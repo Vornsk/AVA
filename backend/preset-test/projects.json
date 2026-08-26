@@ -1,0 +1,17 @@
+{
+  "projects": [
+    {
+      "id": "p-1",
+      "owner": "u-1",
+      "name": "127.0.0.1",
+      "main_url": "https://127.0.0.1",
+      "scope": [
+        "127.0.0.1"
+      ],
+      "judge_prompt": "balanced",
+      "created": "2026-08-24 14:06:29",
+      "modified": "2026-08-24 14:06:29"
+    }
+  ],
+  "active": "p-1"
+}

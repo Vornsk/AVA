@@ -242,6 +242,7 @@ export const en: Record<keyof typeof ko, string> = {
   'recon.pipe.rule': 'Rule',
   'recon.pipe.forward': 'Forward',
   'recon.pipe.noRules': 'No default ruleset',
+  'recon.settings.title': 'Scope, Auth & Login',
   'recon.scope.title': 'Scope (whitelist)',
   'recon.authid.title': 'Auth & Identities',
   'recon.authid.sessionInjection': 'Session injection',

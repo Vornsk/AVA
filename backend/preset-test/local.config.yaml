@@ -1,0 +1,12 @@
+proxy_addr: :8082
+mcp_addr: 127.0.0.1:8767
+web_addr: 127.0.0.1:8092
+llm:
+    provider: ollama
+    model: qwen2.5:3b
+    endpoint: http://127.0.0.1:11434
+    api_key: ""
+tools: {}
+safe_mode: false
+auth_disabled: false
+artifact_ext: .cgpkg
