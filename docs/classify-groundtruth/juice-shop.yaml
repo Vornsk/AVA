@@ -1,0 +1,83 @@
+# 의미 분류 벤치마크 정답셋 — OWASP Juice Shop (이슈 #61, classify 착수 #41)
+#
+# endpoints 는 docs/recon-groundtruth/juice-shop.yaml 의 실재 확인된 64개 라우트를 그대로
+# 재사용한다(정찰이 이미 검증한 실제 공격면). expect 는 사람이 각 라우트의 실제 목적을 보고
+# 독립적으로 판단한 라벨이다 — internal/recon/classify 의 키워드 사전을 베껴 쓰면 벤치가
+# "룰이 룰과 같은지"만 재는 동어반복이 되므로, 룰이 못 잡을 만한 사례(예: whoami·metrics·
+# dataerasure·security-answers 처럼 사전에 없는 단어)도 일부러 섞었다.
+#
+# 라벨: auth·payment·upload·admin·pii·search (의미) / api·static (구조) / other (해당 없음).
+# 구조 라벨(api/static)은 세그먼트에 rest/api/vN 이 있으면 기계적으로 참이라 벤치 스코어는
+# 의미 라벨(semantic-only) 기준을 주로 본다 — README 참조.
+app: juice-shop
+endpoints:
+  # 상품 — 민감하지 않은 카탈로그
+  - { method: GET,  path: "/rest/products/search", expect: [search] }
+  - { method: GET,  path: "/api/Products", expect: [] }
+  - { method: GET,  path: "/api/Products/{id}", expect: [] }
+  - { method: GET,  path: "/rest/products/{id}/reviews", expect: [] }
+  - { method: PUT,  path: "/rest/products/{id}/reviews", expect: [] }
+  # 사용자 / 인증
+  - { method: POST, path: "/rest/user/login", expect: [auth] }
+  - { method: GET,  path: "/rest/user/whoami", expect: [auth] } # 룰 사전에 "whoami" 없음 — 세션 정체성 확인 기능
+  - { method: POST, path: "/api/Users", expect: [pii] }         # 계정 생성 = 개인정보 취급
+  - { method: GET,  path: "/api/Users/{id}", expect: [pii] }
+  - { method: GET,  path: "/api/Users", expect: [pii] }
+  - { method: POST, path: "/rest/user/reset-password", expect: [auth] }
+  - { method: GET,  path: "/rest/user/reset-password", expect: [auth] }
+  - { method: GET,  path: "/rest/user/security-question", expect: [auth] }
+  - { method: GET,  path: "/rest/user", expect: [pii] }
+  - { method: GET,  path: "/rest/user/authentication-details", expect: [auth] }
+  - { method: GET,  path: "/rest/user/change-password", expect: [auth] }
+  - { method: GET,  path: "/rest/saveLoginIp", expect: [auth] } # 로그인 IP 기록 — 보안 로깅
+  - { method: GET,  path: "/api/SecurityQuestions", expect: [auth] }
+  - { method: POST, path: "/api/SecurityAnswers", expect: [auth] } # 룰 사전에 "security" 없음 — 계정 복구 절차
+  - { method: GET,  path: "/api/SecurityAnswers", expect: [auth] }
+  # 장바구니 / 주문 / 결제
+  - { method: GET,  path: "/rest/basket/{id}", expect: [payment] }
+  - { method: POST, path: "/api/BasketItems", expect: [payment] }
+  - { method: PUT,  path: "/api/BasketItems/{id}", expect: [payment] }
+  - { method: GET,  path: "/api/BasketItems", expect: [payment] }
+  - { method: GET,  path: "/rest/order-history", expect: [payment] }
+  - { method: GET,  path: "/rest/track-order", expect: [payment] }
+  - { method: GET,  path: "/rest/wallet/balance", expect: [payment] }
+  - { method: GET,  path: "/rest/web3", expect: [payment] }              # 지갑 연동(NFT/암호화폐 결제)
+  - { method: GET,  path: "/rest/deluxe-membership", expect: [payment] } # 룰 사전엔 "subscription"뿐 — 멤버십 결제
+  - { method: GET,  path: "/api/Cards", expect: [payment] }
+  - { method: GET,  path: "/api/Deliverys", expect: [] }        # 배송수단 카탈로그(옵션 목록) — 개인정보 아님
+  - { method: GET,  path: "/api/Addresss", expect: [pii] }
+  - { method: GET,  path: "/api/Quantitys", expect: [] }        # 재고 수량 — 민감하지 않음
+  - { method: GET,  path: "/api/Recycles", expect: [payment] }  # 중고기기 반납→적립금 전환(결제 성격)
+  # 피드백 / 컴플레인 / 메타
+  - { method: GET,  path: "/api/Feedbacks", expect: [] }
+  - { method: POST, path: "/api/Feedbacks", expect: [] }
+  - { method: GET,  path: "/api/Complaints", expect: [] }
+  - { method: POST, path: "/api/Complaints", expect: [] }
+  - { method: GET,  path: "/api/Challenges", expect: [] }
+  - { method: GET,  path: "/rest/languages", expect: [] }
+  - { method: GET,  path: "/rest/captcha", expect: [] }
+  - { method: GET,  path: "/rest/image-captcha", expect: [] }
+  - { method: GET,  path: "/rest/country-mapping", expect: [] }
+  - { method: GET,  path: "/rest/repeat-notification", expect: [] }
+  - { method: GET,  path: "/rest/products", expect: [] }
+  # 진행 코드(Continue Code) — 세션 복원 토큰, 사실상 인증 자격증명과 동급
+  - { method: GET,  path: "/rest/continue-code", expect: [auth] }
+  - { method: GET,  path: "/rest/continue-code/apply", expect: [auth] }
+  - { method: GET,  path: "/rest/continue-code-findIt", expect: [auth] }
+  - { method: GET,  path: "/rest/continue-code-findIt/apply", expect: [auth] }
+  - { method: GET,  path: "/rest/continue-code-fixIt", expect: [auth] }
+  - { method: GET,  path: "/rest/continue-code-fixIt/apply", expect: [auth] }
+  # 관리 / 운영 노출면
+  - { method: GET,  path: "/rest/admin/application-version", expect: [admin] }
+  - { method: GET,  path: "/rest/admin/application-configuration", expect: [admin] }
+  - { method: GET,  path: "/rest/admin", expect: [admin] }
+  - { method: GET,  path: "/metrics", expect: [admin] }          # 룰 사전에 "metrics" 없음 — 운영 지표 노출
+  - { method: GET,  path: "/support/logs", expect: [admin] }     # 로그 디렉터리 노출
+  - { method: GET,  path: "/encryptionkeys", expect: [admin] }   # 암호화 키 디렉터리 노출
+  - { method: GET,  path: "/ftp", expect: [admin] }              # 백업 파일 디렉터리 노출
+  # 레거시 서버렌더 페이지 — PII/기타
+  - { method: GET,  path: "/profile", expect: [pii] }
+  - { method: GET,  path: "/dataerasure", expect: [pii] }        # 룰 사전에 "erasure" 없음 — GDPR 개인정보 삭제
+  - { method: GET,  path: "/redirect", expect: [] }              # 오픈 리다이렉트 — 개인정보/결제/관리 어디에도 안 걸림
+  - { method: GET,  path: "/api-docs", expect: [] }
+  - { method: GET,  path: "/.well-known/security.txt", expect: [] }

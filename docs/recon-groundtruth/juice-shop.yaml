@@ -67,5 +67,35 @@ endpoints:
   - { method: GET,  path: "/api/Recycles" }
   # robots.txt 가 가리키는 디렉터리 목록 (#25 스펙 인제스트로 발견된 정답셋 누락)
   #   실재 확인: curl -s http://localhost:3000/ftp → 11307 bytes, .bak/.json/.md 노출
-  #   (SPA catch-all 인 index.html 은 9393 bytes 로 크기가 다르다)
+  #   (SPA catch-all 인 index.html 은 9393 bytes 로 다르다)
   - { method: GET,  path: "/ftp" }
+  # #61 static 벤치 실측 — 오탐 28건 중 26건을 curl로 개별 검증(SPA catch-all 9393B 와 응답이
+  # 다름 = 실재). REST 스캐폴딩 리소스는 GET(목록/조회)·POST(생성)을 모두 지원해 메서드가 다른
+  # 항목을 GT 에 추가했다(예: POST /api/Users 는 이미 있고, GET /api/Users 를 여기 추가).
+  # 나머지는 그 자체로 GT 에 없던 실제 백엔드 라우트(Continue Code 기능·프로필·오픈리다이렉트 등).
+  - { method: GET,  path: "/api/Users" }              # curl → 401 (기존 POST /api/Users 와 별개 라우트)
+  - { method: GET,  path: "/api/BasketItems" }         # curl → 401
+  - { method: GET,  path: "/api/SecurityAnswers" }     # curl → 401
+  - { method: GET,  path: "/rest/user/login" }         # curl → 500 (기존 POST 는 로그인 처리, GET 은 별도)
+  - { method: GET,  path: "/rest/user/reset-password" }# curl → 500
+  - { method: GET,  path: "/rest/user" }               # curl → 500
+  - { method: GET,  path: "/rest/user/authentication-details" } # curl → 401
+  - { method: GET,  path: "/rest/user/change-password" }        # curl → 401
+  - { method: GET,  path: "/rest/admin" }              # curl → 500
+  - { method: GET,  path: "/rest/products" }           # curl → 500
+  - { method: GET,  path: "/rest/web3" }               # curl → 500
+  - { method: GET,  path: "/rest/country-mapping" }    # curl → 500
+  - { method: GET,  path: "/rest/deluxe-membership" }  # curl → 400 application/json
+  - { method: GET,  path: "/rest/image-captcha" }      # curl → 401
+  - { method: GET,  path: "/rest/repeat-notification" }# curl → 200 text/plain 2B
+  - { method: GET,  path: "/rest/saveLoginIp" }        # curl → 401
+  - { method: GET,  path: "/rest/track-order" }        # curl → 500
+  - { method: GET,  path: "/rest/continue-code" }             # curl → 200 text/plain 79B
+  - { method: GET,  path: "/rest/continue-code/apply" }       # curl → 500 (코드 파라미터 없음)
+  - { method: GET,  path: "/rest/continue-code-findIt" }      # curl → 200 text/plain 2B
+  - { method: GET,  path: "/rest/continue-code-findIt/apply" }# curl → 500
+  - { method: GET,  path: "/rest/continue-code-fixIt" }       # curl → 200 text/plain 2B
+  - { method: GET,  path: "/rest/continue-code-fixIt/apply" } # curl → 500
+  - { method: GET,  path: "/profile" }    # curl → 500 (레거시 서버렌더 프로필 페이지 — XSS 챌린지)
+  - { method: GET,  path: "/redirect" }   # curl → 500 (오픈 리다이렉트 챌린지, ?to= 파라미터 필요)
+  - { method: GET,  path: "/dataerasure" }# curl → 500 (GDPR 데이터 삭제 폼)

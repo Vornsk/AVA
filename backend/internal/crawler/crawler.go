@@ -336,7 +336,7 @@ func (j *job) crawlPass(seed string, opts Options, client *http.Client) bool {
 		if strings.Contains(ct, "html") {
 			links, forms := extract(body, u)
 			for _, l := range links {
-				if lu, e := url.Parse(l); e == nil && !visited[normKey(lu)] {
+				if lu, e := url.Parse(l); e == nil && !visited[normKey(lu)] && !assetExt.MatchString(lu.Path) {
 					queue = append(queue, item{l, it.depth + 1})
 				}
 			}
