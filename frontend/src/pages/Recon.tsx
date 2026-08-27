@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, ChevronDown, Clock, Server, Copy, Check, Power, Crosshair, ScanLine, ClipboardCheck, Settings, Trash2, Eraser } from 'lucide-react'
+import { Network, Filter, Globe, KeyRound, ShieldCheck, Radar, Play, Search, ChevronRight, ChevronDown, Clock, Server, Copy, Check, Power, Crosshair, ScanLine, ClipboardCheck, Settings, Trash2, Eraser, Sparkles } from 'lucide-react'
 import { usePoll, apiPost, type Target, type Rule, type Stats, type AuthSummary, type CrawlResult, type LoginSeqInfo, type ProxyStatus, type Me, type ReconRegmap } from '../api'
 import { Card, Badge, Dot, Empty, Tooltip, InfoTip } from '../components/ui'
 import { useT } from '../i18n'
@@ -108,18 +108,22 @@ function fmtTime(s?: string) {
 }
 
 // CrawlExplore — 자동 공격면 탐색(AppScan Explore 대응). 시작 URL에서 링크·폼을 따라 자동 크롤.
+// 능동 탐색(숨은 경로·입력값)은 기본 켜짐이되 스코프 밖으론 요청이 나가지 않는다(엔진 하드 가드).
+// AI 경로 추천·크롤 종료 후 자동 분류는 별도 체크가 아닌 기본 동작이다.
 function CrawlExplore() {
   const t = useT()
   const [seed, setSeed] = useState('')
   const [busy, setBusy] = useState(false)
   const [headless, setHeadless] = useState(false)
-  const [paramMine, setParamMine] = useState(false) // 파라미터 마이닝 옵트인 (#40)
-  const [authDelta, setAuthDelta] = useState(false) // 인증 델타 크롤 (#38)
-  const [discover, setDiscover] = useState(false) // 능동 콘텐츠 발견 옵트인 (#27)
-  const [discoverLLM, setDiscoverLLM] = useState(false) // AI 맞춤 후보 추가 — discover 부속 옵트인
+  const [discover, setDiscover] = useState(true)   // 숨은 경로 찾기 (#27) — 기본 on, 스코프 가드로 보호
+  const [paramMine, setParamMine] = useState(true) // 숨은 입력값 찾기 (#40) — 기본 on
+  const [authDelta, setAuthDelta] = useState(true) // 로그인 뒤 화면 찾기 (#38) — 로그인 설정 있을 때만 실제 on
   const { data: runs } = usePoll<CrawlResult[]>('/api/crawl', 2000)
   const { data: modes } = usePoll<{ headless_available: boolean }>('/api/crawl-modes', 30000)
+  const { data: auth } = usePoll<AuthSummary>('/api/auth', 8000)
+  const { data: loginSeq } = usePoll<LoginSeqInfo>('/api/login-seq', 10000)
   const hlOK = modes?.headless_available === true
+  const credsOK = !!(auth?.enabled || loginSeq?.enabled) // 인증 델타 가능 조건 — 백엔드 #38 게이트와 동일
   const latest = runs && runs.length ? runs[runs.length - 1] : null
   const running = latest?.status === '진행'
 
@@ -128,8 +132,10 @@ function CrawlExplore() {
     setBusy(true)
     try {
       await apiPost('/api/crawl', {
-        seed: seed.trim(), mode: headless ? 'headless' : 'static', param_mine: paramMine, auth_delta: authDelta,
-        discover, discover_llm: discover && discoverLLM,
+        seed: seed.trim(), mode: headless ? 'headless' : 'static',
+        discover, discover_llm: discover, // AI 경로 추천은 능동 탐색과 함께 도는 기본 동작
+        param_mine: paramMine,
+        auth_delta: authDelta && credsOK, // 로그인 설정 없으면 서버가 400 — 미리 끈다
       })
     }
     catch (e) { alert(t('recon.crawl.startFail') + ': ' + e) } finally { setBusy(false) }
@@ -150,34 +156,40 @@ function CrawlExplore() {
           <Play size={13} /> {busy ? t('recon.crawl.starting') : running ? t('recon.crawl.running') : t('recon.crawl.start')}
         </button>
       </div>
+
+      {/* 기본 탐색 방식 — 정밀 모드(JS 실행). 위험 성격이 아니라 "깊이" 선택이라 심화 탐색과 분리한다. */}
       <label className={`mt-2 flex items-center gap-1.5 text-xs ${hlOK ? 'cursor-pointer text-[var(--muted)]' : 'text-[var(--muted)] opacity-50'}`}
              title={hlOK ? t('recon.crawl.hlTitleOn') : t('recon.crawl.hlTitleOff')}>
         <input type="checkbox" checked={headless && hlOK} disabled={!hlOK} onChange={(e) => setHeadless(e.target.checked)} />
         {t('recon.crawl.headless')} {hlOK ? <span style={{ color: 'var(--green)' }}>{t('recon.crawl.available')}</span> : <span>{t('recon.crawl.noChrome')}</span>}
       </label>
-      <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
-             title={t('recon.crawl.paramMineTitle')}>
-        <input type="checkbox" checked={paramMine} onChange={(e) => setParamMine(e.target.checked)} />
-        {t('recon.crawl.paramMine')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
-      </label>
-      <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
-             title={t('recon.crawl.authDeltaTitle')}>
-        <input type="checkbox" checked={authDelta} onChange={(e) => setAuthDelta(e.target.checked)} />
-        {t('recon.crawl.authDelta')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
-      </label>
-      <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
-             title={t('recon.crawl.discoverTitle')}>
-        <input type="checkbox" checked={discover}
-               onChange={(e) => { setDiscover(e.target.checked); if (!e.target.checked) setDiscoverLLM(false) }} />
-        {t('recon.crawl.discover')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
-      </label>
-      {discover && (
-        <label className="mt-1 ml-5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]"
-               title={t('recon.crawl.discoverLLMTitle')}>
-          <input type="checkbox" checked={discoverLLM} onChange={(e) => setDiscoverLLM(e.target.checked)} />
-          {t('recon.crawl.discoverLLM')} <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.optIn')}</span>
+
+      {/* 심화 탐색 — 대상에 직접 요청을 보내는 능동 탐색. 기본 켜짐이되 스코프 밖으론 안 나간다. */}
+      <div className="mt-3 border-t border-[var(--border)] pt-2.5">
+        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">
+          {t('recon.crawl.deepTitle')} <InfoTip label={t('recon.crawl.deepHint')} />
+        </div>
+        <label className="flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]" title={t('recon.crawl.discoverTitle')}>
+          <input type="checkbox" checked={discover} onChange={(e) => setDiscover(e.target.checked)} />
+          {t('recon.crawl.discover')}
         </label>
-      )}
+        <label className="mt-1.5 flex cursor-pointer items-center gap-1.5 text-xs text-[var(--muted)]" title={t('recon.crawl.paramMineTitle')}>
+          <input type="checkbox" checked={paramMine} onChange={(e) => setParamMine(e.target.checked)} />
+          {t('recon.crawl.paramMine')}
+        </label>
+        <label className={`mt-1.5 flex items-center gap-1.5 text-xs ${credsOK ? 'cursor-pointer text-[var(--muted)]' : 'text-[var(--muted)] opacity-50'}`}
+               title={t('recon.crawl.authDeltaTitle')}>
+          <input type="checkbox" checked={authDelta && credsOK} disabled={!credsOK} onChange={(e) => setAuthDelta(e.target.checked)} />
+          {t('recon.crawl.authDelta')} {!credsOK && <span style={{ color: 'var(--amber)' }}>{t('recon.crawl.authDeltaNeedLogin')}</span>}
+        </label>
+
+        {/* AI 자동 동작 — 체크박스가 아니라 기본으로 도는 것임을 명시 */}
+        <div className="mt-2.5 flex items-start gap-1.5 text-[11px]" style={{ color: '#a78bfa' }}>
+          <Sparkles size={12} className="mt-0.5 shrink-0" />
+          <span>{t('recon.crawl.aiNote')}</span>
+        </div>
+      </div>
+
       {latest && (
         <div className="mt-2.5 flex flex-wrap items-center gap-3 text-xs">
           <Dot text={latest.status} color={latest.status === '진행' ? 'var(--amber)' : latest.status === '완료' ? 'var(--green)' : 'var(--muted)'} />
