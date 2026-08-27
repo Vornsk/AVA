@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"proxypoc/internal/audit"
+	"proxypoc/internal/endpoints"
 	"proxypoc/internal/finding"
 	"proxypoc/internal/project"
 	"proxypoc/internal/scanengine"
@@ -17,11 +18,12 @@ import (
 // sweepInterval — 스위퍼 주기. 30일 보존이라 촘촘할 필요 없고 비용도 무시할 수준.
 const sweepInterval = 6 * time.Hour
 
-// PurgeCascade — 프로젝트 영구삭제 + 관련 findings·scanruns cascade 제거 (이슈 #14/#15 공용).
+// PurgeCascade — 프로젝트 영구삭제 + 관련 findings·scanruns·공격면 cascade 제거 (이슈 #14/#15/#65 공용).
 // 반환: 지운 findings·scanruns 수.
 func PurgeCascade(pid string) (findingsDeleted, scanrunsDeleted int) {
 	findingsDeleted = finding.DeleteByProject(pid)
 	scanrunsDeleted = scanengine.DeleteByProject(pid)
+	endpoints.RemoveProjectFile(pid) // 공격면(endpoints.<pid>.json)도 함께 정리 (이슈 #65)
 	project.Purge(pid)
 	return
 }

@@ -1,9 +1,11 @@
 package webui
 
 import (
+	"os"
 	"testing"
 
 	"proxypoc/internal/checklist"
+	"proxypoc/internal/endpoints"
 	"proxypoc/internal/llm"
 	"proxypoc/internal/project"
 	"proxypoc/internal/scope"
@@ -52,5 +54,45 @@ func TestApplyActiveProjectSettingsAppliesSchemesAndPolicy(t *testing.T) {
 	sel := checklist.Selected()
 	if len(sel) != 1 || sel[0] != checklist.SchemeFinance {
 		t.Errorf("선택 스킴=%v, want [%s]", sel, checklist.SchemeFinance)
+	}
+}
+
+// 이슈 #65 — 프로젝트를 전환하면 공격면 트리도 그 프로젝트의 것으로 스왑된다.
+// (activateHandler·재시작 기동이 공유하는 ApplyActiveProjectSettings 가 endpoints.SwitchProject 를 호출)
+func TestApplyActiveProjectSwapsEndpoints(t *testing.T) {
+	fa, fb := "endpoints.p-ea.json", "endpoints.p-eb.json"
+	endpoints.SwitchProject("")
+	endpoints.Reset()
+	t.Cleanup(func() { endpoints.SwitchProject(""); endpoints.Reset(); os.Remove(fa); os.Remove(fb) })
+
+	// A 활성화 후 공격면 1건 캡처
+	if _, err := ApplyActiveProjectSettings(project.Project{ID: "p-ea", Name: "ea", Scope: []string{"a.com"}}); err != nil {
+		t.Fatalf("A 활성화: %v", err)
+	}
+	endpoints.Record("http", "a.com", "GET", "/a", nil, false, "")
+
+	// B 로 전환 → A 공격면 안 보임
+	if _, err := ApplyActiveProjectSettings(project.Project{ID: "p-eb", Name: "eb", Scope: []string{"b.com"}}); err != nil {
+		t.Fatalf("B 활성화: %v", err)
+	}
+	if n := len(endpoints.Targets()); n != 0 {
+		t.Errorf("B 활성화 후 A 공격면이 보임: %d개", n)
+	}
+
+	// A 재활성화 → 다시 보임
+	if _, err := ApplyActiveProjectSettings(project.Project{ID: "p-ea", Name: "ea", Scope: []string{"a.com"}}); err != nil {
+		t.Fatalf("A 재활성화: %v", err)
+	}
+	tg := endpoints.Targets()
+	if len(tg) != 1 || tg[0].Host != "a.com" {
+		t.Errorf("A 재활성화 후 = %v, want [a.com]", tg)
+	}
+
+	// 활성 없음(마지막 프로젝트 삭제 케이스) → 인메모리 빈 트리
+	if _, err := ApplyActiveProjectSettings(project.Project{}); err != nil {
+		t.Fatalf("활성 없음 적용: %v", err)
+	}
+	if n := len(endpoints.Targets()); n != 0 {
+		t.Errorf("활성 없음인데 공격면이 남음: %d개", n)
 	}
 }

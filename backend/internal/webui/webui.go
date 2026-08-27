@@ -1257,6 +1257,9 @@ func activateHandler(w http.ResponseWriter, r *http.Request) {
 // 끝났다 — 에러도 없이).
 func ApplyActiveProjectSettings(p project.Project) (llm.Policy, error) {
 	scope.Configure(p.Scope, p.AllowPaths, p.ExcludePaths)
+	// 공격면 트리도 프로젝트별이다(이슈 #65) — 활성 프로젝트의 endpoints.<pid>.json 으로 스왑한다.
+	// p.ID=="" (활성 없음, 마지막 프로젝트 삭제 후)면 인메모리 빈 트리로 비운다.
+	endpoints.SwitchProject(p.ID)
 	schemes := make([]checklist.Scheme, 0, len(p.Schemes))
 	for _, s := range p.Schemes {
 		schemes = append(schemes, checklist.Scheme(s))

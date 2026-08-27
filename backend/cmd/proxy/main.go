@@ -156,15 +156,16 @@ func main() {
 		log.Printf("활성 프로젝트: %s (%s, 판단 프롬프트 %s, 스코프 %v)", ap.ID, ap.Name, pol, ap.Scope)
 	}
 
-	// 도출 항목·공격면·스캔 이력 복원 (재시작 시 유지).
+	// 도출 항목·스캔 이력 복원 (재시작 시 유지).
+	// 공격면(endpoints)은 프로젝트별이라(이슈 #65) 위 ApplyActiveProjectSettings 의
+	// endpoints.SwitchProject 가 활성 프로젝트의 endpoints.<pid>.json 을 이미 로드했다.
 	finding.Load()
-	endpoints.Load()  // 공격면 트리 (endpoints.json) — 스캔 대상 유지
 	scanengine.Load() // 완료/중단 스캔 이력 (scanruns.json)
 	if n := len(finding.Snapshot()); n > 0 {
 		log.Printf("도출 항목 복원: %d건 (findings.json)", n)
 	}
 	if n := len(endpoints.Targets()); n > 0 {
-		log.Printf("공격면 복원: %d개 엔드포인트 (endpoints.json)", n)
+		log.Printf("공격면 복원: %d개 엔드포인트 (활성 프로젝트 endpoints.<pid>.json)", n)
 	}
 	if n := len(scanengine.Runs()); n > 0 {
 		log.Printf("스캔 이력 복원: %d건 (scanruns.json)", n)
