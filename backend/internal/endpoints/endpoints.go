@@ -88,10 +88,60 @@ type Tree struct {
 func NewTree() *Tree { return &Tree{roots: map[string]*node{}} }
 
 // def — 기본(전역) 트리. 경로 분류 규칙(정규식)은 normalize.go 에 모여 있다(이슈 #24).
-var def = &Tree{roots: map[string]*node{}, name: "endpoints.json"}
+//
+// 이슈 #65: 공격면은 findings·scanruns 처럼 프로젝트별이다. def 의 파일은 고정
+// "endpoints.json" 이 아니라 활성 프로젝트에 따라 "endpoints.<pid>.json" 으로 스왑된다
+// (SwitchProject). 초기 name 이 "" 인 것은 "아직 어떤 프로젝트도 활성화되지 않음"(인메모리,
+// 파일 안 씀)을 뜻한다 — 부팅 시 활성 프로젝트를 적용할 때 SwitchProject 가 파일을 바인딩한다.
+var def = &Tree{roots: map[string]*node{}, name: ""}
+
+// legacyEndpointsFile — 프로젝트별 이행(#65) 전의 전역 파일. 최초 프로젝트 활성화 때 그
+// 프로젝트가 1회 흡수(rename)한다. 이후로는 프로젝트별 파일만 쓴다.
+const legacyEndpointsFile = "endpoints.json"
+
+// projectFile — 프로젝트별 엔드포인트 파일명. pid=="" 면 ""(인메모리, 파일 안 씀).
+func projectFile(pid string) string {
+	if pid == "" {
+		return ""
+	}
+	return "endpoints." + pid + ".json"
+}
 
 // Default — 기본(전역) 트리.
 func Default() *Tree { return def }
+
+// SwitchProject — 활성 프로젝트가 바뀔 때 전역 트리를 그 프로젝트의 파일로 갈아끼운다 (이슈 #65).
+// 현재 트리를 파일에 flush 한 뒤 비우고 새 프로젝트 파일을 로드한다. 프로젝트 파일이 아직 없고
+// 이행 전 전역 endpoints.json 이 남아 있으면 그것을 이 프로젝트로 1회 흡수(rename)한다.
+// pid=="" (활성 없음)이면 인메모리 빈 트리(파일 안 씀).
+func (t *Tree) SwitchProject(pid string) {
+	t.dump() // 현재 프로젝트 파일에 flush (name=="" 면 no-op)
+	newName := projectFile(pid)
+	if newName != "" {
+		if _, err := os.Stat(newName); os.IsNotExist(err) {
+			if _, err := os.Stat(legacyEndpointsFile); err == nil {
+				if os.Rename(legacyEndpointsFile, newName) == nil {
+					log.Printf("[EP  ] %s → %s (공격면 프로젝트별 이행, 이슈 #65)", legacyEndpointsFile, newName)
+				}
+			}
+		}
+	}
+	t.mu.Lock()
+	t.roots = map[string]*node{}
+	t.name = newName
+	t.mu.Unlock()
+	t.Load() // 새 파일에서 로드 (name=="" 면 no-op)
+}
+
+// SwitchProject — 기본(전역) 트리를 활성 프로젝트 파일로 스왑 (이슈 #65).
+func SwitchProject(pid string) { def.SwitchProject(pid) }
+
+// RemoveProjectFile — 프로젝트 영구삭제 시 그 프로젝트의 엔드포인트 파일을 지운다 (이슈 #65 cascade).
+func RemoveProjectFile(pid string) {
+	if f := projectFile(pid); f != "" {
+		_ = os.Remove(f)
+	}
+}
 
 // Reset — 전역 트리를 빈 상태로 초기화. 벤치 하네스의 프로파일별 격리 측정용(#22).
 // (운영 경로에서는 사용하지 않는다 — 테스트/툴링 전용.)

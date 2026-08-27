@@ -1,9 +1,11 @@
 package retention
 
 import (
+	"os"
 	"testing"
 	"time"
 
+	"proxypoc/internal/endpoints"
 	"proxypoc/internal/finding"
 	"proxypoc/internal/project"
 )
@@ -41,5 +43,30 @@ func TestSweepExpiresOnlyOld(t *testing.T) {
 	}
 	if _, ok := project.Get(active.ID); !ok {
 		t.Fatal("활성(삭제 안 한) 프로젝트가 사라짐")
+	}
+}
+
+// 이슈 #65 — 프로젝트 영구삭제 시 그 프로젝트의 공격면 파일(endpoints.<pid>.json)도 cascade 삭제.
+func TestPurgeCascadeRemovesEndpointsFile(t *testing.T) {
+	project.Reset()
+	finding.Clear()
+
+	p := project.Create(project.Project{Name: "target"}) // 첫 생성 → 활성
+	// 그 프로젝트로 스왑해 공격면 파일을 만든다
+	endpoints.SwitchProject(p.ID)
+	endpoints.Record("http", "t.com", "GET", "/x", nil, false, "")
+	f := "endpoints." + p.ID + ".json"
+	if _, err := os.Stat(f); err != nil {
+		t.Fatalf("공격면 파일 미생성: %v", err)
+	}
+	t.Cleanup(func() { endpoints.SwitchProject(""); endpoints.Reset(); _ = os.Remove(f) })
+
+	// 소프트 삭제(활성 자동 전환으로 activeID 는 비게 됨) 후 영구삭제
+	project.Delete(p.ID)
+	endpoints.SwitchProject("") // 삭제 대상에서 detach — dump 가 파일을 되살리지 않게
+	PurgeCascade(p.ID)
+
+	if _, err := os.Stat(f); !os.IsNotExist(err) {
+		t.Errorf("영구삭제 후에도 공격면 파일이 남음: %s", f)
 	}
 }

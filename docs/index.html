@@ -469,7 +469,9 @@ go build -o proxy-poc.exe ./cmd/proxy    # 서버: 프록시(:8080) + MCP(:8765)
 <ul><li><strong>미검증 필터</strong>(이슈 #26·#28) — 라이브니스 프로브(soft-404)를 통과하지 못한 엔드포인트는</li></ul>
 <p>    <strong>기본 숨김</strong>이다. 미검증이 있을 때만 <code>미검증 (N)</code> 토글이 나오고, 켜면 <code>unverified</code> 배지와 함께     노출된다. API 는 <code>GET /api/endpoints?include_unverified=true</code> 로 전체를 받는다(무파라미터는     verified 만 — 하위호환).</p>
 <ul><li><strong>전체 초기화·개별 삭제</strong> — 카드 헤더의 "전체 초기화"(리더 전용, confirm 필수)는</li></ul>
-<p>    트리를 비우고 <code>endpoints.json</code>에도 즉시 반영한다. 각 엔드포인트 상세 패널의 "삭제"는 그 노드와     하위 서브트리만 지운다(confirm 필수). 둘 다 직후 폴링을 기다리지 않고 즉시 재조회한다.</p>
+<p>    <strong>현재 활성 프로젝트의</strong> 공격면 트리를 비우고 파일(<code>endpoints.&lt;pid&gt;.json</code>)에도 즉시 반영한다.     각 엔드포인트 상세 패널의 "삭제"는 그 노드와 하위 서브트리만 지운다(confirm 필수). 둘 다 직후     폴링을 기다리지 않고 즉시 재조회한다.</p>
+<ul><li><strong>공격면은 프로젝트별이다</strong>(이슈 #65) — findings·scanruns 처럼 활성 프로젝트에 귀속된다.</li></ul>
+<p>    프로젝트를 전환하면 그 프로젝트의 공격면으로 트리가 바뀌고, 프로젝트를 영구삭제하면 그     공격면(<code>endpoints.&lt;pid&gt;.json</code>)도 함께 정리된다. 활성 프로젝트가 없으면(마지막 프로젝트 삭제 후)     트리는 인메모리 빈 상태다. 그래서 "전체 초기화"는 필수가 아니라 <strong>현재 프로젝트 공격면만 비우는     편의 기능</strong>이다.</p>
 <p><strong>우측 (1/3)</strong></p>
 <ul><li><strong>Judgment Pipeline</strong> — 스코프 → Rule → LLM → Forward 단계 시각화 + 활성 룰 목록(block/allow)</li><li><strong>설정 카드</strong>(<code>SettingsCard</code>) — 스코프(whitelist)·Auth &amp; Identities(세션 주입 On/Off,</li></ul>
 <p>  주입 쿠키/헤더, 등록된 진단 신원)·<strong>로그인 시퀀스</strong>(FR-2.5, 세션 만료 시 자동 재로그인 — 로그인   URL·만료 표식·폼 필드·CSRF 토큰, 값 마스킹·저장은 리더 전용)를 카드 하나로 압축했다. 이전엔 세   카드로 나뉘어 화면이 넓은 모니터가 아니면 정보 밀도가 낮았던 문제(참고 정보는 한눈에, 로그인   시퀀스만 아코디언으로 펼침)를 해소한다.</p>
