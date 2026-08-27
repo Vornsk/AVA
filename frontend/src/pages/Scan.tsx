@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Radar, Cpu, ShieldCheck, FlaskConical, Wrench, Inbox, Play, Pause, PlayCircle, Square, SlidersHorizontal, Sparkles, Terminal } from 'lucide-react'
-import { usePoll, apiPost, useScanLog, type ScanRun, type DetectorInfo, type Stats, type Target } from '../api'
+import { Radar, Cpu, ShieldCheck, FlaskConical, Wrench, Inbox, Play, Pause, PlayCircle, Square, SlidersHorizontal, Sparkles, Terminal, ShieldAlert } from 'lucide-react'
+import { usePoll, apiPost, useScanLog, type ScanRun, type DetectorInfo, type Stats, type Target, type LLMHealth, type Me } from '../api'
 import { Card, Badge, Dot, Empty } from '../components/ui'
 import { ScanRecommend } from '../components/ScanRecommend'
 import { useT } from '../i18n'
@@ -17,8 +17,63 @@ const scanColor = (s: string) => SCAN_STATUS[s] ?? 'var(--muted)'
 // "전체선택" 버튼으로는 여전히 켤 수 있다.
 const DEFAULT_EXCLUDED = new Set(['sqli-time'])
 
+// LLMPanel — LLM 검토 체크박스 옆에 판단 스테이지 상태(#56)를 노출한다.
+// 프로바이더·판단 불능 배지(읽기는 stats.llm_health)와 fail-open/closed 토글(리더만, POST
+// /api/judge-on-error)을 한 줄에 모은다. Overview 는 배지만 보여주지만, 스캔 화면에서 LLM
+// 검토를 켜는 사람은 "지금 판단이 살아있는가 + 죽으면 어떻게 되는가"를 같은 자리에서 봐야 한다.
+function LLMPanel({ health, provider, canPolicy, onChanged }: {
+  health?: LLMHealth; provider?: string; canPolicy: boolean; onChanged: () => void
+}) {
+  const t = useT()
+  const [busy, setBusy] = useState(false)
+  const policy = health?.policy ?? 'allow'
+
+  async function setPolicy(p: string) {
+    if (busy || p === policy) return
+    setBusy(true)
+    try { await apiPost('/api/judge-on-error', { policy: p }); onChanged() }
+    catch (e) { alert(t('scan.llm.policyFail') + ': ' + e) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[11px]">
+      <span className="inline-flex items-center gap-1 text-[var(--muted)]">
+        <Cpu size={12} /> LLM · {provider ?? '—'}
+      </span>
+      {health?.degraded && (
+        <span className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-semibold"
+              style={{ background: 'color-mix(in srgb, var(--red) 18%, transparent)', color: 'var(--red)' }}
+              title={health.reason}>
+          <ShieldAlert size={11} /> {t('scan.llm.degraded', { count: String(health.count ?? 0) })}
+        </span>
+      )}
+      {/* fail-open/closed — 판단 불능 시 통과(allow)/차단(block). 리더만 변경, 비리더는 현재값만 표시 */}
+      <span className="inline-flex items-center gap-1 text-[var(--muted)]" title={t('scan.llm.policyTitle')}>
+        {t('scan.llm.onError')}
+        {canPolicy ? (
+          <span className="inline-flex overflow-hidden rounded-md border border-[var(--border)]">
+            {(['allow', 'block'] as const).map((p) => (
+              <button key={p} type="button" disabled={busy} onClick={() => setPolicy(p)}
+                      className="px-1.5 py-0.5 font-semibold disabled:opacity-50"
+                      style={{ background: policy === p ? 'var(--panel-2)' : 'transparent',
+                               color: policy === p ? (p === 'block' ? 'var(--red)' : 'var(--green)') : 'var(--muted)' }}>
+                {p === 'block' ? t('scan.llm.policy.block') : t('scan.llm.policy.allow')}
+              </button>
+            ))}
+          </span>
+        ) : (
+          <Badge text={policy === 'block' ? t('scan.llm.policy.block') : t('scan.llm.policy.allow')}
+                 color={policy === 'block' ? 'var(--red)' : 'var(--green)'} />
+        )}
+      </span>
+    </div>
+  )
+}
+
 // ScanControl — 탐지기 선택 + 스캔 시작 (AppScan Test 대응, 진단 정책).
-function ScanControl({ targetCount, dets }: { targetCount: number; dets: DetectorInfo[] }) {
+function ScanControl({ targetCount, dets, health, provider, canPolicy, onChanged }: {
+  targetCount: number; dets: DetectorInfo[]; health?: LLMHealth; provider?: string; canPolicy: boolean; onChanged: () => void
+}) {
   const t = useT()
   const [mode, setMode] = useState<'manual' | 'ai'>('manual')
   const [llm, setLlm] = useState(false)
@@ -114,6 +169,11 @@ function ScanControl({ targetCount, dets }: { targetCount: number; dets: Detecto
         {mode === 'manual' && nSel === 0 && targetCount > 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.start.noDetectors')}</span>}
         {mode === 'ai' && !aiPlan && targetCount > 0 && <span className="text-[11px]" style={{ color: 'var(--amber)' }}>{t('scan.ai.noPlan')}</span>}
       </div>
+
+      {/* LLM 판단 스테이지 상태·정책 (이슈 #56·#62) — LLM 검토를 켤 때 판단 가용성을 같은 자리에서 본다 */}
+      <div className="mt-2.5 border-t border-[var(--border)] pt-2.5">
+        <LLMPanel health={health} provider={provider} canPolicy={canPolicy} onChanged={onChanged} />
+      </div>
     </Card>
   )
 }
@@ -184,9 +244,11 @@ export function Scan() {
   const tr = useT() // 외부도구 map 의 t(tool) 파라미터와 섀도잉 회피
   const { data: runs } = usePoll<ScanRun[]>('/api/scanruns', 2000)
   const { data: dets } = usePoll<DetectorInfo[]>('/api/detectors', 8000)
-  const { data: stats } = usePoll<Stats>('/api/stats', 5000)
+  const { data: stats, refetch: refetchStats } = usePoll<Stats>('/api/stats', 5000)
   const { data: pl } = usePoll<Payloads>('/api/payloads', 10000)
   const { data: targets } = usePoll<Target[]>('/api/endpoints', 5000)
+  const { data: me } = usePoll<Me>('/api/me', 30000)
+  const canPolicy = !!me?.can?.includes('llm:policy')
 
   const tools = (dets ?? []).filter((d) => d.tool)
   // 실행 중인 스캔이 있으면 그걸, 없으면 가장 최근 스캔(완료됐어도)의 로그를 계속 볼 수 있게.
@@ -198,7 +260,8 @@ export function Scan() {
 
   return (
     <div className="space-y-5">
-      <ScanControl targetCount={targets?.length ?? 0} dets={dets ?? []} />
+      <ScanControl targetCount={targets?.length ?? 0} dets={dets ?? []}
+                   health={stats?.llm_health} provider={stats?.llm_provider} canPolicy={canPolicy} onChanged={refetchStats} />
       <ScanLogPanel run={logRun} />
       {/* Scan Runs (FR-3.8) */}
       <Card title={`${tr('scan.runs.title')}${runs ? ` (${runs.length})` : ''}`} icon={Radar}>

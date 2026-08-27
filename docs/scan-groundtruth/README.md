@@ -276,9 +276,19 @@ cd backend && SCANBENCH_LLM=ollama SCANBENCH_LLM_MODEL=qwen2.5:7b \
 
 #### 아직 측정하지 않은 것
 
-- **Claude(anthropic) 프로바이더 미측정.** API 키가 설정돼 있지 않다(`local.config.yaml` 의
-  `api_key` 가 빈 값). 키가 생기면 `SCANBENCH_LLM=anthropic SCANBENCH_LLM_KEY=… ` 로 같은 명령을
-  돌려 이 표에 행을 추가할 것. 이슈 #54 의 완료 기준 중 이 항목만 미충족이다.
+- **Claude(anthropic) 프로바이더 미측정 — 이슈 #62 에서도 키 미확보로 재확인(2026-08-27).**
+  API 키가 설정돼 있지 않다(`local.config.yaml` 의 `provider: ollama`, `api_key` 가 빈 값).
+  이슈 #62 착수 시 키 확보 여부를 확인했고, **키가 없어 실측하지 않기로 결정**했다(비용·키 노출
+  회피). 키가 생기면 아래 명령으로 이 표에 행을 추가할 것:
+
+  ```bash
+  cd backend && go run ./cmd/vulnapp &
+  cd backend && SCANBENCH_LLM=anthropic SCANBENCH_LLM_KEY=<키> SCANBENCH_LLM_MODEL=claude-... \
+    SCANBENCH_TIMEOUT=50m go test ./internal/scanengine/bench -run ScanBench -v -count=1 -timeout 120m
+  ```
+
+  이슈 #54·#62 의 완료 기준 중 이 항목은 **키 미확보 사유 기록으로 갈음**한다(#62 완료기준이
+  "벤치 수치 기록 또는 키 미확보 사유 기록"으로 대안을 명시).
 - **제품에서 LLM 판정은 주석일 뿐 상태를 바꾸지 않는다**(`scanengine.execute`, HITL).
   위 "정탐 삭제" 수치는 **판정을 그대로 믿고 필터링했다면** 의 가정값이며, 실제로 발견이
   사라지지는 않는다. 그래도 배지·필터의 신뢰도를 그대로 나타내므로 계기판으로서 유효하다.

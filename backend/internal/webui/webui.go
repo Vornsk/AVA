@@ -134,6 +134,7 @@ func Serve(addr string) error {
 	mux.HandleFunc("/api/payloads", jsonHandler(func() any { return payload.Info() }))
 	mux.HandleFunc("/api/llm-decisions", jsonHandler(func() any { return llm.Decisions() }))
 	mux.HandleFunc("/api/judge-prompt", judgePromptHandler)                                                                                  // GET 현재 정책·프리셋 / POST 변경(llm:policy, 리더) — 이슈 #53
+	mux.HandleFunc("/api/judge-on-error", judgeOnErrorHandler)                                                                               // GET 현재 상태 / POST {policy} 변경(llm:policy, 리더) — 이슈 #56·#62
 	mux.HandleFunc("/api/rule-candidates", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, advisor.CandidatesLang(langOf(r))) }) // X-Lang 반영(#18)
 	mux.HandleFunc("/api/rules/adopt", ruleAdoptHandler)                                                                                     // POST: 추천 후보를 활성 룰로 채택(rule:promote)
 	mux.HandleFunc("/api/checkitems", jsonHandler(func() any { return checklist.Current().CheckItems }))
@@ -1305,6 +1306,44 @@ func judgePromptView() map[string]any {
 		view["project_custom"] = ap.JudgePromptCustom
 	}
 	return view
+}
+
+// judgeOnErrorHandler — 판단 불능 시 정책(fail-open/closed) 조회/변경 (이슈 #56, GUI 배선 #62).
+//
+//	GET  현재 상태 스냅샷(policy·degraded·count·reason·provider). 읽기는 /api/stats.llm_health
+//	     로도 나오지만, 토글 UI 가 GET/POST 한 쌍으로 완결되도록 전용 조회도 둔다.
+//	POST {policy: "allow"|"block"} 로 변경 (llm:policy, 리더 전용 — judge-prompt 와 같은 권한).
+//	     활성 프로젝트가 있으면 JudgeOnError 에 영속화해 재기동·재활성화에도 유지된다.
+//	     allow|block 이 아닌 값은 조용히 폴백하지 않고 400 으로 거절한다(judge-prompt 와 같은 규율).
+func judgeOnErrorHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodPost {
+		var in struct {
+			Policy string `json:"policy"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			http.Error(w, "bad body", http.StatusBadRequest)
+			return
+		}
+		u, ok := authorize(w, r, "llm:policy", "judge-on-error")
+		if !ok {
+			return
+		}
+		if !llm.SetFailurePolicy(in.Policy) {
+			audit.Record(u.Name, string(u.Role), "llm:judge_on_error", "judge-on-error", "denied", "policy="+in.Policy)
+			http.Error(w, "policy 는 allow 또는 block 이어야 한다", http.StatusBadRequest)
+			return
+		}
+		target := "process"
+		if ap, ok := project.Active(); ok {
+			project.Update(ap.ID, func(p *project.Project) { p.JudgeOnError = in.Policy })
+			target = ap.ID
+		}
+		audit.Record(u.Name, string(u.Role), "llm:judge_on_error", target, "ok", "judge_on_error="+in.Policy)
+		log.Printf("[WEB ] %s(%s) judge_on_error %s → %s", u.Name, u.Role, target, in.Policy)
+		writeJSON(w, llm.HealthSnapshot())
+		return
+	}
+	writeJSON(w, llm.HealthSnapshot())
 }
 
 // applyCredentials — 프로젝트 인증정보 복호화 후 auth 엔진 주입 (§5.1 FR-1.4 / FR-2.5 / FR-3.6).
