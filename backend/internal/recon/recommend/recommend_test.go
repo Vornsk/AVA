@@ -197,7 +197,9 @@ func TestRecommendGlobalFallbackMarksEachItemFallback(t *testing.T) {
 	}
 }
 
-// LLM이 reason을 같이 주면 항목에 그대로 실려야 한다.
+// LLM이 reason을 같이 주면 파라미터 엔드포인트에는 그대로 실려야 한다.
+// 파라미터 없는 엔드포인트는 LLM 배치에서 제외되므로(낭비 제거) LLM reason 대신
+// 규칙 기반 reason 을 받는다 — mock 이 /login 에 reason 을 줘도 무시된다.
 func TestRecommendCarriesPerItemReason(t *testing.T) {
 	stub := &stubProvider{reply: `{"items":[
 		{"key":"a.example|/login","detectors":["sec-headers"],"reason":"로그인 폼이라 인증 관련만"},
@@ -211,11 +213,14 @@ func TestRecommendCarriesPerItemReason(t *testing.T) {
 	for _, it := range res.Items {
 		byKey[it.Key] = it
 	}
-	if byKey["a.example|/login"].Reason != "로그인 폼이라 인증 관련만" {
-		t.Errorf("login reason=%q", byKey["a.example|/login"].Reason)
-	}
+	// /search 는 파라미터가 있어 LLM 대상 → LLM reason 이 그대로 실린다.
 	if byKey["a.example|/search"].Reason != "q 파라미터가 쿼리에 쓰일 가능성" {
-		t.Errorf("search reason=%q", byKey["a.example|/search"].Reason)
+		t.Errorf("search reason=%q (LLM reason 이 실려야 함)", byKey["a.example|/search"].Reason)
+	}
+	// /login 은 파라미터가 없어 LLM 생략 → 규칙 기반 reason(LLM reason 무시).
+	login := byKey["a.example|/login"]
+	if !login.Fallback || login.Reason == "로그인 폼이라 인증 관련만" {
+		t.Errorf("login(무파라미터)은 규칙 기반이어야 함: Fallback=%v reason=%q", login.Fallback, login.Reason)
 	}
 }
 

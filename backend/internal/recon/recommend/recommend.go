@@ -69,8 +69,27 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 	if len(targets) == 0 {
 		return Result{Items: nil, Source: "fallback"}
 	}
-	if !llm.Available() {
-		return fallbackAll(targets, allowSet, "프로바이더 없음 — 규칙 기반 기본값 사용")
+
+	// 파라미터 없는 엔드포인트는 LLM 배치에서 제외한다 (중복·낭비 제거).
+	// 이유 두 가지 —
+	//   1) 주입할 파라미터가 없으면 injection 계열(sqli·xss·open-redirect 등)은 무의미하다.
+	//      소형 모델이 이런 곳에 그 탐지기들을 과추천해 "찾을 게 없는 곳을 스캔"하는 헛일을
+	//      만들던 것을 원천 차단한다(규칙 rule2 는 애초에 params>0 에만 injection 을 붙인다).
+	//   2) LLM 프롬프트에서 대상 수를 줄여 응답 시간을 단축한다(31개 배치가 CPU 7b 에서 6분+).
+	// mined 파라미터가 있으면 len(Params)>0 이라 정상적으로 LLM 대상에 포함된다.
+	var llmTargets []endpoints.Target
+	for _, t := range targets {
+		if len(t.Params) > 0 {
+			llmTargets = append(llmTargets, t)
+		}
+	}
+
+	if len(llmTargets) == 0 || !llm.Available() {
+		reason := "파라미터 있는 엔드포인트 없음 — 규칙 기반"
+		if !llm.Available() {
+			reason = "프로바이더 없음 — 규칙 기반 기본값 사용"
+		}
+		return fallbackAll(targets, allowSet, reason)
 	}
 
 	rctx := ctx
@@ -79,7 +98,7 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 		rctx, cancel = context.WithTimeout(ctx, recommendTimeout)
 		defer cancel()
 	}
-	content, err := llm.Complete(rctx, "recommend", recommendSys(allowIDs), recommendUser(targets))
+	content, err := llm.Complete(rctx, "recommend", recommendSys(allowIDs), recommendUser(llmTargets))
 	if err != nil {
 		return fallbackAll(targets, allowSet, "프로바이더 오류("+err.Error()+") — 규칙 기반 기본값 사용")
 	}
@@ -106,31 +125,34 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 
 	seenHost := map[string]bool{} // openssl-tls/sslscan 은 호스트당 한 엔드포인트에만 싣는다
 	items := make([]Item, 0, len(targets))
+	llmN, ruleN, fbN := 0, 0, 0 // LLM 병합 / 무파라미터 규칙 / LLM 누락 폴백
 	for _, t := range targets {
 		key := t.Key()
 		includeTLS := !seenHost[t.Host]
 		seenHost[t.Host] = true
 		mech := mechanicalRecommend(t, allowSet, includeTLS)
 
+		if len(t.Params) == 0 { // LLM 미대상 — 규칙 baseline 만(injection 없음)
+			items = append(items, Item{Key: key, Host: t.Host, Path: t.Path, Methods: t.Methods,
+				Recommended: mech, Fallback: true, Reason: "파라미터 없음 — 규칙 기반(LLM 생략)"})
+			ruleN++
+			continue
+		}
 		e, ok := byKey[key]
-		if !ok { // LLM이 이 대상을 누락 — 이 항목만 개별 폴백(전체 Degraded는 아님)
+		if !ok { // LLM이 이 파라미터 엔드포인트를 누락 — 이 항목만 개별 폴백(전체 Degraded는 아님)
 			items = append(items, Item{Key: key, Host: t.Host, Path: t.Path, Methods: t.Methods,
 				Recommended: mech, Fallback: true, Reason: "LLM 응답에 이 엔드포인트 누락 — 규칙 기반 기본값 사용"})
+			fbN++
 			continue
 		}
 		merged := dedupe(append(mech, filterAllowed(e.detectors, allowSet)...)) // 환각/파괴성 id 는 조용히 버림
 		items = append(items, Item{Key: key, Host: t.Host, Path: t.Path, Methods: t.Methods,
 			Recommended: merged, Reason: e.reason})
+		llmN++
 	}
-	// 집계 요약 — 소형 모델이 대상 일부를 누락(폴백)하는 빈도를 실시간으로 드러낸다.
-	fb := 0
-	for _, it := range items {
-		if it.Fallback {
-			fb++
-		}
-	}
-	log.Printf("[LLM ] recommend 완료 — 대상 %d · source=llm · LLM %d / 규칙폴백 %d",
-		len(items), len(items)-fb, fb)
+	// 집계 요약 — LLM 실호출은 파라미터 엔드포인트에만, 무파라미터는 규칙으로 생략.
+	log.Printf("[LLM ] recommend 완료 — 대상 %d · source=llm · LLM %d / 규칙(무파라미터) %d / 규칙폴백 %d",
+		len(items), llmN, ruleN, fbN)
 	return Result{Items: items, Source: "llm", Provider: llm.ProviderName()}
 }
 
