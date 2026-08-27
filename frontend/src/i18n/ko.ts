@@ -406,8 +406,8 @@ export const ko = {
   'projects.exportTitle': '프로젝트 파일({ext})로 내보내기 — DRM 비간섭',
   'projects.switchTitle': '이 프로젝트로 전환 (공유 프록시 :8080·화면 기준)',
   'projects.activate': '활성화',
-  'projects.delDisabledTitle': '활성 프로젝트는 삭제 불가 — 먼저 다른 프로젝트로 전환',
   'projects.delTitle': '삭제 (휴지통으로 이동)',
+  'projects.noActiveWarn': '활성 프로젝트가 없습니다 — 진단 스코프가 비어 있어 크롤·스캔이 대상을 찾지 못합니다. 프로젝트를 새로 만들거나 휴지통에서 복구해 활성화하세요.',
   'projects.trashBadge': '휴지통',
   'projects.deletedAt': '삭제됨',
   'projects.purgeInPre': '영구삭제까지 ',
@@ -433,6 +433,8 @@ export const ko = {
   'projects.cm.delete.mid': '하며 ',
   'projects.cm.delete.b2': '언제든 복구',
   'projects.cm.delete.end': '할 수 있습니다. (findings·scanruns는 보존됩니다.)',
+  'projects.cm.delete.switchTo': '이 프로젝트는 현재 활성입니다 — 삭제하면 활성이 「{name}」(으)로 자동 전환됩니다.',
+  'projects.cm.delete.noActive': '이 프로젝트는 현재 활성이자 마지막 프로젝트입니다 — 삭제하면 활성 프로젝트가 없어지고 진단 스코프가 비워집니다.',
   // 전용 프록시(테넌트)
   'projects.tenant.dedicated': '전용 프록시',
   'projects.tenant.running': '실행 중 · 127.0.0.1:{port}',

@@ -1120,24 +1120,45 @@ func memberRemoveHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // projectDeleteHandler — POST: 프로젝트 소프트 삭제(휴지통 이동, 이슈 #14). 리더 전용·감사.
-// 활성 프로젝트는 삭제 불가 → 먼저 다른 프로젝트로 전환해야 한다(스코프 꼬임 방지).
+// projectDeleteHandler — 소프트 삭제(휴지통). 활성 프로젝트도 지울 수 있다(이슈: 막다른 골목 개선).
+// 활성 대상을 지우면 project.Delete 가 activeID 를 다른 살아있는 프로젝트로 자동 전환하므로,
+// 삭제 후 새 활성(없으면 빈 프로젝트)으로 전역 상태(스코프·스킴·인증·판단정책)를 재적용한다 —
+// 그러지 않으면 지운 프로젝트의 스코프가 프록시에 남는다(예전 "스코프 꼬임" 위험의 실체).
 func projectDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	pid := r.PathValue("id")
 	u, ok := authorize(w, r, "project:delete", pid)
 	if !ok {
 		return
 	}
+	wasActive := false
 	if ap, ok := project.Active(); ok && ap.ID == pid {
-		http.Error(w, "활성 프로젝트는 삭제할 수 없습니다 — 먼저 다른 프로젝트로 전환하세요", http.StatusConflict)
-		return
+		wasActive = true
 	}
 	if !project.Delete(pid) {
 		http.Error(w, "삭제 실패(없거나 이미 휴지통에 있음)", http.StatusConflict)
 		return
 	}
-	audit.Record(u.Name, string(u.Role), "project:delete", pid, "ok", "소프트 삭제(휴지통)")
-	log.Printf("[WEB ] %s(%s) project:delete %s (soft)", u.Name, u.Role, pid)
-	writeJSON(w, map[string]any{"deleted": pid})
+	newActive := ""
+	if wasActive {
+		if np, ok := project.Active(); ok { // Delete 가 다른 프로젝트로 자동 전환함
+			_, _ = ApplyActiveProjectSettings(np)
+			newActive = np.ID
+		} else { // 남은 프로젝트 없음 → 활성 없음. 스코프·스킴·인증·판단정책을 안전하게 비운다
+			_, _ = ApplyActiveProjectSettings(project.Project{})
+		}
+	}
+	detail := "소프트 삭제(휴지통)"
+	if wasActive {
+		if newActive != "" {
+			detail += " · 활성 자동 전환 → " + newActive
+		} else {
+			detail += " · 활성 프로젝트 없음(스코프 비움)"
+		}
+	}
+	audit.Record(u.Name, string(u.Role), "project:delete", pid, "ok", detail)
+	log.Printf("[WEB ] %s(%s) project:delete %s (soft)%s", u.Name, u.Role, pid,
+		map[bool]string{true: " active→" + newActive, false: ""}[wasActive])
+	writeJSON(w, map[string]any{"deleted": pid, "new_active": newActive})
 }
 
 // projectRestoreHandler — POST: 휴지통에서 복구(이슈 #14). 리더 전용·감사.

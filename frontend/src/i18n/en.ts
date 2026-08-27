@@ -407,8 +407,8 @@ export const en: Record<keyof typeof ko, string> = {
   'projects.exportTitle': 'Export as a project file ({ext}) — DRM non-intrusive',
   'projects.switchTitle': 'Switch to this project (shared proxy :8080 · screen basis)',
   'projects.activate': 'Activate',
-  'projects.delDisabledTitle': 'Cannot delete the active project — switch to another first',
   'projects.delTitle': 'Delete (move to Trash)',
+  'projects.noActiveWarn': 'No active project — the assessment scope is empty, so crawl and scan have no targets. Create a new project or restore one from Trash and activate it.',
   'projects.trashBadge': 'Trash',
   'projects.deletedAt': 'Deleted',
   'projects.purgeInPre': 'Purges in ',
@@ -434,6 +434,8 @@ export const en: Record<keyof typeof ko, string> = {
   'projects.cm.delete.mid': ' and you can ',
   'projects.cm.delete.b2': 'restore it anytime',
   'projects.cm.delete.end': '. (findings & scanruns are preserved.)',
+  'projects.cm.delete.switchTo': 'This is the active project — deleting it switches the active project to “{name}”.',
+  'projects.cm.delete.noActive': 'This is the active project and the last one — deleting it leaves no active project and empties the assessment scope.',
   // Dedicated proxy (tenant)
   'projects.tenant.dedicated': 'Dedicated proxy',
   'projects.tenant.running': 'Running · 127.0.0.1:{port}',

@@ -150,21 +150,42 @@ func Trash() []Project {
 }
 
 // Delete — 소프트 삭제(휴지통 이동, 이슈 #14). DeletedAt 설정.
-// 활성 프로젝트는 삭제 불가(먼저 전환) · 미존재 · 이미 휴지통이면 false.
+// Delete — 소프트 삭제(휴지통 이동). 미존재 · 이미 휴지통이면 false.
+//
+// 활성 프로젝트도 삭제할 수 있다. 삭제하면 activeID 를 다른 살아있는 프로젝트로 자동
+// 전환하고, 남은 프로젝트가 없으면 ""(활성 없음)으로 비운다. "활성은 못 지운다"는 예전
+// 규칙은 프로젝트가 1개일 때 그 하나를 영영 못 지우는 막다른 골목을 만들었다.
+// ★ 스코프·스킴 등 전역 상태 재적용은 호출자(webui)의 몫이다 — 이 패키지는 scope 를
+//    import 하지 않는다. 호출자는 삭제가 활성 대상이었으면 Delete 후 Active() 를 다시 읽어
+//    ApplyActiveProjectSettings 를 부른다.
 func Delete(id string) bool {
 	mu.Lock()
 	defer mu.Unlock()
 	for i := range store {
 		if store[i].ID == id {
-			if store[i].DeletedAt != "" || activeID == id {
+			if store[i].DeletedAt != "" {
 				return false
 			}
 			store[i].DeletedAt = time.Now().UTC().Format(time.RFC3339)
+			if activeID == id {
+				activeID = firstLiveExcept(id) // 다른 살아있는 프로젝트로 전환, 없으면 ""
+			}
 			persist()
 			return true
 		}
 	}
 	return false
+}
+
+// firstLiveExcept — id 가 아닌 첫 번째 살아있는(휴지통 아닌) 프로젝트 id. 없으면 "".
+// 호출자가 mu 를 쥔 상태에서만 부른다.
+func firstLiveExcept(id string) string {
+	for _, p := range store {
+		if p.ID != id && p.DeletedAt == "" {
+			return p.ID
+		}
+	}
+	return ""
 }
 
 // Restore — 휴지통에서 복구(이슈 #14). 미존재 · 휴지통 상태 아니면 false.

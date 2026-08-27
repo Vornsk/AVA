@@ -12,10 +12,8 @@ func TestSoftDeleteLifecycle(t *testing.T) {
 		t.Fatalf("활성 프로젝트가 %s 여야 함", a.ID)
 	}
 
-	// 활성 프로젝트는 삭제 불가
-	if Delete(a.ID) {
-		t.Fatal("활성 프로젝트 삭제가 허용됨(막아야 함)")
-	}
+	// (활성 프로젝트 삭제는 이제 허용된다 — 자동 전환은 TestDeleteActiveReassignsActive 에서 검증.
+	//  여기서는 a 를 활성으로 둔 채 비활성 b 의 라이프사이클만 본다.)
 
 	// 비활성 소프트 삭제
 	if !Delete(b.ID) {

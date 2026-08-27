@@ -51,6 +51,43 @@ func TestCreateActivateUpdate(t *testing.T) {
 	}
 }
 
+// 막다른 골목 개선 — 활성 프로젝트를 지우면 activeID 가 다른 살아있는 프로젝트로
+// 재배정되고, 남은 게 없으면 ""(활성 없음)이 된다.
+func TestDeleteActiveReassignsActive(t *testing.T) {
+	Reset()
+	defer func() { Reset(); _ = os.Remove(file) }()
+
+	a := Create(Project{Name: "a"}) // 활성
+	b := Create(Project{Name: "b"})
+	if act, _ := Active(); act.ID != a.ID {
+		t.Fatalf("초기 활성=%s, want %s", act.ID, a.ID)
+	}
+
+	// 활성(a) 삭제 → b 로 자동 전환
+	if !Delete(a.ID) {
+		t.Fatal("활성 프로젝트 삭제가 거부됨(허용해야 함)")
+	}
+	if act, ok := Active(); !ok || act.ID != b.ID {
+		t.Fatalf("삭제 후 활성=%v/%v, want %s", act, ok, b.ID)
+	}
+
+	// 마지막 남은 활성(b) 삭제 → 활성 없음
+	if !Delete(b.ID) {
+		t.Fatal("마지막 프로젝트 삭제가 거부됨(허용해야 함)")
+	}
+	if act, ok := Active(); ok {
+		t.Fatalf("마지막 삭제 후에도 활성 있음: %v (want 활성 없음)", act)
+	}
+	if n := len(List()); n != 0 { // List 는 살아있는 것만(Count 는 휴지통 포함)
+		t.Errorf("살아있는 프로젝트=%d, want 0", n)
+	}
+
+	// 이미 휴지통인 것 재삭제 → false
+	if Delete(a.ID) {
+		t.Error("이미 휴지통인 프로젝트 재삭제가 성공하면 안 됨")
+	}
+}
+
 func TestLoadRoundTrip(t *testing.T) {
 	Reset()
 	defer func() { Reset(); _ = os.Remove(file) }()

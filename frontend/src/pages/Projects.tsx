@@ -54,9 +54,23 @@ export function Projects() {
 
   const projects = data ?? []
   const trashed = trash ?? []
+  const noActive = !!data && !active?.id // 프로젝트는 로드됐는데 활성이 없음(모두 삭제/휴지통)
+
+  // 활성 프로젝트를 지울 때 자동 전환될 대상(백엔드 firstLiveExcept 와 같은 규칙 — List 순서상 첫 타 프로젝트).
+  function switchTargetName(target: Project): string | null {
+    const next = projects.find((p) => p.id !== target.id)
+    return next ? next.name : null
+  }
 
   return (
     <div className="space-y-5">
+      {noActive && (
+        <div className="flex items-start gap-2 rounded-lg border px-3 py-2.5 text-xs"
+             style={{ borderColor: 'var(--amber)', background: 'color-mix(in srgb, var(--amber) 10%, transparent)', color: 'var(--text)' }}>
+          <AlertTriangle size={15} style={{ color: 'var(--amber)', flexShrink: 0, marginTop: 1 }} />
+          <span>{t('projects.noActiveWarn')}</span>
+        </div>
+      )}
       <Card
         title={t('projects.title')}
         icon={FolderKanban}
@@ -143,9 +157,9 @@ export function Projects() {
                         </button>
                       )}
                       {canDelete && (
-                        <button onClick={() => setConfirm({ kind: 'delete', project: p })} disabled={isActive || busy === p.id}
-                                title={isActive ? t('projects.delDisabledTitle') : t('projects.delTitle')}
-                                className="inline-flex items-center rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-[var(--muted)] hover:text-[var(--red)] hover:border-[var(--red)] disabled:opacity-30 disabled:hover:text-[var(--muted)] disabled:hover:border-[var(--border)]">
+                        <button onClick={() => setConfirm({ kind: 'delete', project: p })} disabled={busy === p.id}
+                                title={t('projects.delTitle')}
+                                className="inline-flex items-center rounded-lg border border-[var(--border)] bg-[var(--panel)] px-2 py-1.5 text-[var(--muted)] hover:text-[var(--red)] hover:border-[var(--red)] disabled:opacity-30">
                           <Trash2 size={13} />
                         </button>
                       )}
@@ -216,6 +230,13 @@ export function Projects() {
           kind={confirm.kind}
           project={confirm.project}
           busy={busy === confirm.project.id}
+          activeSwitchNote={
+            confirm.kind === 'delete' && active?.id === confirm.project.id
+              ? (switchTargetName(confirm.project)
+                  ? t('projects.cm.delete.switchTo', { name: switchTargetName(confirm.project) as string })
+                  : t('projects.cm.delete.noActive'))
+              : undefined
+          }
           onCancel={() => setConfirm(null)}
           onConfirm={() => (confirm.kind === 'delete' ? softDelete(confirm.project.id) : purge(confirm.project.id))}
         />
@@ -235,9 +256,10 @@ function TabBtn({ on, onClick, children }: { on: boolean; onClick: () => void; c
   )
 }
 
-// ConfirmModal — 삭제/영구삭제 확인 안내창(이슈 #14).
-function ConfirmModal({ kind, project, busy, onCancel, onConfirm }:
-  { kind: 'delete' | 'purge'; project: Project; busy: boolean; onCancel: () => void; onConfirm: () => void }) {
+// ConfirmModal — 삭제/영구삭제 확인 안내창(이슈 #14). activeSwitchNote 는 활성 프로젝트를
+// 삭제할 때 "어디로 자동 전환되는가 / 활성이 없어지는가"를 안내한다(막다른 골목 개선).
+function ConfirmModal({ kind, project, busy, activeSwitchNote, onCancel, onConfirm }:
+  { kind: 'delete' | 'purge'; project: Project; busy: boolean; activeSwitchNote?: string; onCancel: () => void; onConfirm: () => void }) {
   const t = useT()
   const danger = kind === 'purge'
   return (
@@ -256,9 +278,14 @@ function ConfirmModal({ kind, project, busy, onCancel, onConfirm }:
             <b className="text-[var(--text)]">{t('projects.cm.purge.b2')}</b>{t('projects.cm.purge.end')}
           </p>
         ) : (
-          <p className="mb-4 text-xs leading-relaxed text-[var(--muted)]">
-            {t('projects.cm.delete.pre')}<b className="text-[var(--text)]">{t('projects.cm.delete.b1')}</b>{t('projects.cm.delete.mid')}<b className="text-[var(--text)]">{t('projects.cm.delete.b2')}</b>{t('projects.cm.delete.end')}
-          </p>
+          <div className="mb-4 text-xs leading-relaxed text-[var(--muted)]">
+            <p>{t('projects.cm.delete.pre')}<b className="text-[var(--text)]">{t('projects.cm.delete.b1')}</b>{t('projects.cm.delete.mid')}<b className="text-[var(--text)]">{t('projects.cm.delete.b2')}</b>{t('projects.cm.delete.end')}</p>
+            {activeSwitchNote && (
+              <p className="mt-1.5 inline-flex items-start gap-1" style={{ color: 'var(--amber)' }}>
+                <AlertTriangle size={12} style={{ flexShrink: 0, marginTop: 1 }} /> {activeSwitchNote}
+              </p>
+            )}
+          </div>
         )}
         <div className="flex justify-end gap-2">
           <button onClick={onCancel} className="rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs font-medium">{t('common.cancel')}</button>
