@@ -107,6 +107,62 @@ func TestCrawlSPA_EndToEnd(t *testing.T) {
 	}
 }
 
+// TestCrawlLinkAssetsExcluded — <a>/<link> href로 발견된 정적 에셋(css·아이콘 등)은 방문·등록되지
+// 않아야 한다. extractAPIEndpoints(JS 정규식 추출)에는 assetExt 필터가 있었지만, HTML 링크 추종
+// 큐잉에는 같은 필터가 빠져 있어 favicon·styles.css 같은 정적 파일이 그대로 공격면에 등록됐다
+// (juice-shop static 벤치 실측 — #61).
+func TestCrawlLinkAssetsExcluded(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/styles.css":
+			w.Header().Set("Content-Type", "text/css")
+			_, _ = w.Write([]byte(`body{}`))
+		case "/favicon.ico":
+			w.Header().Set("Content-Type", "image/x-icon")
+			_, _ = w.Write([]byte("ICO"))
+		case "/page":
+			_, _ = w.Write([]byte(`<html><body>page</body></html>`))
+		default:
+			_, _ = w.Write([]byte(`<html><head>
+				<link rel="stylesheet" href="/styles.css">
+				<link rel="icon" href="/favicon.ico">
+			</head><body><a href="/page">page</a></body></html>`))
+		}
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	u, _ := url.Parse(srv.URL)
+	scope.Configure([]string{u.Hostname()}, nil, nil)
+	endpoints.Reset()
+	t.Cleanup(func() { scope.Configure(nil, nil, nil); endpoints.Reset() })
+
+	res := Start(srv.URL, Options{MaxPages: 10, MaxDepth: 2})
+	for i := 0; i < 50; i++ { // 최대 ~5s 대기
+		if r, _ := Status(res.ID); r.Status != "진행" {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	var pagePresent bool
+	for _, tg := range endpoints.TargetsAll() {
+		if tg.Host != u.Host {
+			continue
+		}
+		if tg.Path == "/styles.css" || tg.Path == "/favicon.ico" {
+			t.Errorf("정적 에셋이 공격면에 등록됨: %s", tg.Path)
+		}
+		if tg.Path == "/page" {
+			pagePresent = true
+		}
+	}
+	if !pagePresent {
+		t.Errorf("실제 페이지 링크(/page)가 등록되지 않음\nTargets=%v", endpoints.TargetsAll())
+	}
+}
+
 // TestScriptSrcs — <script src> 절대 URL을 뽑는다.
 func TestScriptSrcs(t *testing.T) {
 	base, _ := url.Parse("https://app.test/")
