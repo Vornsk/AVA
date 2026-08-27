@@ -88,6 +88,44 @@ func TestDeleteActiveReassignsActive(t *testing.T) {
 	}
 }
 
+// 막다른 골목 개선(짝) — 활성이 없을 때 휴지통에서 복구하면 그것이 자동 활성화된다.
+// 반대로 활성이 이미 있으면 복구는 활성을 바꾸지 않는다.
+func TestRestoreAutoActivatesWhenNoActive(t *testing.T) {
+	Reset()
+	defer func() { Reset(); _ = os.Remove(file) }()
+
+	a := Create(Project{Name: "a"})
+	// 유일한 프로젝트 삭제 → 활성 없음
+	if !Delete(a.ID) {
+		t.Fatal("삭제 실패")
+	}
+	if _, ok := Active(); ok {
+		t.Fatal("삭제 후 활성이 있으면 안 됨")
+	}
+	// 복구 → 활성 없었으므로 자동 활성화
+	if !Restore(a.ID) {
+		t.Fatal("복구 실패")
+	}
+	if act, ok := Active(); !ok || act.ID != a.ID {
+		t.Fatalf("복구 후 자동 활성화 안 됨: %v/%v, want %s", act, ok, a.ID)
+	}
+
+	// 활성이 있는 상태에서 다른 것을 복구하면 활성은 그대로.
+	b := Create(Project{Name: "b"})
+	if !Delete(b.ID) { // b 는 비활성이라 삭제해도 활성(a) 유지
+		t.Fatal("b 삭제 실패")
+	}
+	if act, _ := Active(); act.ID != a.ID {
+		t.Fatalf("b 삭제 후 활성=%s, want %s", act.ID, a.ID)
+	}
+	if !Restore(b.ID) {
+		t.Fatal("b 복구 실패")
+	}
+	if act, _ := Active(); act.ID != a.ID {
+		t.Errorf("활성이 있는데 복구가 활성을 바꿈: %s, want %s(유지)", act.ID, a.ID)
+	}
+}
+
 func TestLoadRoundTrip(t *testing.T) {
 	Reset()
 	defer func() { Reset(); _ = os.Remove(file) }()

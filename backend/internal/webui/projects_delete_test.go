@@ -124,4 +124,17 @@ func TestProjectDeleteLastActiveClearsScope(t *testing.T) {
 	if hosts := scope.HostsSnapshot(); len(hosts) != 0 {
 		t.Errorf("활성 없음인데 스코프가 남음: %v", hosts)
 	}
+
+	// 복구 → 활성이 없었으므로 자동 활성화되고 스코프가 다시 적용된다.
+	w = httptest.NewRecorder()
+	projectRestoreHandler(w, leaderReq("POST", "/api/projects/"+a.ID+"/restore", a.ID))
+	if w.Code != http.StatusOK {
+		t.Fatalf("복구 code=%d, want 200: %s", w.Code, w.Body.String())
+	}
+	if ap, ok := project.Active(); !ok || ap.ID != a.ID {
+		t.Fatalf("복구 후 자동 활성화 안 됨: %v", ap)
+	}
+	if hosts := scope.HostsSnapshot(); len(hosts) != 1 || hosts[0] != "only.example.com" {
+		t.Errorf("복구 자동 활성화 후 스코프=%v, want [only.example.com]", hosts)
+	}
 }

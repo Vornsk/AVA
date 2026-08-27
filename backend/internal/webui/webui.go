@@ -1172,9 +1172,20 @@ func projectRestoreHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "복구 실패(없거나 휴지통에 있지 않음)", http.StatusConflict)
 		return
 	}
-	audit.Record(u.Name, string(u.Role), "project:restore", pid, "ok", "휴지통에서 복구")
-	log.Printf("[WEB ] %s(%s) project:restore %s", u.Name, u.Role, pid)
-	writeJSON(w, map[string]any{"restored": pid})
+	// 활성이 없던 상태였다면 Restore 가 복구한 것을 활성화한다 — 그 스코프·스킴·판단정책을 반영.
+	activated := false
+	if ap, ok := project.Active(); ok && ap.ID == pid {
+		_, _ = ApplyActiveProjectSettings(ap)
+		activated = true
+	}
+	detail := "휴지통에서 복구"
+	if activated {
+		detail += " · 활성 없어 자동 활성화"
+	}
+	audit.Record(u.Name, string(u.Role), "project:restore", pid, "ok", detail)
+	log.Printf("[WEB ] %s(%s) project:restore %s%s", u.Name, u.Role, pid,
+		map[bool]string{true: " (auto-activated)", false: ""}[activated])
+	writeJSON(w, map[string]any{"restored": pid, "activated": activated})
 }
 
 // projectPurgeHandler — POST: 영구삭제(이슈 #14). 리더 전용·감사.

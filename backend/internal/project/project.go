@@ -189,6 +189,11 @@ func firstLiveExcept(id string) string {
 }
 
 // Restore — 휴지통에서 복구(이슈 #14). 미존재 · 휴지통 상태 아니면 false.
+//
+// 복구 시 활성 프로젝트가 없으면(모두 삭제됐던 상태) 복구한 것을 자동 활성화한다 —
+// 활성 없음 상태에서 사용자가 복구했다면 그걸 쓰려는 의도이고, 별도로 활성화까지 눌러야
+// 하는 번거로움을 없앤다(막다른 골목 개선의 짝). 활성 상태 반영(스코프 등)은 호출자(webui)가
+// Restore 후 Active() 를 다시 읽어 ApplyActiveProjectSettings 로 처리한다.
 func Restore(id string) bool {
 	mu.Lock()
 	defer mu.Unlock()
@@ -198,6 +203,9 @@ func Restore(id string) bool {
 				return false
 			}
 			store[i].DeletedAt = ""
+			if activeID == "" {
+				activeID = id // 활성 없으면 복구한 것을 활성화
+			}
 			persist()
 			return true
 		}
