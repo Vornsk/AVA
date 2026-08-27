@@ -178,19 +178,24 @@ const maxSuggested = 40
 // 발견 자체는 기존 wordlist만으로 계속된다).
 func SuggestWords(ctx context.Context, host string, observed []string) []string {
 	if !llm.Available() || len(observed) == 0 {
+		log.Printf("[DISC] llm suggest 스킵: available=%v observed=%d", llm.Available(), len(observed))
 		return nil
 	}
 	content, err := llm.Complete(ctx, suggestSys(), suggestUser(host, observed))
 	if err != nil {
+		log.Printf("[DISC] llm suggest 호출 실패: %v", err)
 		return nil
 	}
 	var parsed struct {
 		Paths []string `json:"paths"`
 	}
 	if json.Unmarshal([]byte(extractJSONObj(content)), &parsed) != nil {
+		log.Printf("[DISC] llm suggest 파싱 실패: content=%.200q", content)
 		return nil
 	}
-	return sanitizeSuggestions(parsed.Paths)
+	out := sanitizeSuggestions(parsed.Paths)
+	log.Printf("[DISC] llm suggest 성공: raw=%d sanitized=%d", len(parsed.Paths), len(out))
+	return out
 }
 
 func suggestSys() string {

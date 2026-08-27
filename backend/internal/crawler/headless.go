@@ -41,8 +41,7 @@ func HeadlessAvailable() bool {
 // runHeadless — Chrome로 렌더링하며 BFS 크롤. 렌더된 DOM은 static 추출기(extract/extractAPIEndpoints)를
 // 재사용하고, 페이지가 실제로 호출한 네트워크 요청(XHR/fetch)도 in-scope면 공격면에 등록한다.
 func (j *job) runHeadless(seed string, opts Options) {
-	j.ingestOnce(seed, opts, &http.Client{Timeout: 15 * time.Second})   // 명세 선행 인제스트 (#25)
-	j.discoverOnce(seed, opts, &http.Client{Timeout: 15 * time.Second}) // 옵트인일 때만 (#27)
+	j.ingestOnce(seed, opts, &http.Client{Timeout: 15 * time.Second}) // 명세 선행 인제스트 (#25)
 	allocCtx, cancelAlloc := chromedp.NewExecAllocator(j.ctx,
 		append(chromedp.DefaultExecAllocatorOptions[:],
 			chromedp.Flag("headless", true),
@@ -164,6 +163,8 @@ func (j *job) runHeadless(seed string, opts Options) {
 		time.Sleep(120 * time.Millisecond)
 	}
 	client := &http.Client{Timeout: 15 * time.Second}
+	// 능동 발견은 크롤 뒤에 둔다 (#27) — 크롤이 관찰한 경로가 AI 후보 재료다. static run() 과 동일.
+	j.discoverOnce(seed, opts, client) // 옵트인일 때만 (#27)
 	j.verifyOnce(opts, client)    // 실재 검증 (#26)
 	j.paramMineOnce(opts, client) // hidden 파라미터 주입 — 옵트인일 때만 (#40)
 	j.classifyOnce()              // 의미 라벨링 (#41)

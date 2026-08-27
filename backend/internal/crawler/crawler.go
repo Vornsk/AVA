@@ -256,7 +256,6 @@ func (j *job) runIngest(seed string) {
 func (j *job) run(seed string, opts Options) {
 	client := &http.Client{Timeout: 15 * time.Second}
 	j.ingestOnce(seed, opts, client)
-	j.discoverOnce(seed, opts, client) // 옵트인일 때만 (#27)
 
 	// 인증 델타 크롤 (#38): 인증 설정(로그인 시퀀스 또는 정적 쿠키/헤더, #31)이 있을 때만.
 	// 비인증→인증 두 패스로 델타를 마킹한다. 인증 없으면 아래 일반 크롤로 fallback.
@@ -267,6 +266,9 @@ func (j *job) run(seed string, opts Options) {
 	} else if !j.crawlPass(seed, opts, client) {
 		return // 중단됨
 	}
+	// 능동 발견은 크롤 뒤에 둔다 (#27). 크롤이 관찰한 경로가 AI 맞춤 후보(SuggestWords)의 재료라,
+	// 크롤 전이면 첫 크롤 땐 트리가 비어 LLM 추천이 스킵된다(재크롤부터만 동작하던 버그).
+	j.discoverOnce(seed, opts, client) // 옵트인일 때만 (#27)
 	j.verifyOnce(opts, client)    // 실재하지 않는 추출물 강등 (#26)
 	j.paramMineOnce(opts, client) // hidden 파라미터 주입 — 옵트인일 때만 (#40)
 	j.classifyOnce()              // 의미 라벨링 — 룰(+프로바이더 있으면 LLM) (#41)
