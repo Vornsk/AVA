@@ -16,6 +16,7 @@ package classify
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"regexp"
 	"sort"
 	"strings"
@@ -125,6 +126,8 @@ func Run(ctx context.Context, tree *endpoints.Tree) Report {
 	}
 	tree.Persist() // 라벨을 인메모리로 다 붙인 뒤 한 번만 파일에 반영(엔드포인트마다 덤프 방지)
 	rep.Duration = time.Since(start).String()
+	log.Printf("[LLM ] classify 완료 — 대상 %d · 룰 %d / LLM %d / 캐시 %d · 라벨링 %d · %s",
+		rep.Endpoints, rep.RuleHits, rep.LLMHits, rep.Cached, rep.Labeled, rep.Duration)
 	return rep
 }
 
@@ -299,7 +302,7 @@ func classifyUser(in Input) string {
 
 // llmLabels — 프로바이더에 분류를 물어 known 라벨만 돌려준다. 오류·파싱실패면 nil(룰로 폴백).
 func llmLabels(ctx context.Context, in Input) []string {
-	content, err := llm.Complete(ctx, classifySys, classifyUser(in))
+	content, err := llm.Complete(ctx, "classify", classifySys, classifyUser(in))
 	if err != nil {
 		return nil
 	}

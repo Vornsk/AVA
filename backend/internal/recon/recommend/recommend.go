@@ -15,6 +15,7 @@ package recommend
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"strings"
 	"time"
 
@@ -78,7 +79,7 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 		rctx, cancel = context.WithTimeout(ctx, recommendTimeout)
 		defer cancel()
 	}
-	content, err := llm.Complete(rctx, recommendSys(allowIDs), recommendUser(targets))
+	content, err := llm.Complete(rctx, "recommend", recommendSys(allowIDs), recommendUser(targets))
 	if err != nil {
 		return fallbackAll(targets, allowSet, "프로바이더 오류("+err.Error()+") — 규칙 기반 기본값 사용")
 	}
@@ -121,6 +122,15 @@ func Recommend(ctx context.Context, targets []endpoints.Target, catalog []detect
 		items = append(items, Item{Key: key, Host: t.Host, Path: t.Path, Methods: t.Methods,
 			Recommended: merged, Reason: e.reason})
 	}
+	// 집계 요약 — 소형 모델이 대상 일부를 누락(폴백)하는 빈도를 실시간으로 드러낸다.
+	fb := 0
+	for _, it := range items {
+		if it.Fallback {
+			fb++
+		}
+	}
+	log.Printf("[LLM ] recommend 완료 — 대상 %d · source=llm · LLM %d / 규칙폴백 %d",
+		len(items), len(items)-fb, fb)
 	return Result{Items: items, Source: "llm", Provider: llm.ProviderName()}
 }
 
@@ -133,6 +143,7 @@ func fallbackAll(targets []endpoints.Target, allowSet map[string]bool, reason st
 		items = append(items, Item{Key: t.Key(), Host: t.Host, Path: t.Path, Methods: t.Methods,
 			Recommended: mechanicalRecommend(t, allowSet, includeTLS), Fallback: true, Reason: reason})
 	}
+	log.Printf("[LLM ] recommend 완료 — 대상 %d · source=fallback(전체) · %s", len(items), reason)
 	return Result{Items: items, Source: "fallback", Degraded: true, Reason: reason}
 }
 

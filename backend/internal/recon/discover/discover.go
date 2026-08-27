@@ -181,7 +181,7 @@ func SuggestWords(ctx context.Context, host string, observed []string) []string 
 		log.Printf("[DISC] llm suggest 스킵: available=%v observed=%d", llm.Available(), len(observed))
 		return nil
 	}
-	content, err := llm.Complete(ctx, suggestSys(), suggestUser(host, observed))
+	content, err := llm.Complete(ctx, "discover", suggestSys(), suggestUser(host, observed))
 	if err != nil {
 		log.Printf("[DISC] llm suggest 호출 실패: %v", err)
 		return nil

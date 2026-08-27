@@ -15,7 +15,26 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 )
+
+// logLLM — 모든 LLM 호출을 한 형식으로 남긴다(실시간 관찰용). tag 는 호출 목적
+// (judge/review/recommend/classify/discover), outcome 은 결과 한마디. 값·응답 본문은
+// 남기지 않는다(마스킹·토큰) — 프롬프트/응답 크기(bytes)와 소요시간만 기록한다.
+//
+//	[LLM ] judge     provider=ollama   소요=820ms   프롬프트=1.2KB 응답=340B  → allow  GET /
+func logLLM(tag, provider string, promptBytes, respBytes int, dur time.Duration, outcome string) {
+	log.Printf("[LLM ] %-9s provider=%-8s 소요=%-8s 프롬프트=%-7s 응답=%-7s → %s",
+		tag, provider, dur.Round(time.Millisecond), humanBytes(promptBytes), humanBytes(respBytes), outcome)
+}
+
+// humanBytes — 바이트를 사람이 읽기 좋은 크기로(로그 정렬용, 소수 1자리).
+func humanBytes(n int) string {
+	if n < 1024 {
+		return fmt.Sprintf("%dB", n)
+	}
+	return fmt.Sprintf("%.1fKB", float64(n)/1024)
+}
 
 // New — config 값으로 프로바이더 생성 (교체 지점 한 곳). 새 프로바이더는 여기만 추가.
 //
@@ -130,15 +149,24 @@ func Available() bool {
 }
 
 // Complete — 활성 프로바이더로 범용 완성 요청. 프로바이더가 없으면 ErrNoProvider.
-// Judge/Review 외의 용도(예: 정찰 의미 분류 #41)가 프로바이더를 직접 재사용하기 위한 진입점.
-func Complete(ctx context.Context, system, user string) (string, error) {
+// Judge/Review 외의 용도(정찰 의미 분류 #41·탐지기 추천·능동 발견 후보)가 프로바이더를
+// 직접 재사용하기 위한 진입점. tag 는 호출 목적(recommend/classify/discover)으로 로그에 남는다.
+func Complete(ctx context.Context, tag, system, user string) (string, error) {
 	mu.Lock()
 	p := provider
 	mu.Unlock()
 	if p == nil {
 		return "", ErrNoProvider
 	}
-	return p.Complete(ctx, system, user)
+	start := time.Now()
+	content, err := p.Complete(ctx, system, user)
+	dur := time.Since(start)
+	if err != nil {
+		logLLM(tag, p.Name(), len(system)+len(user), len(content), dur, "오류: "+err.Error())
+		return content, err
+	}
+	logLLM(tag, p.Name(), len(system)+len(user), len(content), dur, "ok")
+	return content, nil
 }
 
 // ErrNoProvider — 활성 LLM 프로바이더가 없다.
@@ -175,18 +203,33 @@ func Judge(ctx context.Context, in JudgeInput) Verdict {
 	var v Verdict
 	if p == nil {
 		v = Verdict{Allow: true, Reason: "프로바이더 없음 — 기본 허용", Provider: "none", Degraded: true}
-	} else if content, err := p.Complete(ctx, pol.System, promptUser(in)); err != nil {
-		v = Verdict{Allow: true, Reason: "프로바이더 오류(" + err.Error() + ") — 가용성 위해 기본 허용", Provider: p.Name(), Degraded: true}
 	} else {
-		var vj struct {
-			Allow      bool    `json:"allow"`
-			Reason     string  `json:"reason"`
-			Confidence float64 `json:"confidence"`
-		}
-		if e := json.Unmarshal([]byte(extractJSON(content)), &vj); e != nil {
-			v = Verdict{Allow: true, Reason: "verdict 파싱 실패 — 기본 허용", Provider: p.Name(), Degraded: true}
+		pu := promptUser(in)
+		promptN := len(pol.System) + len(pu)
+		start := time.Now()
+		content, err := p.Complete(ctx, pol.System, pu)
+		dur := time.Since(start)
+		where := in.Method + " " + in.Path
+		if err != nil {
+			v = Verdict{Allow: true, Reason: "프로바이더 오류(" + err.Error() + ") — 가용성 위해 기본 허용", Provider: p.Name(), Degraded: true}
+			logLLM("judge", p.Name(), promptN, len(content), dur, "오류→기본허용  "+where)
 		} else {
-			v = Verdict{Allow: vj.Allow, Reason: vj.Reason, Confidence: normConf(vj.Confidence), Provider: p.Name()}
+			var vj struct {
+				Allow      bool    `json:"allow"`
+				Reason     string  `json:"reason"`
+				Confidence float64 `json:"confidence"`
+			}
+			if e := json.Unmarshal([]byte(extractJSON(content)), &vj); e != nil {
+				v = Verdict{Allow: true, Reason: "verdict 파싱 실패 — 기본 허용", Provider: p.Name(), Degraded: true}
+				logLLM("judge", p.Name(), promptN, len(content), dur, "파싱실패→기본허용  "+where)
+			} else {
+				v = Verdict{Allow: vj.Allow, Reason: vj.Reason, Confidence: normConf(vj.Confidence), Provider: p.Name()}
+				outcome := "allow"
+				if !vj.Allow {
+					outcome = "block"
+				}
+				logLLM("judge", p.Name(), promptN, len(content), dur, outcome+"  "+where)
+			}
 		}
 	}
 	v.Prompt, v.PromptHash = pol.ID, pol.Hash // 어떤 정책의 판단인지 로그·감사에 남긴다
@@ -282,14 +325,22 @@ func Review(ctx context.Context, in ReviewInput) ReviewResult {
 	user := fmt.Sprintf("vuln=%s\nseverity=%s\nmethod=%s\npath=%s\nparam=%s\ndetector=%s\ncontent_type=%s\nsummary=%s\nrequest=%s\nresponse(HTTP %d)=%s",
 		in.Vuln, in.Severity, in.Method, in.Path, in.Param, in.Detector, in.ContentType, in.Evidence, in.Request, in.RespCode, in.Response)
 
-	content, err := p.Complete(ctx, reviewPrompt(in.Detector), user)
+	sys := reviewPrompt(in.Detector)
+	promptN := len(sys) + len(user)
+	where := in.Detector + " " + in.Path
+	start := time.Now()
+	content, err := p.Complete(ctx, sys, user)
+	dur := time.Since(start)
 	if err != nil {
+		logLLM("review", p.Name(), promptN, len(content), dur, "오류→uncertain  "+where)
 		return ReviewResult{Verdict: "uncertain", Reason: "프로바이더 오류: " + err.Error(), Provider: p.Name()}
 	}
 	var rr ReviewResult
 	if e := json.Unmarshal([]byte(extractJSON(content)), &rr); e != nil {
+		logLLM("review", p.Name(), promptN, len(content), dur, "파싱실패→uncertain  "+where)
 		return ReviewResult{Verdict: "uncertain", Reason: "review 파싱 실패", Provider: p.Name()}
 	}
 	rr.Provider = p.Name()
+	logLLM("review", p.Name(), promptN, len(content), dur, rr.Verdict+"  "+where)
 	return rr
 }
