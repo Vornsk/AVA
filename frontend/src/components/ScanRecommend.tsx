@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Sparkles, TriangleAlert, RotateCcw } from 'lucide-react'
+import { Sparkles, TriangleAlert, RotateCcw, Loader2 } from 'lucide-react'
 import { apiPost, type RecommendResult, type DetectorInfo } from '../api'
 import { Badge } from './ui'
 import { useT } from '../i18n'
@@ -54,7 +54,8 @@ export function ScanRecommend({ dets, allowDestructive, onPlanChange }: ScanReco
         <button onClick={fetchRec} disabled={loading}
                 className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-50"
                 style={{ background: 'var(--accent)', color: 'var(--accent-fg)' }}>
-          <Sparkles size={13} /> {loading ? t('scan.ai.fetching') : t('scan.ai.fetchButton')}
+          {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+          {loading ? t('scan.ai.fetching') : t('scan.ai.fetchButton')}
         </button>
         {err && <div className="text-xs" style={{ color: 'var(--red)' }}>{err}</div>}
       </div>
@@ -74,7 +75,8 @@ export function ScanRecommend({ dets, allowDestructive, onPlanChange }: ScanReco
           {t('scan.ai.itemCount', { n: rec.items.length })} · {rec.source === 'llm' ? t('scan.ai.sourceLLM', { provider: rec.provider ?? '' }) : t('scan.ai.sourceFallback')}
         </span>
         <button onClick={fetchRec} disabled={loading} className="inline-flex items-center gap-1 text-[11px] text-[var(--muted)] underline disabled:opacity-50">
-          <RotateCcw size={11} /> {loading ? t('scan.ai.fetching') : t('scan.ai.refetch')}
+          {loading ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+          {loading ? t('scan.ai.fetching') : t('scan.ai.refetch')}
         </button>
       </div>
 
